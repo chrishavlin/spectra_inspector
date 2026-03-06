@@ -12,6 +12,7 @@ dependencies = [
     "dash-bootstrap-components>=2.0.4",
     "dash-bootstrap-templates>=2.1.0",
     "plotly>=6.6.0",
+    "pydantic>=2.12.5",
 ]
 
 [project.scripts]
