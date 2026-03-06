@@ -1,3 +1,6 @@
+# spectra_inspector 
+
+A dash-plotly web app for subsampling EDAX filesets
 
 ## Credit 
 
