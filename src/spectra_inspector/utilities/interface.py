@@ -60,7 +60,7 @@ class SpectraInspectorServerInterface:
     def get_image_spectrum(self, sample_name: str) -> model.Spectrum1dDict: 
         payload = {"sample_name": sample_name}
         uri = self._get_endpoint('image-spectrum')
-        r = requests.get(uri, params=payload)
+        r = requests.get(uri, params=payload)        
         return model.Spectrum1dDict(**r.json())
 
 

@@ -7,6 +7,8 @@ from pydantic import BaseModel
 class Spectrum1dDict:
     energy: list[float]
     intensity: list[float]
+    energy_min: float
+    energy_max: float
 
 
 class GeneralMetadata(BaseModel):
