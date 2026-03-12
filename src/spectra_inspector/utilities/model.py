@@ -1,7 +1,25 @@
-# replace this with spectra_inspector_server imports when ready
-
 from dataclasses import dataclass
+from pathlib import Path
 from pydantic import BaseModel
+
+
+class EDAX_file_set(BaseModel):
+    spd: Path
+    spc: Path
+    ipr: Path
+    bmp: Path
+    xml: Path
+
+
+class EDAX_axis(BaseModel):
+    size: int
+    index_in_array: int
+    name: str
+    scale: float
+    offset: int
+    units: str
+    navigate: bool
+
 
 @dataclass
 class Spectrum1dDict:
@@ -56,6 +74,12 @@ class MetadataModel(BaseModel):
     Sample: Sample
 
 
+class CombinedMetadata(BaseModel):
+    metadata: MetadataModel
+    axes_by_index: dict[int, EDAX_axis]
+    data_shape: tuple[int, int, int]
+
+
 @dataclass
 class Info:
     app_name: str
@@ -65,3 +89,8 @@ class Info:
 @dataclass
 class AvailableDatasets:
     available_files: list[str]
+
+
+class raveledImage(BaseModel):
+    image: list[int]
+    shape: tuple[int, int]

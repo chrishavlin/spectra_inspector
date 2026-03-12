@@ -57,10 +57,49 @@ class SpectraInspectorServerInterface:
         r = requests.get(uri, params=payload)
         return model.MetadataModel(**r.json())
     
+    def get_combined_image_metadata(self, sample_name: str) -> model.CombinedMetadata:
+        payload = {"sample_name": sample_name}
+        uri = self._get_endpoint('image-metadata-combined')
+        r = requests.get(uri, params=payload)
+        return model.CombinedMetadata(**r.json())
+    
     def get_image_spectrum(self, sample_name: str) -> model.Spectrum1dDict: 
         payload = {"sample_name": sample_name}
         uri = self._get_endpoint('image-spectrum')
         r = requests.get(uri, params=payload)        
         return model.Spectrum1dDict(**r.json())
 
+    def get_image(self, 
+                  sample_name: str, 
+                  channel_index: int,
+                  index0_range: tuple[int, int] | None = None,
+                  index1_range: tuple[int, int] | None = None,
+                  ) -> model.raveledImage: 
+
+        payload = {
+            "sample_name": sample_name, 
+            "channel_index": channel_index, 
+            "index0_range": index0_range, 
+            "index1_range": index1_range,
+        }
+        uri = self._get_endpoint('image-data')
+        r = requests.get(uri, params=payload)        
+        return model.raveledImage(**r.json())
+    
+    def image_data_summed(self, 
+                  sample_name: str, 
+                  channel_range: tuple[int, int],
+                  index0_range: tuple[int, int] | None = None,
+                  index1_range: tuple[int, int] | None = None,
+                  ) -> model.raveledImage: 
+        
+        payload = {
+            "sample_name": sample_name, 
+            "channel_range": channel_range, 
+            "index0_range": index0_range, 
+            "index1_range": index1_range,
+        }
+        uri = self._get_endpoint('image-data-summed')
+        r = requests.get(uri, params=payload)        
+        return model.raveledImage(**r.json())
 

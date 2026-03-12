@@ -3,7 +3,7 @@ from dash import Dash, dcc, html
 import dash_bootstrap_components as dbc
 import dash
 from dash_bootstrap_templates import ThemeSwitchAIO
-
+from .user_store_model import USER_STORE_DIV_ID
 # Set style sheet
 dbc_css = "https://cdn.jsdelivr.net/gh/AnnMarieW/dash-bootstrap-templates/dbc.min.css"
 
@@ -80,6 +80,11 @@ app.layout = html.Div(
     [
         dbc.Row([dbc.Col([title], style={"text-align": "center", "margin": "auto"})]),
         sidebar,
+        dcc.Store(
+            id=USER_STORE_DIV_ID,
+            storage_type='memory',
+            data={},
+        ),
         content,
     ]
 )
