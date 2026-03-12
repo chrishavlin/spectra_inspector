@@ -34,17 +34,17 @@ def layout(**kwargs) -> html.Div:
     Output('nav-link-loader-div', 'children'),
     Output('metadata-display', 'children'),
     Output(USER_STORE_DIV_ID, 'data'),
-    Input('data-dropdown', 'value'), 
+    Input('data-dropdown', 'value'),
     State(USER_STORE_DIV_ID, 'data'),
     prevent_initial_call=True,
 )
-def update_selected_dataset(input_value: str | None,  
-                             current_user_data: dict) -> Markdown:
+def update_selected_dataset(input_value: str | None,
+                             current_user_data: dict) -> tuple[NavLink, Markdown, dict]:
     sisi = SpectraInspectorServerInterface()
 
     if input_value is None:
         input_value = 'none'
-        
+
     meta_json_str: str = "{}"
     if input_value and input_value != 'none':
         meta = sisi.get_combined_image_metadata(input_value)
@@ -58,15 +58,14 @@ def update_selected_dataset(input_value: str | None,
         md = Markdown(md_str)
     else:
         md = Markdown("")
-        
+
     new_user_data = updateDataStore(current_user_data, 'metadata_json', meta_json_str)
 
-    
+
     valid_input_vale = spaces_to_placeholder(input_value)
     nl = NavLink(Button("Load Selected"),
                     href=f"/inspector/{valid_input_vale}",
                     )
-    
+
     return nl, md, new_user_data
 
-    

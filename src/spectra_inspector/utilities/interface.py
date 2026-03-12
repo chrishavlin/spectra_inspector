@@ -56,50 +56,83 @@ class SpectraInspectorServerInterface:
         uri = self._get_endpoint('image-metadata')
         r = requests.get(uri, params=payload)
         return model.MetadataModel(**r.json())
-    
+
     def get_combined_image_metadata(self, sample_name: str) -> model.CombinedMetadata:
         payload = {"sample_name": sample_name}
         uri = self._get_endpoint('image-metadata-combined')
         r = requests.get(uri, params=payload)
         return model.CombinedMetadata(**r.json())
-    
-    def get_image_spectrum(self, sample_name: str) -> model.Spectrum1dDict: 
+
+    def get_image_spectrum(self,
+                           sample_name: str,
+                           channel_range: tuple[int, int] | None = None,
+                            index0_range: tuple[int, int] | None = None,
+                            index1_range: tuple[int, int] | None = None,) -> model.Spectrum1dDict:
+
+        payload: dict[str, str | int]
         payload = {"sample_name": sample_name}
+
+        if isinstance(channel_range, tuple):
+            payload["channel_0"] =  channel_range[0]
+            payload["channel_1"] =  channel_range[1]
+
+
+        if isinstance(index0_range, tuple):
+            payload["index0_0"] =  index0_range[0]
+            payload["index0_1"] =  index0_range[1]
+
+        if isinstance(index1_range, tuple):
+            payload["index1_0"] =  index1_range[0]
+            payload["index1_1"] =  index1_range[1]
+
         uri = self._get_endpoint('image-spectrum')
-        r = requests.get(uri, params=payload)        
+        r = requests.get(uri, params=payload)
         return model.Spectrum1dDict(**r.json())
 
-    def get_image(self, 
-                  sample_name: str, 
+    def get_image(self,
+                  sample_name: str,
                   channel_index: int,
                   index0_range: tuple[int, int] | None = None,
                   index1_range: tuple[int, int] | None = None,
-                  ) -> model.raveledImage: 
+                  ) -> model.raveledImage:
 
         payload = {
-            "sample_name": sample_name, 
-            "channel_index": channel_index, 
-            "index0_range": index0_range, 
-            "index1_range": index1_range,
+            "sample_name": sample_name,
+            "channel_index": channel_index,
         }
+        if isinstance(index0_range, tuple):
+            payload["index0_0"] =  index0_range[0]
+            payload["index0_1"] =  index0_range[1]
+
+        if isinstance(index1_range, tuple):
+            payload["index1_0"] =  index1_range[0]
+            payload["index1_1"] =  index1_range[1]
         uri = self._get_endpoint('image-data')
-        r = requests.get(uri, params=payload)        
+        r = requests.get(uri, params=payload)
         return model.raveledImage(**r.json())
-    
-    def image_data_summed(self, 
-                  sample_name: str, 
+
+    def image_data_summed(self,
+                  sample_name: str,
                   channel_range: tuple[int, int],
                   index0_range: tuple[int, int] | None = None,
                   index1_range: tuple[int, int] | None = None,
-                  ) -> model.raveledImage: 
-        
+                  ) -> model.raveledImage:
+
         payload = {
-            "sample_name": sample_name, 
-            "channel_range": channel_range, 
-            "index0_range": index0_range, 
-            "index1_range": index1_range,
+            "sample_name": sample_name,
+            "channel_0": channel_range[0],
+            "channel_1": channel_range[1],
         }
+
+        if isinstance(index0_range, tuple):
+            payload["index0_0"] =  index0_range[0]
+            payload["index0_1"] =  index0_range[1]
+
+        if isinstance(index1_range, tuple):
+            payload["index1_0"] =  index1_range[0]
+            payload["index1_1"] =  index1_range[1]
+
         uri = self._get_endpoint('image-data-summed')
-        r = requests.get(uri, params=payload)        
+        r = requests.get(uri, params=payload)
         return model.raveledImage(**r.json())
 
