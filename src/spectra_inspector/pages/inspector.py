@@ -167,24 +167,6 @@ def add_new_image(n_clicks: int, n_clicks_delete, current_children):
     return no_update
 
 
-# @callback(
-#     Output({"type": _imageIDS.div, "index": MATCH}, "children"),
-#     Input({"type": _imageIDS.delete, "index": MATCH}, "n_clicks"),
-#     State({"type": _imageIDS.delete, "index": MATCH}, "id"),
-#     prevent_initial_call=True,
-# )
-# def delete_bitmap_image(
-#     n_clicks: int,
-#     id: str,
-# ):
-
-#     if n_clicks is not None and n_clicks > 0:
-#         spectraLogger.info(f"deleting bitmap image for image id {id}, {n_clicks}")
-#         return html.Div([], hidden=True, className="col-lg-4")
-#     spectraLogger.info(f"not deleting bitmap image for image id {id}, {n_clicks}")
-#     return no_update
-
-
 @callback(
     Output({"type": _imageIDS.graph, "index": MATCH}, "figure"),
     Input({"type": _imageIDS.refresh, "index": MATCH}, "n_clicks"),
