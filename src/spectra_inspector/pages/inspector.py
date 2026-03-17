@@ -134,7 +134,8 @@ def refresh_bitmap_image(
 
         indx0 = get_closest_index(md.axes_by_index[2], slider_range[0])
         indx1 = get_closest_index(md.axes_by_index[2], slider_range[1])
-        spectraLogger.info("fetching image data", sample_name, indx0, indx1)
+        msg = f"fetching image data: {sample_name}, {indx0}, {indx1}"
+        spectraLogger.info(msg)
 
         imData = sisi.image_data_summed(sample_name, (indx0, indx1))
         im = np.array(imData.image).reshape(imData.shape)
