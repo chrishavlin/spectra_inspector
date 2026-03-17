@@ -2,7 +2,19 @@ import dash
 import numpy as np
 import pandas as pd
 import plotly.express as px
-from dash import MATCH, Input, Output, Patch, State, callback, dcc, html, no_update
+from dash import (
+    ALL,
+    MATCH,
+    Input,
+    Output,
+    Patch,
+    State,
+    callback,
+    ctx,
+    dcc,
+    html,
+    no_update,
+)
 from dash_bootstrap_components import Button
 from pydantic import BaseModel
 
@@ -71,7 +83,7 @@ def layout(sample_name: str | None = None, **kwargs):  # noqa: ARG001
     )
     _layout_list.append(html.Div(hidden=True, id=_IDS.metadata))
     # _layout_list.append(html.Div(dcc.Store(
-    #         id="annotations-store",
+    #         id="graph-id-store",
     #         storage_type="memory",
     #         data={},
     #     ),))
@@ -109,15 +121,68 @@ def update_spectrum(input_value: str | None):
     return no_update
 
 
-@callback(Output(_IDS.image_container, "children"), Input(_IDS.add_image, "n_clicks"))
-def add_new_image(n_clicks: int) -> Patch:
-    patched_children = Patch()
-    new_image_div, _ = bitmap_image_layout(
-        n_clicks, id_type_base=_IDS.image_container_type
-    )
+@callback(
+    Output(_IDS.add_image, "n_clicks"),
+    Input(_IDS.sample_name, "children"),
+)
+def initial_update(input_value: str | None):
+    if _valid_sample_name(input_value):
+        return 1
+    return no_update
 
-    patched_children.append(new_image_div)
-    return patched_children
+
+@callback(
+    Output(_IDS.image_container, "children"),
+    Input(_IDS.add_image, "n_clicks"),
+    Input({"type": _imageIDS.delete, "index": ALL}, "n_clicks"),
+    State(_IDS.image_container, "children"),
+)
+def add_new_image(n_clicks: int, n_clicks_delete, current_children):
+
+    button_clicked = ctx.triggered_id
+    spectraLogger.info(f"button was {button_clicked}")
+    n_deletes = sum([n for n in n_clicks_delete if n is not None])
+    if button_clicked == _IDS.add_image and n_clicks > 0:
+        spectraLogger.info("adding new image")
+        patched_children = Patch()
+        new_image_div, _ = bitmap_image_layout(
+            n_clicks, id_type_base=_IDS.image_container_type
+        )
+
+        patched_children.append(new_image_div)
+        return patched_children
+    if button_clicked is not None and n_deletes > 0:
+        spectraLogger.info(f"delete button  clicked: {button_clicked}")
+        id_to_delete = str({"index": button_clicked["index"], "type": _imageIDS.div})
+        id_to_delete2 = str({"type": _imageIDS.div, "index": button_clicked["index"]})
+        new_children = []
+        for child in current_children:
+            childstr = str(child)
+            if id_to_delete not in childstr and id_to_delete2 not in childstr:
+                new_children.append(child)
+            else:
+                spectraLogger.info("skpping child")
+        return new_children
+
+    return no_update
+
+
+# @callback(
+#     Output({"type": _imageIDS.div, "index": MATCH}, "children"),
+#     Input({"type": _imageIDS.delete, "index": MATCH}, "n_clicks"),
+#     State({"type": _imageIDS.delete, "index": MATCH}, "id"),
+#     prevent_initial_call=True,
+# )
+# def delete_bitmap_image(
+#     n_clicks: int,
+#     id: str,
+# ):
+
+#     if n_clicks is not None and n_clicks > 0:
+#         spectraLogger.info(f"deleting bitmap image for image id {id}, {n_clicks}")
+#         return html.Div([], hidden=True, className="col-lg-4")
+#     spectraLogger.info(f"not deleting bitmap image for image id {id}, {n_clicks}")
+#     return no_update
 
 
 @callback(
@@ -152,24 +217,6 @@ def refresh_bitmap_image(
         imData = sisi.image_data_summed(sample_name, (indx0, indx1))
         im = np.array(imData.image).reshape(imData.shape)
         return px.imshow(im)  # pxim.add_annotation?
-    return no_update
-
-
-@callback(
-    Output({"type": _imageIDS.div, "index": MATCH}, "children"),
-    Input({"type": _imageIDS.delete, "index": MATCH}, "n_clicks"),
-    State({"type": _imageIDS.delete, "index": MATCH}, "id"),
-    prevent_initial_call=True,
-)
-def delete_bitmap_image(
-    n_clicks: int,
-    id: str,
-):
-
-    if n_clicks is not None and n_clicks > 0:
-        spectraLogger.info(f"deleting bitmap image for image id {id}, {n_clicks}")
-        return html.Div([], hidden=True, className="col-lg-4")
-    spectraLogger.info(f"not deleting bitmap image for image id {id}, {n_clicks}")
     return no_update
 
 
