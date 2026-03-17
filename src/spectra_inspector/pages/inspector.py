@@ -1,5 +1,5 @@
 import dash
-from dash import html, dcc, callback, Input, Output, State, Patch, MATCH, ALL
+from dash import html, dcc, callback, Input, Output, State, Patch, MATCH
 from spectra_inspector.utilities.coerce import placeholder_to_spaces
 from spectra_inspector.utilities.interface import SpectraInspectorServerInterface
 import plotly.express as px
@@ -63,19 +63,6 @@ def layout(sample_name: str | None =None, **kwargs):
     _layout_list.append(html.Div([
         Button("Add Image", id=_IDS.add_image, n_clicks=0),
     ]))
-
-    # fig_image = dcc.Graph(id="map-image")
-
-    # energy_range = dcc.RangeSlider(0, 15, step=0.1, value=(1.65, 1.9), id='primary-image-range', className="text-info")
-
-    # _primary_graph_div = html.Div([
-    #         html.Div(energy_range, style={'background': '#FFFFFF'}),
-    #         Button("Refresh Image", id='primary-image-submit'),
-    #         fig_image,
-
-    # ])
-
-    # im0_layout, imageIDs = bitmap_image_layout('bitmap-00')
 
     _layout_list.append(html.Div([], id=_IDS.image_container))
 

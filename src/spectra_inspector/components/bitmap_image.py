@@ -1,8 +1,6 @@
 
 from dash import html, dcc
-from spectra_inspector.utilities.scaling import get_closest_index
 from dash_bootstrap_components import Button
-from pydantic import BaseModel
 
 
 class bitmapImageLayoutIDs:
