@@ -1,9 +1,11 @@
 # Import packages
-from dash import Dash, dcc, html
-import dash_bootstrap_components as dbc
 import dash
+import dash_bootstrap_components as dbc
+from dash import Dash, dcc, html
 from dash_bootstrap_templates import ThemeSwitchAIO
+
 from .user_store_model import USER_STORE_DIV_ID
+
 # Set style sheet
 dbc_css = "https://cdn.jsdelivr.net/gh/AnnMarieW/dash-bootstrap-templates/dbc.min.css"
 
@@ -41,7 +43,7 @@ CONTENT_STYLE = {
 # Sidebar
 sidebar = html.Div(
     [
-        html.H2("Spectra Inspector"),        
+        html.H2("Spectra Inspector"),
         dbc.Row([theme_toggle]),
         html.Hr(),
         dbc.Row(
@@ -71,9 +73,7 @@ sidebar = html.Div(
 title = dcc.Markdown("", style={"font-size": 30})
 
 # Content
-content = html.Div(dash.page_container, 
-                   id="page-content", 
-                   style=CONTENT_STYLE)
+content = html.Div(dash.page_container, id="page-content", style=CONTENT_STYLE)
 
 # App Layout
 app.layout = html.Div(
@@ -82,7 +82,7 @@ app.layout = html.Div(
         sidebar,
         dcc.Store(
             id=USER_STORE_DIV_ID,
-            storage_type='memory',
+            storage_type="memory",
             data={},
         ),
         content,
