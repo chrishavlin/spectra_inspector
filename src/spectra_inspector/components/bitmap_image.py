@@ -46,7 +46,17 @@ def bitmap_image_layout(
 
     imIDs = bitmapImageLayoutIDs(id_type_base=id_type_base)
 
-    fig_image = dcc.Graph(id={"type": imIDs.graph, "index": index})
+    fig_image = dcc.Graph(
+        id={"type": imIDs.graph, "index": index},
+        config={
+            "modeBarButtonsToAdd": [
+                # "drawclosedpath",
+                # "drawcircle",
+                "drawrect",
+                "eraseshape",
+            ]
+        },
+    )
 
     energy_range = dcc.RangeSlider(
         slider_start,
@@ -65,6 +75,8 @@ def bitmap_image_layout(
             fig_image,
         ],
         id={"type": imIDs.div, "index": index},
+        className="col-lg-4",
+        style={"padding": "10px"},
     )
 
     return _primary_graph_div, imIDs

@@ -2,7 +2,7 @@ import dash
 import numpy as np
 import pandas as pd
 import plotly.express as px
-from dash import MATCH, Input, Output, Patch, State, callback, dcc, html
+from dash import MATCH, Input, Output, Patch, State, callback, dcc, html, no_update
 from dash_bootstrap_components import Button
 from pydantic import BaseModel
 
@@ -70,6 +70,11 @@ def layout(sample_name: str | None = None, **kwargs):  # noqa: ARG001
         html.Div(selected_sample_contents(sample_name), id=_IDS.sample_name)
     )
     _layout_list.append(html.Div(hidden=True, id=_IDS.metadata))
+    # _layout_list.append(html.Div(dcc.Store(
+    #         id="annotations-store",
+    #         storage_type="memory",
+    #         data={},
+    #     ),))
     _layout_list.append(
         html.Div(
             [
@@ -78,10 +83,17 @@ def layout(sample_name: str | None = None, **kwargs):  # noqa: ARG001
         )
     )
 
-    _layout_list.append(html.Div([], id=_IDS.image_container))
+    im_container = html.Div(
+        [html.Div([], id=_IDS.image_container, className="row")], className="container"
+    )
+    # im_container
+    _layout_list.append(
+        im_container
+    )  # html.Div([], id=_IDS.image_container, className="container"))
 
     fig = dcc.Graph(id=_IDS.spectrum_container)
-    _layout_list.append(fig)
+    spectrum_div = html.Div([fig], className="container", style={"padding": "10px"})
+    _layout_list.append(spectrum_div)
     return html.Div(_layout_list)
 
 
@@ -94,7 +106,7 @@ def update_spectrum(input_value: str | None):
         assert isinstance(input_value, str)
         df = get_spectrum(input_value)
         return px.line(df, x="energy", y="intensity")
-    return None
+    return no_update
 
 
 @callback(Output(_IDS.image_container, "children"), Input(_IDS.add_image, "n_clicks"))
@@ -139,8 +151,8 @@ def refresh_bitmap_image(
 
         imData = sisi.image_data_summed(sample_name, (indx0, indx1))
         im = np.array(imData.image).reshape(imData.shape)
-        return px.imshow(im)
-    return None
+        return px.imshow(im)  # pxim.add_annotation?
+    return no_update
 
 
 @callback(
@@ -156,6 +168,62 @@ def delete_bitmap_image(
 
     if n_clicks is not None and n_clicks > 0:
         spectraLogger.info(f"deleting bitmap image for image id {id}, {n_clicks}")
-        return html.Div([], hidden=True)
+        return html.Div([], hidden=True, className="col-lg-4")
     spectraLogger.info(f"not deleting bitmap image for image id {id}, {n_clicks}")
-    return None
+    return no_update
+
+
+# @callback(
+#     Output({"type": _imageIDS.graph, "index": ALL}, "annotations"),
+#     Input({"type": _imageIDS.graph, "index": ALL}, "relayoutData"),
+#     prevent_initial_call=True,
+# )
+# def store_annotations(relayout_data_list,
+#                       ):
+
+#     spectraLogger.info(f"new annotation detected. Storing.")
+
+#     shapes = set()
+#     has_shapes = False
+#     for index, relayout_data in enumerate(relayout_data_list):
+#         spectraLogger.info(f"Checking {index}")
+#         spectraLogger.info(relayout_data)
+#         if 'shapes' in relayout_data:
+#             spectraLogger.info(f"{index} has shape")
+#             has_shapes = True
+#             shape_data = [json.dumps(shp) for shp in relayout_data["shapes"]]
+#             shapes = shapes.union(set(shape_data))
+
+#     if has_shapes:
+#         spectraLogger.info("at least one has shapes, merging")
+#         new_shapes = []
+#         for shp in shapes:
+#             spectraLogger.info(shp)
+#             new_shapes.append(json.loads(shp))
+
+#         # spectraLogger.info(f"merged {len(shapes)} shapes")
+#         # new_relay_outs = []
+#         # for relayout_data in current_relayout_data_list:
+#         #     relayout_data['shapes'] = new_shapes
+#         #     new_relay_outs.append(relayout_data)
+
+#         # # spectraLogger.info("new shapes")
+#         # # spectraLogger.info(new_relay_outs)
+
+#         return [new_shapes for _ in range(len(relayout_data_list))]
+
+#     spectraLogger.info("no shapes")
+#     return [no_update for _ in range(len(relayout_data_list))]
+#     # #     if index == id:
+#     # #         return {'shapes': relayout_data["shapes"] }
+
+#     # # # return relayout_data
+#     # if "shapes" in relayout_data:
+#     #     spectraLogger.info("shapes are")
+#     #     import json
+#     #     spectraLogger.info(json.dumps(relayout_data["shapes"],indent=2))
+#     #     return {'shapes': relayout_data["shapes"] }
+#     # # else:
+#     # #     spectraLogger.info('no shapes in relayout')
+#     # #     spectraLogger.info(relayout_data)
+#     # return {'shapes': []}
