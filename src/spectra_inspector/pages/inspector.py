@@ -82,11 +82,15 @@ def layout(sample_name: str | None = None, **kwargs):  # noqa: ARG001
         html.Div(selected_sample_contents(sample_name), id=_IDS.sample_name)
     )
     _layout_list.append(html.Div(hidden=True, id=_IDS.metadata))
-    # _layout_list.append(html.Div(dcc.Store(
-    #         id="graph-id-store",
-    #         storage_type="memory",
-    #         data={},
-    #     ),))
+    _layout_list.append(
+        html.Div(
+            dcc.Store(
+                id="graph-id-store",
+                storage_type="memory",
+                data={},
+            ),
+        )
+    )
     _layout_list.append(
         html.Div(
             [
@@ -133,38 +137,59 @@ def initial_update(input_value: str | None):
 
 @callback(
     Output(_IDS.image_container, "children"),
+    Output("graph-id-store", "data"),
     Input(_IDS.add_image, "n_clicks"),
     Input({"type": _imageIDS.delete, "index": ALL}, "n_clicks"),
     State(_IDS.image_container, "children"),
+    State("graph-id-store", "data"),
 )
-def add_new_image(n_clicks: int, n_clicks_delete, current_children):
+def add_or_delete_image(
+    n_clicks: int | None,
+    n_clicks_delete: list[int | None],
+    current_children: list[html.Div | None],
+    graph_id_store: dict,
+):
 
     button_clicked = ctx.triggered_id
     spectraLogger.info(f"button was {button_clicked}")
     n_deletes = sum([n for n in n_clicks_delete if n is not None])
-    if button_clicked == _IDS.add_image and n_clicks > 0:
+
+    if "active_div_ids" not in graph_id_store:
+        graph_id_store["active_div_ids"] = []
+
+    if button_clicked == _IDS.add_image and n_clicks is not None:
         spectraLogger.info("adding new image")
         patched_children = Patch()
-        new_image_div, _ = bitmap_image_layout(
+        new_image_div, imIDs = bitmap_image_layout(
             n_clicks, id_type_base=_IDS.image_container_type
         )
 
         patched_children.append(new_image_div)
-        return patched_children
+        graph_id_store["active_div_ids"].append(imIDs.get_id_with_index("div"))
+        return patched_children, graph_id_store
     if button_clicked is not None and n_deletes > 0:
         spectraLogger.info(f"delete button  clicked: {button_clicked}")
-        id_to_delete = str({"index": button_clicked["index"], "type": _imageIDS.div})
-        id_to_delete2 = str({"type": _imageIDS.div, "index": button_clicked["index"]})
-        new_children = []
-        for child in current_children:
-            childstr = str(child)
-            if id_to_delete not in childstr and id_to_delete2 not in childstr:
-                new_children.append(child)
-            else:
-                spectraLogger.info("skpping child")
-        return new_children
+        id_to_delete = {"index": button_clicked["index"], "type": _imageIDS.div}
+        id_to_delete2 = {"type": _imageIDS.div, "index": button_clicked["index"]}
 
-    return no_update
+        pop_id: int | None = None
+        if id_to_delete in graph_id_store["active_div_ids"]:
+            pop_id = graph_id_store["active_div_ids"].index(id_to_delete)
+        elif id_to_delete2 in graph_id_store["active_div_ids"]:
+            pop_id = graph_id_store["active_div_ids"].index(id_to_delete2)
+        else:
+            spectraLogger.warning(f"Could not find {id_to_delete}")
+
+        if pop_id is not None:
+            spectraLogger.info(
+                f"popping {pop_id}: {graph_id_store['active_div_ids'][pop_id]}"
+            )
+            _ = current_children.pop(pop_id)
+            _ = graph_id_store["active_div_ids"].pop(pop_id)
+
+        return current_children, graph_id_store
+
+    return no_update, graph_id_store
 
 
 @callback(
