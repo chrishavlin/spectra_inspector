@@ -5,7 +5,6 @@ import plotly.express as px
 import plotly.graph_objects as go
 from dash import (
     ALL,
-    MATCH,
     Input,
     Output,
     Patch,
@@ -37,17 +36,20 @@ def _valid_sample_name(sample_name: str | None):
     )
 
 
-def get_spectrum(sample_name: str, 
-                channel_range: tuple[int, int] | None = None,
-                index0_range: tuple[int, int] | None = None,
-                index1_range: tuple[int, int] | None = None,
-        ) -> pd.DataFrame:
+def get_spectrum(
+    sample_name: str,
+    channel_range: tuple[int, int] | None = None,
+    index0_range: tuple[int, int] | None = None,
+    index1_range: tuple[int, int] | None = None,
+) -> pd.DataFrame:
 
     sisi = SpectraInspectorServerInterface()
-    spectrum = sisi.get_image_spectrum(sample_name, 
-                                       channel_range=channel_range, 
-                                       index0_range=index0_range, 
-                                       index1_range=index1_range)
+    spectrum = sisi.get_image_spectrum(
+        sample_name,
+        channel_range=channel_range,
+        index0_range=index0_range,
+        index1_range=index1_range,
+    )
 
     min_e = spectrum.energy_min
     max_e = spectrum.energy_max
@@ -92,13 +94,14 @@ def get_initial_figure(sample_name: str | None):
         assert isinstance(sample_name, str)
         df = get_spectrum(sample_name)
         current_figure = go.Figure()
-        current_figure.add_trace(go.Scatter(x=df.energy, y=df.intensity,
-                    mode='lines',
-                    name='Full energy range')
-                    )
-        return {'figure': current_figure}, df
+        current_figure.add_trace(
+            go.Scatter(
+                x=df.energy, y=df.intensity, mode="lines", name="Full energy range"
+            )
+        )
+        return {"figure": current_figure}, df
     return {}, None
- 
+
 
 def layout(sample_name: str | None = None, **kwargs):  # noqa: ARG001
 
@@ -120,23 +123,20 @@ def layout(sample_name: str | None = None, **kwargs):  # noqa: ARG001
         [html.Div([], id=_IDS.image_container, className="row")], className="container"
     )
     # im_container
-    _layout_list.append(
-        im_container
-    )
+    _layout_list.append(im_container)
 
-    spectrum_kwargs, full_spectrum_df = get_initial_figure(sample_name)    
+    spectrum_kwargs, full_spectrum_df = get_initial_figure(sample_name)
     spectrum_graph = dcc.Graph(id=_IDS.spectrum_container, **spectrum_kwargs)
-    
-            
-    spectrum_div = html.Div([spectrum_graph], className="container", style={"padding": "10px"})
+
+    spectrum_div = html.Div(
+        [spectrum_graph], className="container", style={"padding": "10px"}
+    )
 
     init_data = {}
     if full_spectrum_df is not None:
-        init_data['intensity'] = full_spectrum_df.intensity.tolist()
-        init_data['energy'] = full_spectrum_df.energy.tolist()
+        init_data["intensity"] = full_spectrum_df.intensity.tolist()
+        init_data["energy"] = full_spectrum_df.energy.tolist()
 
-    
-    
     _layout_list.append(
         html.Div(
             [
@@ -156,78 +156,84 @@ def layout(sample_name: str | None = None, **kwargs):  # noqa: ARG001
                     data={},
                 ),
                 dcc.Store(
-                    id=_IDS.full_spectrum_store, 
-                    storage_type='memory',
-                    data = init_data
-                )
+                    id=_IDS.full_spectrum_store, storage_type="memory", data=init_data
+                ),
             ]
         )
     )
-    
+
     _layout_list.append(spectrum_div)
     return html.Div(_layout_list)
 
 
 @callback(
-    Output(_IDS.spectrum_container, "figure"),    
+    Output(_IDS.spectrum_container, "figure"),
     Input(_IDS.shapes_store, "data"),
-    State(_IDS.sample_name, 'children'),
-    State(_IDS.spectrum_container, 'figure'),
-    State(_IDS.full_spectrum_store, 'data')
+    State(_IDS.sample_name, "children"),
+    State(_IDS.spectrum_container, "figure"),
+    State(_IDS.full_spectrum_store, "data"),
 )
-def update_spectrum(shapes_store: dict | None, 
-                    sample_name: str | None, 
-                    current_figure, 
-                    full_spectrum_store):
-            
-    if current_figure is None and _valid_sample_name(sample_name):   
+def update_spectrum(
+    shapes_store: dict | None,
+    sample_name: str | None,
+    current_figure,
+    full_spectrum_store,
+):
+
+    if current_figure is None and _valid_sample_name(sample_name):
         spectraLogger.info("creating full spectrum plot")
         assert isinstance(sample_name, str)
         df = get_spectrum(sample_name)
         current_figure = go.Figure()
-        current_figure.add_trace(go.Scatter(x=df.energy, y=df.intensity,
-                    mode='lines',
-                    name='Full energy range')
-                    )            
+        current_figure.add_trace(
+            go.Scatter(
+                x=df.energy, y=df.intensity, mode="lines", name="Full energy range"
+            )
+        )
         return current_figure
-    elif current_figure is not None:                         
+    if current_figure is not None:
         if shapes_store is not None:
-            shapes = shapes_store.get('active_shapes', [])
+            shapes = shapes_store.get("active_shapes", [])
             spectraLogger.info(f"active shapes {shapes}")
-            name = 'full spectrum'
+            name = "full spectrum"
             if len(shapes) > 0:
-                assert isinstance(sample_name, str)                
+                assert isinstance(sample_name, str)
                 shp = shapes[0]
-                if shp['type'] != 'rect': 
-                    raise TypeError(f"Unsupported shape type of {shp['type']}")
-                
-                index1_range = [int(np.floor(shp['x0'])), int(np.floor(shp['x1']))]
+                if shp["type"] != "rect":
+                    msg = f"Unsupported shape type of {shp['type']}"
+                    raise TypeError(msg)
+
+                index1_range = [int(np.floor(shp["x0"])), int(np.floor(shp["x1"]))]
                 index1_range.sort()
-                index0_range = [int(np.floor(shp['y0'])), int(np.floor(shp['y1']))]
+                index0_range = [int(np.floor(shp["y0"])), int(np.floor(shp["y1"]))]
                 index0_range.sort()
-                
-                spectraLogger.info(f"fetching subsample spectrum with ranges {index0_range}, {index1_range}")
-                df = get_spectrum(sample_name, 
-                                  index0_range=tuple(index0_range), 
-                                  index1_range=tuple(index1_range))
-                name = 'spatial subset'         
-            else: 
+
+                spectraLogger.info(
+                    f"fetching subsample spectrum with ranges {index0_range}, {index1_range}"
+                )
+                df = get_spectrum(
+                    sample_name,
+                    index0_range=tuple(index0_range),
+                    index1_range=tuple(index1_range),
+                )
+                name = "spatial subset"
+            else:
                 # just re-load the full spectum
-                df = full_spectrum_store 
+                df = full_spectrum_store
 
             new_trace = {
-                'mode': 'lines', 
-                'x': df['energy'],
-                'y': df['intensity'],
-                'type': 'scatter',
-                'name': name,
+                "mode": "lines",
+                "x": df["energy"],
+                "y": df["intensity"],
+                "type": "scatter",
+                "name": name,
             }
-                    
-            current_figure['data'][0] = new_trace
+
+            current_figure["data"][0] = new_trace
             spectraLogger.info("subsample spectrum")
 
         return current_figure
-            
+
     return no_update
 
 
@@ -357,7 +363,7 @@ def _copy_layout_attrs_for_new_fig(
 @callback(
     Output({"type": _imageIDS.graph, "index": ALL}, "figure"),
     Output(_IDS.processed_graph_id_store, "data"),
-    Output(_IDS.shapes_store, 'data'),
+    Output(_IDS.shapes_store, "data"),
     Input({"type": _imageIDS.refresh, "index": ALL}, "n_clicks"),
     Input({"type": _imageIDS.graph, "index": ALL}, "relayoutData"),
     State({"type": _imageIDS.slider, "index": ALL}, "value"),
@@ -366,7 +372,7 @@ def _copy_layout_attrs_for_new_fig(
     State(_IDS.processed_graph_id_store, "data"),
     State("sample-name", "children"),
     State({"type": _imageIDS.graph, "index": ALL}, "figure"),
-    State(_IDS.shapes_store, 'data'),
+    State(_IDS.shapes_store, "data"),
 )
 def update_graph_figure(
     n_clicks: list[int | None],
@@ -383,17 +389,22 @@ def update_graph_figure(
     if "graph_ids" not in processed_graph_store:
         processed_graph_store["graph_ids"] = []
 
-    if 'active_shapes' not in shapes_store:        
-        shapes_store['active_shapes'] = []
+    if "active_shapes" not in shapes_store:
+        shapes_store["active_shapes"] = []
 
     triggered_id = ctx.triggered_id
     if triggered_id is None:
         # first pass through on callback creation: dont want to prevent
         # first call though?
         spectraLogger.info(f"no trigger id, initial call passthrough {len(fig_list)}")
-        return [
-            no_update,
-        ] * len(fig_list), processed_graph_store, shapes_store
+        return (
+            [
+                no_update,
+            ]
+            * len(fig_list),
+            processed_graph_store,
+            shapes_store,
+        )
 
     triggered_index: int = 0  # the html id index
     triggered_index_loc: int = 0  # the position in the list
@@ -448,12 +459,14 @@ def update_graph_figure(
                 update_layout = True
                 relay_update[relay_key] = relay[relay_key]
 
-        if "shapes" in relay_update:            
-            if len(relay_update["shapes"]) > 1:                 
+        if "shapes" in relay_update:
+            if len(relay_update["shapes"]) > 1:
                 # keep only the latest
-                relay_update["shapes"] = [relay_update["shapes"][-1],]
+                relay_update["shapes"] = [
+                    relay_update["shapes"][-1],
+                ]
 
-            shapes_store['active_shapes'] = relay_update["shapes"]            
+            shapes_store["active_shapes"] = relay_update["shapes"]
 
         # handle any updates to axes by copying over the modified
         # axis to all others
@@ -468,7 +481,11 @@ def update_graph_figure(
             new_fig_list = _sync_layouts(relay_update, fig_list)
             return new_fig_list, processed_graph_store, shapes_store
 
-    return [
-        no_update,
-    ] * len(fig_list), processed_graph_store, shapes_store
-
+    return (
+        [
+            no_update,
+        ]
+        * len(fig_list),
+        processed_graph_store,
+        shapes_store,
+    )
