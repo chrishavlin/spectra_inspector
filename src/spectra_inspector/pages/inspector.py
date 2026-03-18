@@ -4,7 +4,6 @@ import pandas as pd
 import plotly.express as px
 from dash import (
     ALL,
-    MATCH,
     Input,
     Output,
     Patch,
@@ -84,11 +83,18 @@ def layout(sample_name: str | None = None, **kwargs):  # noqa: ARG001
     _layout_list.append(html.Div(hidden=True, id=_IDS.metadata))
     _layout_list.append(
         html.Div(
-            dcc.Store(
-                id="graph-id-store",
-                storage_type="memory",
-                data={},
-            ),
+            [
+                dcc.Store(
+                    id="graph-id-store",
+                    storage_type="memory",
+                    data={},
+                ),
+                dcc.Store(
+                    id="processed-graph-ids",
+                    storage_type="memory",
+                    data={},
+                ),
+            ]
         )
     )
     _layout_list.append(
@@ -135,6 +141,18 @@ def initial_update(input_value: str | None):
     return no_update
 
 
+def _find_id_in_list(
+    type: str, index: int, el_list: list[dict[str, str | int]]
+) -> None | int:
+    id_to_find = {"index": index, "type": type}
+    if id_to_find in el_list:
+        return el_list.index(id_to_find)
+    id_to_find2 = {"type": type, "index": index}
+    if id_to_find2 in el_list:
+        return el_list.index(id_to_find2)
+    return None
+
+
 @callback(
     Output(_IDS.image_container, "children"),
     Output("graph-id-store", "data"),
@@ -151,7 +169,7 @@ def add_or_delete_image(
 ):
 
     button_clicked = ctx.triggered_id
-    spectraLogger.info(f"button was {button_clicked}")
+    spectraLogger.info(f"add_or_delete_image button: {button_clicked}")
     n_deletes = sum([n for n in n_clicks_delete if n is not None])
 
     if "active_div_ids" not in graph_id_store:
@@ -160,30 +178,22 @@ def add_or_delete_image(
     if button_clicked == _IDS.add_image and n_clicks is not None:
         spectraLogger.info("adding new image")
         patched_children = Patch()
+        id_index = n_clicks - 1  # easier if we use a 0-index
         new_image_div, imIDs = bitmap_image_layout(
-            n_clicks, id_type_base=_IDS.image_container_type
+            id_index, id_type_base=_IDS.image_container_type
         )
-
         patched_children.append(new_image_div)
-        graph_id_store["active_div_ids"].append(imIDs.get_id_with_index("div"))
+        new_div_id = imIDs.get_id_with_index("div")
+        graph_id_store["active_div_ids"].append(new_div_id)
         return patched_children, graph_id_store
     if button_clicked is not None and n_deletes > 0:
         spectraLogger.info(f"delete button  clicked: {button_clicked}")
-        id_to_delete = {"index": button_clicked["index"], "type": _imageIDS.div}
-        id_to_delete2 = {"type": _imageIDS.div, "index": button_clicked["index"]}
-
-        pop_id: int | None = None
-        if id_to_delete in graph_id_store["active_div_ids"]:
-            pop_id = graph_id_store["active_div_ids"].index(id_to_delete)
-        elif id_to_delete2 in graph_id_store["active_div_ids"]:
-            pop_id = graph_id_store["active_div_ids"].index(id_to_delete2)
-        else:
-            spectraLogger.warning(f"Could not find {id_to_delete}")
-
+        pop_id = _find_id_in_list(
+            _imageIDS.div, button_clicked["index"], graph_id_store["active_div_ids"]
+        )
         if pop_id is not None:
-            spectraLogger.info(
-                f"popping {pop_id}: {graph_id_store['active_div_ids'][pop_id]}"
-            )
+            active_divid = graph_id_store["active_div_ids"][pop_id]
+            spectraLogger.info(f"popping {pop_id}: {active_divid}")
             _ = current_children.pop(pop_id)
             _ = graph_id_store["active_div_ids"].pop(pop_id)
 
@@ -192,92 +202,159 @@ def add_or_delete_image(
     return no_update, graph_id_store
 
 
+def _get_new_im(sample_name: str, user_store: dict, slider_range: tuple[float, float]):
+
+    assert isinstance(sample_name, str)
+    sisi = SpectraInspectorServerInterface()
+    md = UserStore(**user_store).get_metadata()
+    if md is None:
+        md = sisi.get_combined_image_metadata(sample_name)
+
+    indx0 = get_closest_index(md.axes_by_index[2], slider_range[0])
+    indx1 = get_closest_index(md.axes_by_index[2], slider_range[1])
+    msg = f"fetching image data: {sample_name}, {indx0}, {indx1}"
+    spectraLogger.info(msg)
+
+    imData = sisi.image_data_summed(sample_name, (indx0, indx1))
+    im = np.array(imData.image).reshape(imData.shape)
+
+    return px.imshow(im)
+
+
+def _sync_layouts(layout_update: dict, fig_list: list):
+
+    new_fig_list = []
+    for fig in fig_list:
+        fig["layout"].update(layout_update)
+        new_fig_list.append(fig)
+    return new_fig_list
+
+
+def _copy_layout_attrs(
+    fig_list: list, ref_fig_index: int, layout_attrs: list[str] | None = None
+):
+    if layout_attrs is None:
+        layout_attrs = ["xaxis", "yaxis", "shapes"]
+    layout_update = {}
+    for attr in layout_attrs:
+        if attr in fig_list[ref_fig_index]["layout"]:
+            layout_update[attr] = fig_list[ref_fig_index]["layout"][attr]
+    return _sync_layouts(layout_update, fig_list)
+
+
+def _copy_layout_attrs_for_new_fig(
+    fig_list: list, new_index_loc: int, layout_attrs: list[str] | None = None
+):
+    if len(fig_list) > 1:
+        if new_index_loc == 0:
+            ref_index = 1
+        else:
+            ref_index = 0
+        return _copy_layout_attrs(fig_list, ref_index, layout_attrs=layout_attrs)
+    return fig_list
+
+
 @callback(
-    Output({"type": _imageIDS.graph, "index": MATCH}, "figure"),
-    Input({"type": _imageIDS.refresh, "index": MATCH}, "n_clicks"),
-    State({"type": _imageIDS.refresh, "index": MATCH}, "id"),
-    State({"type": _imageIDS.slider, "index": MATCH}, "value"),
+    Output({"type": _imageIDS.graph, "index": ALL}, "figure"),
+    Output("processed-graph-ids", "data"),
+    Input({"type": _imageIDS.refresh, "index": ALL}, "n_clicks"),
+    Input({"type": _imageIDS.graph, "index": ALL}, "relayoutData"),
+    State({"type": _imageIDS.slider, "index": ALL}, "value"),
+    State({"type": _imageIDS.graph, "index": ALL}, "id"),
     State(USER_STORE_DIV_ID, "data"),
+    State("processed-graph-ids", "data"),
     State("sample-name", "children"),
+    State({"type": _imageIDS.graph, "index": ALL}, "figure"),
 )
-def refresh_bitmap_image(
-    n_clicks: int,
-    id: str,
-    slider_range: tuple[float, float],
+def update_graph_figure(
+    n_clicks: list[int | None],
+    relayout_data_list: list,
+    slider_range_list: list[tuple[float, float]],
+    graph_ids: list[dict[str, str | int]],
     user_store: dict,
+    processed_graph_store: dict,
     sample_name: str,
+    fig_list: list,
 ):
 
-    spectraLogger.info(f"refreshing bitmap image for image id {id}, {n_clicks}")
-    if _valid_sample_name(sample_name):
-        assert isinstance(sample_name, str)
-        sisi = SpectraInspectorServerInterface()
-        md = UserStore(**user_store).get_metadata()
-        if md is None:
-            md = sisi.get_combined_image_metadata(sample_name)
+    if "graph_ids" not in processed_graph_store:
+        processed_graph_store["graph_ids"] = []
 
-        indx0 = get_closest_index(md.axes_by_index[2], slider_range[0])
-        indx1 = get_closest_index(md.axes_by_index[2], slider_range[1])
-        msg = f"fetching image data: {sample_name}, {indx0}, {indx1}"
-        spectraLogger.info(msg)
+    triggered_id = ctx.triggered_id
+    if triggered_id is None:
+        # first pass through on callback creation: dont want to prevent
+        # first call though?
+        spectraLogger.info(f"no trigger id, initial call passthrough {len(fig_list)}")
+        return [
+            no_update,
+        ] * len(fig_list), processed_graph_store
 
-        imData = sisi.image_data_summed(sample_name, (indx0, indx1))
-        im = np.array(imData.image).reshape(imData.shape)
-        return px.imshow(im)  # pxim.add_annotation?
-    return no_update
+    triggered_index: int = 0  # the html id index
+    triggered_index_loc: int = 0  # the position in the list
+    if triggered_id is not None:
+        # find the position in the input lists
+        triggered_index = triggered_id["index"]
+        index_loc = _find_id_in_list(_imageIDS.graph, triggered_index, graph_ids)
+        assert isinstance(index_loc, int)
+        triggered_index_loc = index_loc
 
+    graph_dict = {"type": _imageIDS.graph, "index": triggered_index}
 
-# @callback(
-#     Output({"type": _imageIDS.graph, "index": ALL}, "annotations"),
-#     Input({"type": _imageIDS.graph, "index": ALL}, "relayoutData"),
-#     prevent_initial_call=True,
-# )
-# def store_annotations(relayout_data_list,
-#                       ):
+    # check for figure refresh
+    refresh = triggered_id["type"] == _imageIDS.refresh
+    if (
+        refresh
+        and _valid_sample_name(sample_name)
+        and graph_dict in processed_graph_store["graph_ids"]
+    ):
+        spectraLogger.info(
+            f"refreshing bitmap image for image id {triggered_id}, {n_clicks[triggered_index_loc]}"
+        )
+        new_fig = _get_new_im(
+            sample_name, user_store, slider_range_list[triggered_index_loc]
+        )
+        fig_list[triggered_index_loc] = new_fig
+        fig_list = _copy_layout_attrs_for_new_fig(fig_list, triggered_index_loc)
+        return fig_list, processed_graph_store
 
-#     spectraLogger.info(f"new annotation detected. Storing.")
+    graph_triggered = triggered_id["type"] == _imageIDS.graph
+    if graph_triggered:
+        # check if we just added this graph
+        if graph_dict not in processed_graph_store["graph_ids"]:
+            spectraLogger.info(f"processing new graph {graph_dict}")
+            processed_graph_store["graph_ids"].append(graph_dict)
+            new_fig = _get_new_im(
+                sample_name, user_store, slider_range_list[triggered_index_loc]
+            )
+            fig_list[triggered_index_loc] = new_fig
+            fig_list = _copy_layout_attrs_for_new_fig(fig_list, triggered_index_loc)
+            return fig_list, processed_graph_store
 
-#     shapes = set()
-#     has_shapes = False
-#     for index, relayout_data in enumerate(relayout_data_list):
-#         spectraLogger.info(f"Checking {index}")
-#         spectraLogger.info(relayout_data)
-#         if 'shapes' in relayout_data:
-#             spectraLogger.info(f"{index} has shape")
-#             has_shapes = True
-#             shape_data = [json.dumps(shp) for shp in relayout_data["shapes"]]
-#             shapes = shapes.union(set(shape_data))
+        # finally, sync a number of relayouts
+        relay = relayout_data_list[triggered_index_loc]
+        spectraLogger.info(f"relay keys: {relay.keys()}")
+        relay_update = {}
+        update_layout = False
 
-#     if has_shapes:
-#         spectraLogger.info("at least one has shapes, merging")
-#         new_shapes = []
-#         for shp in shapes:
-#             spectraLogger.info(shp)
-#             new_shapes.append(json.loads(shp))
+        # copy over these keys fully
+        for relay_key in ["shapes", "dragmode"]:
+            if relay_key in relay:
+                update_layout = True
+                relay_update[relay_key] = relay[relay_key]
 
-#         # spectraLogger.info(f"merged {len(shapes)} shapes")
-#         # new_relay_outs = []
-#         # for relayout_data in current_relayout_data_list:
-#         #     relayout_data['shapes'] = new_shapes
-#         #     new_relay_outs.append(relayout_data)
+        # handle any updates to axes by copying over the modified
+        # axis to all others
+        joined_relay_keys = " ".join(relay.keys())
+        for ax in ["xaxis", "yaxis"]:
+            if ax in joined_relay_keys:
+                relay_update[ax] = fig_list[triggered_index_loc]["layout"][ax]
+                update_layout = True
 
-#         # # spectraLogger.info("new shapes")
-#         # # spectraLogger.info(new_relay_outs)
+        # apply the layout updates
+        if update_layout:
+            new_fig_list = _sync_layouts(relay_update, fig_list)
+            return new_fig_list, processed_graph_store
 
-#         return [new_shapes for _ in range(len(relayout_data_list))]
-
-#     spectraLogger.info("no shapes")
-#     return [no_update for _ in range(len(relayout_data_list))]
-#     # #     if index == id:
-#     # #         return {'shapes': relayout_data["shapes"] }
-
-#     # # # return relayout_data
-#     # if "shapes" in relayout_data:
-#     #     spectraLogger.info("shapes are")
-#     #     import json
-#     #     spectraLogger.info(json.dumps(relayout_data["shapes"],indent=2))
-#     #     return {'shapes': relayout_data["shapes"] }
-#     # # else:
-#     # #     spectraLogger.info('no shapes in relayout')
-#     # #     spectraLogger.info(relayout_data)
-#     # return {'shapes': []}
+    return [
+        no_update,
+    ] * len(fig_list), processed_graph_store
