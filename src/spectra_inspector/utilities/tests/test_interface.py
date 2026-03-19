@@ -7,6 +7,20 @@ from spectra_inspector.utilities.interface import SpectraInspectorServerInterfac
 from spectra_inspector.utilities.model import Spectrum1dDict
 
 
+def test_init():
+    host = "123.456.789"
+    port = 999
+    protocol = "https"
+    sisi = SpectraInspectorServerInterface(host=host, port=port, protocol=protocol)
+
+    endpoint = "not_an_endpoint"
+    expected_base_uri = f"{protocol}://{host}:{port}"
+    assert sisi.uri == expected_base_uri
+    uri = sisi._get_endpoint(endpoint)
+    assert uri == f"{expected_base_uri}/{endpoint}"
+    assert sisi.connected is False
+
+
 def test_available_datasets(mocker):
 
     mock_response = mocker.Mock()
