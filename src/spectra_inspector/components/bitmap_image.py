@@ -5,6 +5,7 @@ from dash_bootstrap_components import Button
 class bitmapImageLayoutIDs:
     id_type_base: str
     index: int | None
+    prop_names: tuple[str, ...] = ("div", "graph", "slider", "refresh", "delete")
 
     def __init__(
         self, id_type_base: str = "bitmap-image", index: int | None = None

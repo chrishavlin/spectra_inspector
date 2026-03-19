@@ -41,8 +41,12 @@ class SpectraInspectorServerInterface:
     @property
     def connected(self):
         uri = self._get_endpoint("info")
-        r = requests.get(uri)
-        return r.status_code == 200
+        try:
+            r = requests.get(uri)
+        except requests.exceptions.ConnectionError:
+            return False
+        else:
+            return r.status_code == 200
 
     def get_info(self) -> model.Info:
         uri = self._get_endpoint("info")
