@@ -123,16 +123,16 @@ def layout(sample_name: str | None = None, **kwargs):  # noqa: ARG001
         )
     )
 
-    im_container = html.Div(
-        [
-            dcc.Loading(
+    im_container = dcc.Loading(
+        html.Div(
+            [
                 html.Div([], id=_IDS.image_container, className="row"),
-                id="full-im-container-loading",
-                overlay_style={"visibility": "visible", "filter": "blur(2px)"},
-                type="circle",
-            )
-        ],
-        className="container",
+            ],
+            className="container",
+        ),
+        id="full-im-container-loading",
+        overlay_style={"visibility": "visible", "filter": "blur(2px)"},
+        type="circle",
     )
     # im_container
     _layout_list.append(im_container)
@@ -185,7 +185,10 @@ def layout(sample_name: str | None = None, **kwargs):  # noqa: ARG001
     Output(_IDS.full_spectrum_store, "data"),
     Input(_IDS.sample_name, "children"),
     Input(_IDS.full_spectrum_store, "data"),
-    running=(Output("spectrum-loading", "display"), "show", "hide"),
+    running=[
+        (Output("spectrum-loading", "display"), "show", "hide"),
+        (Output(_IDS.add_image, "disabled"), True, False),
+    ],
 )
 def initialize_full_spectrum_data(sample_name: str | None, spectrum_store: dict | None):
 
@@ -208,7 +211,10 @@ def initialize_full_spectrum_data(sample_name: str | None, spectrum_store: dict 
     Input(_IDS.full_spectrum_store, "data"),
     State(_IDS.sample_name, "children"),
     State(_IDS.spectrum_container, "figure"),
-    running=(Output("spectrum-loading", "display"), "show", "hide"),
+    running=[
+        (Output("spectrum-loading", "display"), "show", "hide"),
+        (Output(_IDS.add_image, "disabled"), True, False),
+    ],
     prevent_initial_call=True,
 )
 def update_spectrum(
@@ -309,6 +315,9 @@ def _find_id_in_list(
     Input({"type": _imageIDS.delete, "index": ALL}, "n_clicks"),
     State(_IDS.image_container, "children"),
     State(_IDS.graph_id_store, "data"),
+    running=[
+        (Output(_IDS.add_image, "disabled"), True, False),
+    ],
 )
 def add_or_delete_image(
     n_clicks: int | None,
@@ -434,7 +443,10 @@ def _copy_layout_attrs_for_new_fig(
     State("sample-name", "children"),
     State({"type": _imageIDS.graph, "index": ALL}, "figure"),
     State(_IDS.shapes_store, "data"),
-    running=[Output("full-im-container-loading", "display"), "show", "hide"],
+    running=[
+        (Output("full-im-container-loading", "display"), "show", "hide"),
+        (Output(_IDS.add_image, "disabled"), True, False),
+    ],
 )
 def update_graph_figure(
     n_clicks: list[int | None],
