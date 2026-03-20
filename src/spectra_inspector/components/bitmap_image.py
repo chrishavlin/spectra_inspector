@@ -28,7 +28,7 @@ class bitmapImageLayoutIDs:
         "refresh",
         "delete",
         "colorscale",
-        "loading-overlay",
+        "loadingoverlay",
     )
 
     def __init__(
@@ -62,8 +62,8 @@ class bitmapImageLayoutIDs:
         return self.full_id("-colorscale")
 
     @property
-    def loading_overlay(self) -> str:
-        return self.full_id("-loading-overlay")
+    def loadingoverlay(self) -> str:
+        return self.full_id("-loadingoverlay")
 
     def full_id(self, id_suffix: str) -> str:
         return self.id_type_base + id_suffix
@@ -104,7 +104,7 @@ def bitmap_image_layout(
                 "displaylogo": False,
             },
         ),
-        id=imIDs.loading_overlay,
+        id=imIDs.loadingoverlay,
         overlay_style={"visibility": "visible", "filter": "blur(2px)"},
         type="circle",
         delay_hide=2000,
