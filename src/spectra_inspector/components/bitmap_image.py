@@ -28,6 +28,7 @@ class bitmapImageLayoutIDs:
         "refresh",
         "delete",
         "colorscale",
+        "loading-overlay",
     )
 
     def __init__(
@@ -60,6 +61,10 @@ class bitmapImageLayoutIDs:
     def colorscale(self) -> str:
         return self.full_id("-colorscale")
 
+    @property
+    def loading_overlay(self) -> str:
+        return self.full_id("-loading-overlay")
+
     def full_id(self, id_suffix: str) -> str:
         return self.id_type_base + id_suffix
 
@@ -85,18 +90,24 @@ def bitmap_image_layout(
 
     imIDs = bitmapImageLayoutIDs(id_type_base=id_type_base, index=index)
 
-    fig_image = dcc.Graph(
-        id=imIDs.get_id_with_index("graph"),
-        config={
-            "modeBarButtonsToAdd": [
-                # "drawclosedpath",
-                # "drawcircle",
-                "drawrect",
-                "eraseshape",
-            ],
-            "displayModeBar": True,
-            "displaylogo": False,
-        },
+    fig_image = dcc.Loading(
+        dcc.Graph(
+            id=imIDs.get_id_with_index("graph"),
+            config={
+                "modeBarButtonsToAdd": [
+                    # "drawclosedpath",
+                    # "drawcircle",
+                    "drawrect",
+                    "eraseshape",
+                ],
+                "displayModeBar": True,
+                "displaylogo": False,
+            },
+        ),
+        id=imIDs.loading_overlay,
+        overlay_style={"visibility": "visible", "filter": "blur(2px)"},
+        type="circle",
+        delay_hide=2000,
     )
 
     energy_range = dcc.RangeSlider(
@@ -142,14 +153,14 @@ def bitmap_image_layout(
         [
             _controls_row_1,
             _controls_row_2,
-            dbc.Row(dbc.Col(fig_image)),
+            dbc.Row(dbc.Col(fig_image), align="center"),
         ],
         id=imIDs.get_id_with_index("div"),
-        className="col-lg-4",
         style={
             "padding": "5px",
             "backgroundColor": bg_hexcolor,
-            "border": "2px black solid",
+            "min-height": "600px",
+            # "border": "2px black solid",
         },
     )
 
