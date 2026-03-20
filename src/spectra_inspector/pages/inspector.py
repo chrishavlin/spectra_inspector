@@ -1,4 +1,5 @@
 import dash
+import dash_bootstrap_components as dbc
 import numpy as np
 import numpy.typing as npt
 import pandas as pd
@@ -107,35 +108,54 @@ def get_initial_figure(sample_name: str | None):
     return {}, None
 
 
+def _get_div_store() -> html.Div:
+    return html.Div(
+        [
+            dcc.Store(
+                id=_IDS.graph_id_store,
+                storage_type="memory",
+                data={},
+            ),
+            dcc.Store(
+                id=_IDS.processed_graph_id_store,
+                storage_type="memory",
+                data={},
+            ),
+            dcc.Store(
+                id=_IDS.shapes_store,
+                storage_type="memory",
+                data={},
+            ),
+            dcc.Store(id=_IDS.full_spectrum_store, storage_type="memory", data={}),
+        ]
+    )
+
+
 def layout(sample_name: str | None = None, **kwargs):  # noqa: ARG001
 
-    _layout_list = []
-    _layout_list.append(
-        html.Div(selected_sample_contents(sample_name), id=_IDS.sample_name)
-    )
-    _layout_list.append(html.Div(hidden=True, id=_IDS.metadata))
-
-    _layout_list.append(
-        html.Div(
-            [
-                Button("Add Image", id=_IDS.add_image, n_clicks=0),
-            ]
+    _layout_rows = []
+    _layout_rows.append(
+        dbc.Row(
+            dbc.Col(
+                html.Div(selected_sample_contents(sample_name), id=_IDS.sample_name),
+                width=12,
+            )
         )
     )
+    _layout_rows.append(html.Div(hidden=True, id=_IDS.metadata))
 
-    im_container = html.Div(
-        [
-            dcc.Loading(
-                html.Div([], id=_IDS.image_container, className="row"),
-                id="full-im-container-loading",
-                overlay_style={"visibility": "visible", "filter": "blur(2px)"},
-                type="circle",
-            )
-        ],
-        className="container",
+    _layout_rows.append(
+        dbc.Row(dbc.Col(Button("Add Image", id=_IDS.add_image, n_clicks=0), width=12))
+    )
+
+    im_container = dcc.Loading(
+        dbc.Row([], id=_IDS.image_container, className="g-0"),
+        id="full-im-container-loading",
+        overlay_style={"visibility": "visible", "filter": "blur(2px)"},
+        type="circle",
     )
     # im_container
-    _layout_list.append(im_container)
+    _layout_rows.append(im_container)
 
     spectrum_graph = dcc.Loading(
         dcc.Graph(
@@ -143,6 +163,7 @@ def layout(sample_name: str | None = None, **kwargs):  # noqa: ARG001
             config={
                 "displayModeBar": True,
                 "displaylogo": False,
+                "scrollZoom": True,
             },
         ),
         id="spectrum-loading",
@@ -150,42 +171,27 @@ def layout(sample_name: str | None = None, **kwargs):  # noqa: ARG001
         type="circle",
     )
 
-    spectrum_div = html.Div(
-        [spectrum_graph], className="container", style={"padding": "10px"}
-    )
+    spectrum_div = dbc.Row(dbc.Col(spectrum_graph, width=12))
 
-    _layout_list.append(
-        html.Div(
-            [
-                dcc.Store(
-                    id=_IDS.graph_id_store,
-                    storage_type="memory",
-                    data={},
-                ),
-                dcc.Store(
-                    id=_IDS.processed_graph_id_store,
-                    storage_type="memory",
-                    data={},
-                ),
-                dcc.Store(
-                    id=_IDS.shapes_store,
-                    storage_type="memory",
-                    data={},
-                ),
-                dcc.Store(id=_IDS.full_spectrum_store, storage_type="memory", data={}),
-            ]
-        )
+    _layout_rows.append(_get_div_store())
+    _layout_rows.append(spectrum_div)
+    return html.Div(
+        _layout_rows,
+        className="container",
+        style={
+            "max-width": "6000px",
+        },
     )
-
-    _layout_list.append(spectrum_div)
-    return html.Div(_layout_list)
 
 
 @callback(
     Output(_IDS.full_spectrum_store, "data"),
     Input(_IDS.sample_name, "children"),
     Input(_IDS.full_spectrum_store, "data"),
-    running=(Output("spectrum-loading", "display"), "show", "hide"),
+    running=[
+        (Output("spectrum-loading", "display"), "show", "hide"),
+        (Output(_IDS.add_image, "disabled"), True, False),
+    ],
 )
 def initialize_full_spectrum_data(sample_name: str | None, spectrum_store: dict | None):
 
@@ -208,7 +214,10 @@ def initialize_full_spectrum_data(sample_name: str | None, spectrum_store: dict 
     Input(_IDS.full_spectrum_store, "data"),
     State(_IDS.sample_name, "children"),
     State(_IDS.spectrum_container, "figure"),
-    running=(Output("spectrum-loading", "display"), "show", "hide"),
+    running=[
+        (Output("spectrum-loading", "display"), "show", "hide"),
+        (Output(_IDS.add_image, "disabled"), True, False),
+    ],
     prevent_initial_call=True,
 )
 def update_spectrum(
@@ -228,11 +237,19 @@ def update_spectrum(
         # now we have data but no figure, create it
         energy = full_spectrum_store["energy"]
         intensity = full_spectrum_store["intensity"]
-        spectraLogger.info("creating full spectrum plotttttt")
         current_figure = go.Figure()
         current_figure.add_trace(
-            go.Scatter(x=energy, y=intensity, mode="lines", name="Full energy range")
+            go.Scatter(
+                x=energy,
+                y=intensity,
+                mode="lines",
+                name="Full energy range",
+            )
         )
+
+        current_figure.update_xaxes(title_text="Energy (keV)")
+        current_figure.update_yaxes(title_text="Intensity")
+        current_figure.update_xaxes(autorangeoptions_maxallowed=8)
         return current_figure
 
     # finally, we have a figure, but only update if the annotations have changed
@@ -309,6 +326,9 @@ def _find_id_in_list(
     Input({"type": _imageIDS.delete, "index": ALL}, "n_clicks"),
     State(_IDS.image_container, "children"),
     State(_IDS.graph_id_store, "data"),
+    running=[
+        (Output(_IDS.add_image, "disabled"), True, False),
+    ],
 )
 def add_or_delete_image(
     n_clicks: int | None,
@@ -331,7 +351,7 @@ def add_or_delete_image(
         new_image_div, imIDs = bitmap_image_layout(
             id_index, id_type_base=_IDS.image_container_type
         )
-        patched_children.append(new_image_div)
+        patched_children.append(dbc.Col(new_image_div, width=4))
         new_div_id = imIDs.get_id_with_index("div")
         graph_id_store["active_div_ids"].append(new_div_id)
         return patched_children, graph_id_store
@@ -374,13 +394,15 @@ def _get_new_im(
         im = sisi.image_data_summed(sample_name, (indx0, indx1))
         im_data = np.array(im.image).reshape(im.shape)
 
-    fig = px.imshow(im_data, color_continuous_scale=color_scale)
+    fig = px.imshow(im_data, color_continuous_scale=color_scale, height=600)
     fig.update_layout(
         coloraxis_showscale=False,
-        margin_b=10,
-        margin_l=10,
-        margin_r=10,
-        margin_t=10,
+        margin_b=0,
+        margin_l=0,
+        margin_r=0,
+        margin_t=50,
+        autosize=True,
+        # pad=0
     )
 
     return fig
@@ -434,7 +456,10 @@ def _copy_layout_attrs_for_new_fig(
     State("sample-name", "children"),
     State({"type": _imageIDS.graph, "index": ALL}, "figure"),
     State(_IDS.shapes_store, "data"),
-    running=[Output("full-im-container-loading", "display"), "show", "hide"],
+    running=[
+        (Output("full-im-container-loading", "display"), "show", "hide"),
+        (Output(_IDS.add_image, "disabled"), True, False),
+    ],
 )
 def update_graph_figure(
     n_clicks: list[int | None],
