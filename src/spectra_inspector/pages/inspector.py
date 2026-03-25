@@ -21,6 +21,7 @@ from dash_bootstrap_components import Button
 from pydantic import BaseModel
 
 from spectra_inspector.components import bitmap_image_layout, bitmapImageLayoutIDs
+from spectra_inspector.components.energy_range_slider import elementDropdownSliderIDS
 from spectra_inspector.logging import spectraLogger
 from spectra_inspector.user_store_model import USER_STORE_DIV_ID, UserStore
 from spectra_inspector.utilities.coerce import (
@@ -91,6 +92,7 @@ class inspectorIDs(BaseModel):
 
 _IDS = inspectorIDs()
 _imageIDS = bitmapImageLayoutIDs()
+_imageSliderIds = elementDropdownSliderIDS()
 
 
 def get_initial_figure(sample_name: str | None):
@@ -449,7 +451,7 @@ def _copy_layout_attrs_for_new_fig(
     Input({"type": _imageIDS.refresh, "index": ALL}, "n_clicks"),
     Input({"type": _imageIDS.graph, "index": ALL}, "relayoutData"),
     Input({"type": _imageIDS.colorscale, "index": ALL}, "value"),
-    State({"type": _imageIDS.slider, "index": ALL}, "value"),
+    State({"type": _imageSliderIds.slider, "index": ALL}, "value"),
     State({"type": _imageIDS.graph, "index": ALL}, "id"),
     State(USER_STORE_DIV_ID, "data"),
     State(_IDS.processed_graph_id_store, "data"),

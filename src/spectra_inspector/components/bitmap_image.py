@@ -3,6 +3,11 @@ import plotly.express as px
 from dash import dcc, html
 from dash_bootstrap_components import Button
 
+from spectra_inspector.components.energy_range_slider import (
+    get_element_dropdown_and_slider,
+)
+from spectra_inspector.components.layout_ids import indexedLayoutIDMapper
+
 
 def _get_sequential_colorscales() -> list[str]:
     _all_colors = px.colors.named_colorscales()
@@ -18,13 +23,10 @@ def _get_sequential_colorscales() -> list[str]:
 _colorscales = _get_sequential_colorscales()
 
 
-class bitmapImageLayoutIDs:
-    id_type_base: str
-    index: int | None
+class bitmapImageLayoutIDs(indexedLayoutIDMapper):
     prop_names: tuple[str, ...] = (
         "div",
         "graph",
-        "slider",
         "refresh",
         "delete",
         "colorscale",
@@ -34,20 +36,11 @@ class bitmapImageLayoutIDs:
     def __init__(
         self, id_type_base: str = "bitmap-image", index: int | None = None
     ) -> None:
-        self.id_type_base = id_type_base
-        self.index = index
-
-    @property
-    def div(self) -> str:
-        return self.full_id("-div")
+        super().__init__(id_type_base, index)
 
     @property
     def graph(self) -> str:
         return self.full_id("-graph")
-
-    @property
-    def slider(self) -> str:
-        return self.full_id("-slider")
 
     @property
     def refresh(self) -> str:
@@ -65,15 +58,6 @@ class bitmapImageLayoutIDs:
     def loadingoverlay(self) -> str:
         return self.full_id("-loadingoverlay")
 
-    def full_id(self, id_suffix: str) -> str:
-        return self.id_type_base + id_suffix
-
-    def get_id_with_index(self, prop: str) -> dict[str, str | int]:
-        full_id: dict[str, str | int] = {"type": str(getattr(self, prop))}
-        if self.index is not None:
-            full_id["index"] = self.index
-        return full_id
-
 
 def bitmap_image_layout(
     index: int,
@@ -83,7 +67,6 @@ def bitmap_image_layout(
     delete_button_label: str = "Delete Image",
     slider_start: float = 0.0,
     slider_stop: float = 15.0,
-    slider_init_range: tuple[float, float] = (1.65, 1.9),
     slider_step: float = 0.1,
     colorscale: str = "blackbody",
 ) -> tuple[html.Div, bitmapImageLayoutIDs]:
@@ -110,20 +93,11 @@ def bitmap_image_layout(
         delay_hide=2000,
     )
 
-    energy_range = dcc.RangeSlider(
-        slider_start,
-        slider_stop,
-        step=slider_step,
-        value=slider_init_range,
-        id=imIDs.get_id_with_index("slider"),
-        className="text-info",
-    )
-
-    _controls_row_1 = dbc.Row(
-        [
-            dbc.Col(energy_range),
-        ],
-        align="center",
+    energy_range_selector, _ = get_element_dropdown_and_slider(
+        index=index,
+        slider_start=slider_start,
+        slider_stop=slider_stop,
+        slider_step=slider_step,
     )
 
     colormap_dropdown = dcc.Dropdown(
@@ -151,7 +125,7 @@ def bitmap_image_layout(
 
     _primary_graph_div = html.Div(
         [
-            _controls_row_1,
+            energy_range_selector,
             _controls_row_2,
             dbc.Row(dbc.Col(fig_image), align="center"),
         ],
