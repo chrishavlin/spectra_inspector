@@ -1,9 +1,7 @@
 import dash
 import dash_bootstrap_components as dbc
 import numpy as np
-import numpy.typing as npt
 import pandas as pd
-import plotly.express as px
 import plotly.graph_objects as go
 from dash import (
     ALL,
@@ -20,16 +18,21 @@ from dash import (
 from dash_bootstrap_components import Button
 from pydantic import BaseModel
 
-from spectra_inspector.components import bitmap_image_layout, bitmapImageLayoutIDs
+from spectra_inspector.components import (
+    bitmap_image_layout,
+    bitmapImageLayoutIDs,
+    get_new_im,
+)
 from spectra_inspector.components.energy_range_slider import elementDropdownSliderIDS
 from spectra_inspector.logging import spectraLogger
-from spectra_inspector.user_store_model import USER_STORE_DIV_ID, UserStore
+from spectra_inspector.user_store_model import USER_STORE_DIV_ID
 from spectra_inspector.utilities.coerce import (
+    copy_layout_attrs_for_new_fig,
     placeholder_to_spaces,
     plotly_im_trace_to_array,
+    sync_layouts,
 )
 from spectra_inspector.utilities.interface import SpectraInspectorServerInterface
-from spectra_inspector.utilities.scaling import get_closest_index
 
 dash.register_page(__name__, order=1, path_template="/inspector/<sample_name>")
 
@@ -203,6 +206,7 @@ def initialize_full_spectrum_data(sample_name: str | None, spectrum_store: dict 
 
     if _valid_sample_name(sample_name) and not has_data:
         spectraLogger.info("fetching and storing full spectrum data")
+        assert isinstance(sample_name, str)
         df = get_spectrum(sample_name)
         new_store_data = {}
         new_store_data["intensity"] = df.intensity.tolist()
@@ -277,8 +281,8 @@ def update_spectrum(
             )
             df = get_spectrum(
                 sample_name,
-                index0_range=tuple(index0_range),
-                index1_range=tuple(index1_range),
+                index0_range=(index0_range[0], index0_range[1]),
+                index1_range=(index1_range[0], index1_range[1]),
             )
             name = "spatial subset"
         else:
@@ -384,82 +388,6 @@ def add_or_delete_image(
     return no_update, graph_id_store
 
 
-def _get_new_im(
-    sample_name: str,
-    user_store: dict,
-    slider_range: tuple[float, float],
-    color_scale: str,
-    im_data: npt.NDArray | None = None,
-):
-
-    assert isinstance(sample_name, str)
-    sisi = SpectraInspectorServerInterface()
-    md = UserStore(**user_store).get_metadata()
-    if md is None:
-        md = sisi.get_combined_image_metadata(sample_name)
-
-    indx0 = get_closest_index(md.axes_by_index[2], slider_range[0])
-    indx1 = get_closest_index(md.axes_by_index[2], slider_range[1])
-    msg = f"fetching image data: {sample_name}, {indx0}, {indx1}"
-    spectraLogger.info(msg)
-
-    if im_data is None:
-        im = sisi.image_data_summed(sample_name, (indx0, indx1))
-        im_data = np.array(im.image).reshape(im.shape)
-
-    fig = px.imshow(im_data, color_continuous_scale=color_scale, height=600)
-    fig.update_layout(
-        coloraxis_showscale=False,
-        margin_b=0,
-        margin_l=0,
-        margin_r=0,
-        margin_t=50,
-        autosize=True,
-        # pad=0
-    )
-
-    return fig
-
-
-def _sync_layouts(layout_update: dict, fig_list: list):
-
-    new_fig_list = []
-    for fig in fig_list:
-        if fig is not None and "layout" in fig:
-            fig["layout"].update(layout_update)
-        new_fig_list.append(fig)
-    return new_fig_list
-
-
-def _copy_layout_attrs(
-    fig_list: list, ref_fig_index: int, layout_attrs: list[str] | None = None
-):
-    if layout_attrs is None:
-        layout_attrs = ["xaxis", "yaxis", "shapes"]
-    layout_update = {}
-    for attr in layout_attrs:
-        if (
-            isinstance(fig_list[ref_fig_index], dict)
-            and "layout" in fig_list[ref_fig_index]
-        ):
-            attrval = fig_list[ref_fig_index]["layout"].get(attr, None)
-            if attrval:
-                layout_update[attr] = attrval
-    return _sync_layouts(layout_update, fig_list)
-
-
-def _copy_layout_attrs_for_new_fig(
-    fig_list: list, new_index_loc: int, layout_attrs: list[str] | None = None
-):
-    if len(fig_list) > 1:
-        if new_index_loc == 0:
-            ref_index = 1
-        else:
-            ref_index = 0
-        return _copy_layout_attrs(fig_list, ref_index, layout_attrs=layout_attrs)
-    return fig_list
-
-
 @callback(
     Output({"type": _imageIDS.graph, "index": ALL}, "figure"),
     Output(_IDS.processed_graph_id_store, "data"),
@@ -527,6 +455,7 @@ def update_graph_figure(
 
     # check for figure refresh
     colormap = colormap_choices[triggered_index_loc]
+    assert isinstance(colormap, str)
     refresh = triggered_id["type"] == _imageIDS.refresh
     if (
         refresh
@@ -536,11 +465,11 @@ def update_graph_figure(
         spectraLogger.info(
             f"refreshing image id {triggered_id}, {n_clicks[triggered_index_loc]}"
         )
-        new_fig = _get_new_im(
+        new_fig = get_new_im(
             sample_name, user_store, slider_range_list[triggered_index_loc], colormap
         )
         fig_list[triggered_index_loc] = new_fig
-        fig_list = _copy_layout_attrs_for_new_fig(fig_list, triggered_index_loc)
+        fig_list = copy_layout_attrs_for_new_fig(fig_list, triggered_index_loc)
         return fig_list, processed_graph_store, shapes_store
 
     graph_triggered = triggered_id["type"] == _imageIDS.graph
@@ -565,7 +494,7 @@ def update_graph_figure(
                     fig = fig_list[0]
                     im_array = plotly_im_trace_to_array(fig["data"][0])
 
-                new_fig = _get_new_im(
+                new_fig = get_new_im(
                     sample_name,
                     user_store,
                     slider_range_list[graph_dict["index"]],
@@ -575,7 +504,7 @@ def update_graph_figure(
                 fig_list[graph_dict["index"]] = new_fig
 
                 if initialized:
-                    fig_list = _copy_layout_attrs_for_new_fig(
+                    fig_list = copy_layout_attrs_for_new_fig(
                         fig_list, triggered_index_loc
                     )
 
@@ -612,7 +541,7 @@ def update_graph_figure(
 
         # apply the layout updates
         if update_layout:
-            new_fig_list = _sync_layouts(relay_update, fig_list)
+            new_fig_list = sync_layouts(relay_update, fig_list)
             return new_fig_list, processed_graph_store, shapes_store
 
     colormap_updated = triggered_id["type"] == _imageIDS.colorscale
@@ -622,7 +551,7 @@ def update_graph_figure(
         # convert figure data back to np array
         im_array = plotly_im_trace_to_array(fig["data"][0])
 
-        new_fig = _get_new_im(
+        new_fig = get_new_im(
             sample_name,
             user_store,
             slider_range_list[triggered_index_loc],
@@ -630,7 +559,7 @@ def update_graph_figure(
             im_data=im_array,
         )
         fig_list[triggered_index_loc] = new_fig
-        fig_list = _copy_layout_attrs_for_new_fig(fig_list, triggered_index_loc)
+        fig_list = copy_layout_attrs_for_new_fig(fig_list, triggered_index_loc)
         return fig_list, processed_graph_store, shapes_store
 
     return (
