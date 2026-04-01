@@ -1,4 +1,6 @@
 import dash_bootstrap_components as dbc
+import numpy as np
+import numpy.typing as npt
 import plotly.express as px
 from dash import dcc, html
 from dash_bootstrap_components import Button
@@ -7,6 +9,10 @@ from spectra_inspector.components.energy_range_slider import (
     get_element_dropdown_and_slider,
 )
 from spectra_inspector.components.layout_ids import indexedLayoutIDMapper
+from spectra_inspector.logging import spectraLogger
+from spectra_inspector.user_store_model import UserStore
+from spectra_inspector.utilities.interface import SpectraInspectorServerInterface
+from spectra_inspector.utilities.scaling import get_closest_index
 
 
 def _get_sequential_colorscales() -> list[str]:
@@ -141,3 +147,41 @@ def bitmap_image_layout(
     )
 
     return _primary_graph_div, imIDs
+
+
+def get_new_im(
+    sample_name: str,
+    user_store: dict,
+    slider_range: tuple[float, float],
+    color_scale: str,
+    im_data: npt.NDArray | None = None,
+    im_height: int = 600,
+):
+
+    assert isinstance(sample_name, str)
+    sisi = SpectraInspectorServerInterface()
+    md = UserStore(**user_store).get_metadata()
+    if md is None:
+        md = sisi.get_combined_image_metadata(sample_name)
+
+    indx0 = get_closest_index(md.axes_by_index[2], slider_range[0])
+    indx1 = get_closest_index(md.axes_by_index[2], slider_range[1])
+    msg = f"fetching image data: {sample_name}, {indx0}, {indx1}"
+    spectraLogger.info(msg)
+
+    if im_data is None:
+        im = sisi.image_data_summed(sample_name, (indx0, indx1))
+        im_data = np.array(im.image).reshape(im.shape)
+
+    fig = px.imshow(im_data, color_continuous_scale=color_scale, height=im_height)
+    fig.update_layout(
+        coloraxis_showscale=False,
+        margin_b=0,
+        margin_l=0,
+        margin_r=0,
+        margin_t=50,
+        autosize=True,
+        # pad=0
+    )
+
+    return fig
