@@ -66,6 +66,7 @@ def update_selected_dataset(
         md = Markdown("")
 
     new_user_data = updateDataStore(current_user_data, "metadata_json", meta_json_str)
+    new_user_data = updateDataStore(new_user_data, "selected_dataset", input_value)
 
     valid_input_vale = spaces_to_placeholder(input_value)
     nl = NavLink(
