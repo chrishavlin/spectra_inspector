@@ -9,6 +9,7 @@ from spectra_inspector.components.energy_range_slider import (
     get_element_dropdown_and_slider,
 )
 from spectra_inspector.components.layout_ids import indexedLayoutIDMapper
+from spectra_inspector.components.scalebar import scalebarHandler
 from spectra_inspector.logging import spectraLogger
 from spectra_inspector.user_store_model import UserStore
 from spectra_inspector.utilities.interface import SpectraInspectorServerInterface
@@ -150,27 +151,24 @@ def bitmap_image_layout(
 
 
 def get_new_im(
-    sample_name: str,
-    user_store: dict,
+    user_store: UserStore,
     slider_range: tuple[float, float],
     color_scale: str,
     im_data: npt.NDArray | None = None,
     im_height: int = 600,
+    scalebar_handler: scalebarHandler | None = None,
 ):
 
-    assert isinstance(sample_name, str)
     sisi = SpectraInspectorServerInterface()
-    md = UserStore(**user_store).get_metadata()
-    if md is None:
-        md = sisi.get_combined_image_metadata(sample_name)
-
+    md = user_store.conditionally_fetch_metadata()
+    assert md is not None
     indx0 = get_closest_index(md.axes_by_index[2], slider_range[0])
     indx1 = get_closest_index(md.axes_by_index[2], slider_range[1])
-    msg = f"fetching image data: {sample_name}, {indx0}, {indx1}"
+    msg = f"fetching image data: {user_store.selected_dataset}, {indx0}, {indx1}"
     spectraLogger.info(msg)
 
     if im_data is None:
-        im = sisi.image_data_summed(sample_name, (indx0, indx1))
+        im = sisi.image_data_summed(user_store.selected_dataset, (indx0, indx1))
         im_data = np.array(im.image).reshape(im.shape)
 
     fig = px.imshow(im_data, color_continuous_scale=color_scale, height=im_height)
@@ -183,5 +181,10 @@ def get_new_im(
         autosize=True,
         # pad=0
     )
+    fig.update_xaxes(showticklabels=False)
+    fig.update_yaxes(showticklabels=False)
+
+    if scalebar_handler is not None:
+        scalebar_handler.add_to_or_update_figure(fig, md)
 
     return fig

@@ -24,8 +24,9 @@ from spectra_inspector.components import (
     get_new_im,
 )
 from spectra_inspector.components.energy_range_slider import elementDropdownSliderIDS
+from spectra_inspector.components.scalebar import scalebarHandler
 from spectra_inspector.logging import spectraLogger
-from spectra_inspector.user_store_model import USER_STORE_DIV_ID
+from spectra_inspector.user_store_model import USER_STORE_DIV_ID, UserStore
 from spectra_inspector.utilities.coerce import (
     copy_layout_attrs_for_new_fig,
     placeholder_to_spaces,
@@ -37,6 +38,8 @@ from spectra_inspector.utilities.interface import SpectraInspectorServerInterfac
 dash.register_page(__name__, order=1, path_template="/inspector/<sample_name>")
 
 NUMBER_OF_INITIAL_FIGURES = 3
+
+scalebar_handler = scalebarHandler()
 
 
 def _valid_sample_name(sample_name: str | None):
@@ -415,7 +418,7 @@ def update_graph_figure(
     graph_id_store: dict,
     slider_range_list: list[tuple[float, float]],
     graph_ids: list[dict[str, str | int]],
-    user_store: dict,
+    user_store_dict: dict,
     processed_graph_store: dict,
     sample_name: str,
     fig_list: list,
@@ -427,6 +430,10 @@ def update_graph_figure(
 
     if "active_shapes" not in shapes_store:
         shapes_store["active_shapes"] = []
+
+    if "selected_dataset" not in user_store_dict:
+        user_store_dict["selected_dataset"] = sample_name
+    user_store = UserStore(**user_store_dict)
 
     triggered_id = ctx.triggered_id
     if triggered_id is None:
@@ -466,7 +473,10 @@ def update_graph_figure(
             f"refreshing image id {triggered_id}, {n_clicks[triggered_index_loc]}"
         )
         new_fig = get_new_im(
-            sample_name, user_store, slider_range_list[triggered_index_loc], colormap
+            user_store,
+            slider_range_list[triggered_index_loc],
+            colormap,
+            scalebar_handler=scalebar_handler,
         )
         fig_list[triggered_index_loc] = new_fig
         fig_list = copy_layout_attrs_for_new_fig(fig_list, triggered_index_loc)
@@ -495,11 +505,11 @@ def update_graph_figure(
                     im_array = plotly_im_trace_to_array(fig["data"][0])
 
                 new_fig = get_new_im(
-                    sample_name,
                     user_store,
                     slider_range_list[graph_dict["index"]],
                     colormap,
                     im_data=im_array,
+                    scalebar_handler=scalebar_handler,
                 )
                 fig_list[graph_dict["index"]] = new_fig
 
@@ -541,7 +551,16 @@ def update_graph_figure(
 
         # apply the layout updates
         if update_layout:
+            # sync once to get layout synced across
             new_fig_list = sync_layouts(relay_update, fig_list)
+
+            # update the scalebar trace
+            md = user_store.conditionally_fetch_metadata()
+            if md is not None:
+                for fig in new_fig_list:
+                    scalebar_handler.add_to_or_update_figure(fig, md)
+                # sync again as the ranges can get adjusted when adding a trace
+                new_fig_list = sync_layouts(relay_update, new_fig_list)
             return new_fig_list, processed_graph_store, shapes_store
 
     colormap_updated = triggered_id["type"] == _imageIDS.colorscale
@@ -552,11 +571,11 @@ def update_graph_figure(
         im_array = plotly_im_trace_to_array(fig["data"][0])
 
         new_fig = get_new_im(
-            sample_name,
             user_store,
             slider_range_list[triggered_index_loc],
             colormap,
             im_data=im_array,
+            scalebar_handler=scalebar_handler,
         )
         fig_list[triggered_index_loc] = new_fig
         fig_list = copy_layout_attrs_for_new_fig(fig_list, triggered_index_loc)
