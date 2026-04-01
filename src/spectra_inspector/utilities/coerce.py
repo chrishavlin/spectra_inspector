@@ -38,7 +38,7 @@ def _copy_layout_attrs(
     fig_list: list, ref_fig_index: int, layout_attrs: list[str] | None = None
 ):
     if layout_attrs is None:
-        layout_attrs = ["xaxis", "yaxis", "shapes"]
+        layout_attrs = ["xaxis", "yaxis", "shapes", "annotations"]
     layout_update = {}
     for attr in layout_attrs:
         if (
