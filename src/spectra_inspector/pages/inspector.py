@@ -28,6 +28,7 @@ from spectra_inspector.components.scalebar import scalebarHandler
 from spectra_inspector.logging import spectraLogger
 from spectra_inspector.user_store_model import USER_STORE_DIV_ID, UserStore
 from spectra_inspector.utilities.coerce import (
+    copy_layout_attrs,
     copy_layout_attrs_for_new_fig,
     placeholder_to_spaces,
     plotly_im_trace_to_array,
@@ -528,6 +529,28 @@ def update_graph_figure(
 
         # finally, sync a number of relayouts
         relay = relayout_data_list[triggered_index_loc]
+        if relay == {
+            "xaxis.autorange": True,
+            "xaxis.showspikes": False,
+            "yaxis.autorange": True,
+            "yaxis.showspikes": False,
+        }:
+            new_list = []
+            for igraph in range(len(fig_list)):
+                im_array = plotly_im_trace_to_array(fig_list[igraph]["data"][0])
+                new_fig = get_new_im(
+                    user_store,
+                    slider_range_list[igraph],
+                    colormap,
+                    im_data=im_array,
+                    scalebar_handler=scalebar_handler,
+                )
+                new_list.append(new_fig)
+
+            new_list = copy_layout_attrs(new_list, fig_list[0], layout_attrs=["shapes"])
+
+            return new_list, processed_graph_store, shapes_store
+
         relay_update = {}
         update_layout = False
 

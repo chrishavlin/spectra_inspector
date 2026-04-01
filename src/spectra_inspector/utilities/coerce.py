@@ -34,18 +34,13 @@ def sync_layouts(layout_update: dict, fig_list: list):
     return new_fig_list
 
 
-def _copy_layout_attrs(
-    fig_list: list, ref_fig_index: int, layout_attrs: list[str] | None = None
-):
+def copy_layout_attrs(fig_list: list, ref_fig, layout_attrs: list[str] | None = None):
     if layout_attrs is None:
         layout_attrs = ["xaxis", "yaxis", "shapes", "annotations"]
     layout_update = {}
     for attr in layout_attrs:
-        if (
-            isinstance(fig_list[ref_fig_index], dict)
-            and "layout" in fig_list[ref_fig_index]
-        ):
-            attrval = fig_list[ref_fig_index]["layout"].get(attr, None)
+        if isinstance(ref_fig, dict) and "layout" in ref_fig:
+            attrval = ref_fig["layout"].get(attr, None)
             if attrval:
                 layout_update[attr] = attrval
     return sync_layouts(layout_update, fig_list)
@@ -59,5 +54,6 @@ def copy_layout_attrs_for_new_fig(
             ref_index = 1
         else:
             ref_index = 0
-        return _copy_layout_attrs(fig_list, ref_index, layout_attrs=layout_attrs)
+        ref_fig = fig_list[ref_index]
+        return copy_layout_attrs(fig_list, ref_fig, layout_attrs=layout_attrs)
     return fig_list
