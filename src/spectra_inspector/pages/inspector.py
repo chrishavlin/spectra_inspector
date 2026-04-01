@@ -26,7 +26,7 @@ from spectra_inspector.components import (
 from spectra_inspector.components.energy_range_slider import elementDropdownSliderIDS
 from spectra_inspector.components.scalebar import scalebarHandler
 from spectra_inspector.logging import spectraLogger
-from spectra_inspector.user_store_model import USER_STORE_DIV_ID, UserStore
+from spectra_inspector.user_store_model import USER_STORE_DIV_ID
 from spectra_inspector.utilities.coerce import (
     copy_layout_attrs_for_new_fig,
     placeholder_to_spaces,
