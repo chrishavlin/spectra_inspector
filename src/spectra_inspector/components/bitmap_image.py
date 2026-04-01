@@ -181,8 +181,8 @@ def get_new_im(
         autosize=True,
         # pad=0
     )
-    fig.update_xaxes(showticklabels=False)
-    fig.update_yaxes(showticklabels=False)
+    fig.update_xaxes(visible=False)
+    fig.update_yaxes(visible=False)
 
     if scalebar_handler is not None:
         scalebar_handler.add_to_or_update_figure(fig, md)
