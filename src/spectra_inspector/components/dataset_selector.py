@@ -12,7 +12,7 @@ def dataset_selector(sisi: SpectraInspectorServerInterface) -> html.Div:
         all_data = _available + datasets.available_files
         _menu_items = [
             {
-                "label": html.Span([fi], style={"color": "black", "font-size": 14}),
+                "label": html.Span([fi], style={"color": "black", "fontSize": 14}),
                 "value": fi,
             }
             for fi in all_data

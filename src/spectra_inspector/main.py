@@ -32,11 +32,11 @@ SIDEBAR_STYLE = {
     "bottom": 0,
     "width": "16rem",
     "padding": "2rem 1rem",
-    "border-right": "solid",
+    "borderRight": "solid",
 }
 CONTENT_STYLE = {
-    "margin-left": "18rem",
-    "margin-right": "2rem",
+    "marginLeft": "18rem",
+    "marginRight": "2rem",
     "padding": "2rem 1rem",
 }
 
@@ -70,7 +70,7 @@ sidebar = html.Div(
 )
 
 # Title
-title = dcc.Markdown("", style={"font-size": 30})
+title = html.Div("")
 
 # Content
 content = html.Div(dash.page_container, id="page-content", style=CONTENT_STYLE)
@@ -78,7 +78,7 @@ content = html.Div(dash.page_container, id="page-content", style=CONTENT_STYLE)
 # App Layout
 app.layout = html.Div(
     [
-        dbc.Row([dbc.Col([title], style={"text-align": "center", "margin": "auto"})]),
+        dbc.Row([dbc.Col([title], style={"textAlign": "center", "margin": "auto"})]),
         sidebar,
         dcc.Store(
             id=USER_STORE_DIV_ID,

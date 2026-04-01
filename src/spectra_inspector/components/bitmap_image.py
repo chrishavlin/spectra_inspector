@@ -142,7 +142,7 @@ def bitmap_image_layout(
         style={
             "padding": "5px",
             "backgroundColor": bg_hexcolor,
-            "min-height": "600px",
+            "minHeight": "600px",
             # "border": "2px black solid",
         },
     )
