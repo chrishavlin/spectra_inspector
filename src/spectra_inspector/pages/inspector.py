@@ -33,6 +33,8 @@ from spectra_inspector.utilities.scaling import get_closest_index
 
 dash.register_page(__name__, order=1, path_template="/inspector/<sample_name>")
 
+NUMBER_OF_INITIAL_FIGURES = 3
+
 
 def _valid_sample_name(sample_name: str | None):
     return (
@@ -114,14 +116,14 @@ def _get_div_store() -> html.Div:
     return html.Div(
         [
             dcc.Store(
-                id=_IDS.graph_id_store,
+                id=_IDS.graph_id_store,  # div id tracking
                 storage_type="memory",
-                data={},
+                data={"initialized": False},
             ),
             dcc.Store(
-                id=_IDS.processed_graph_id_store,
+                id=_IDS.processed_graph_id_store,  # figure data
                 storage_type="memory",
-                data={},
+                data={"initialized": False},
             ),
             dcc.Store(
                 id=_IDS.shapes_store,
@@ -257,7 +259,6 @@ def update_spectrum(
     # finally, we have a figure, but only update if the annotations have changed
     if shapes_store is not None:
         shapes = shapes_store.get("active_shapes", [])
-        spectraLogger.info(f"active shapes {shapes}")
         name = "full spectrum"
         if len(shapes) > 0:
             assert isinstance(sample_name, str)
@@ -293,7 +294,6 @@ def update_spectrum(
         }
 
         current_figure["data"][0] = new_trace
-        spectraLogger.info("subsample spectrum")
         return current_figure
 
     return no_update
@@ -305,7 +305,7 @@ def update_spectrum(
 )
 def initial_update(input_value: str | None):
     if _valid_sample_name(input_value):
-        return 1
+        return NUMBER_OF_INITIAL_FIGURES
     return no_update
 
 
@@ -347,24 +347,35 @@ def add_or_delete_image(
         graph_id_store["active_div_ids"] = []
 
     if button_clicked == _IDS.add_image and n_clicks is not None:
-        spectraLogger.info("adding new image")
         patched_children = Patch()
-        id_index = n_clicks - 1  # easier if we use a 0-index
-        new_image_div, imIDs = bitmap_image_layout(
-            id_index, id_type_base=_IDS.image_container_type
-        )
-        patched_children.append(dbc.Col(new_image_div, width=4))
-        new_div_id = imIDs.get_id_with_index("div")
-        graph_id_store["active_div_ids"].append(new_div_id)
+
+        if graph_id_store["initialized"] is False:
+            new_index_0 = 0
+            new_index_1 = new_index_0 + n_clicks
+            graph_id_store["initialized"] = True
+        else:
+            new_index_0 = n_clicks - 1
+            new_index_1 = new_index_0 + 1
+
+        for id_index in range(new_index_0, new_index_1):
+            if id_index <= 2:
+                init_element_id = id_index
+            else:
+                init_element_id = 0
+            new_image_div, imIDs = bitmap_image_layout(
+                id_index,
+                id_type_base=_IDS.image_container_type,
+                init_element_id=init_element_id,
+            )
+            patched_children.append(dbc.Col(new_image_div, width=4))
+            new_div_id = imIDs.get_id_with_index("div")
+            graph_id_store["active_div_ids"].append(new_div_id)
         return patched_children, graph_id_store
     if button_clicked is not None and n_deletes > 0:
-        spectraLogger.info(f"delete button  clicked: {button_clicked}")
         pop_id = _find_id_in_list(
             _imageIDS.div, button_clicked["index"], graph_id_store["active_div_ids"]
         )
         if pop_id is not None:
-            active_divid = graph_id_store["active_div_ids"][pop_id]
-            spectraLogger.info(f"popping {pop_id}: {active_divid}")
             _ = current_children.pop(pop_id)
             _ = graph_id_store["active_div_ids"].pop(pop_id)
 
@@ -414,7 +425,7 @@ def _sync_layouts(layout_update: dict, fig_list: list):
 
     new_fig_list = []
     for fig in fig_list:
-        if "layout" in fig:
+        if fig is not None and "layout" in fig:
             fig["layout"].update(layout_update)
         new_fig_list.append(fig)
     return new_fig_list
@@ -427,8 +438,13 @@ def _copy_layout_attrs(
         layout_attrs = ["xaxis", "yaxis", "shapes"]
     layout_update = {}
     for attr in layout_attrs:
-        if attr in fig_list[ref_fig_index]["layout"]:
-            layout_update[attr] = fig_list[ref_fig_index]["layout"][attr]
+        if (
+            isinstance(fig_list[ref_fig_index], dict)
+            and "layout" in fig_list[ref_fig_index]
+        ):
+            attrval = fig_list[ref_fig_index]["layout"].get(attr, None)
+            if attrval:
+                layout_update[attr] = attrval
     return _sync_layouts(layout_update, fig_list)
 
 
@@ -451,6 +467,7 @@ def _copy_layout_attrs_for_new_fig(
     Input({"type": _imageIDS.refresh, "index": ALL}, "n_clicks"),
     Input({"type": _imageIDS.graph, "index": ALL}, "relayoutData"),
     Input({"type": _imageIDS.colorscale, "index": ALL}, "value"),
+    State(_IDS.graph_id_store, "data"),
     State({"type": _imageSliderIds.slider, "index": ALL}, "value"),
     State({"type": _imageIDS.graph, "index": ALL}, "id"),
     State(USER_STORE_DIV_ID, "data"),
@@ -467,6 +484,7 @@ def update_graph_figure(
     n_clicks: list[int | None],
     relayout_data_list: list,
     colormap_choices: list[str | None],
+    graph_id_store: dict,
     slider_range_list: list[tuple[float, float]],
     graph_ids: list[dict[str, str | int]],
     user_store: dict,
@@ -527,31 +545,45 @@ def update_graph_figure(
 
     graph_triggered = triggered_id["type"] == _imageIDS.graph
     if graph_triggered:
-        # check if we just added this graph
-        if graph_dict not in processed_graph_store["graph_ids"]:
-            spectraLogger.info(f"processing new graph {graph_dict}")
-            processed_graph_store["graph_ids"].append(graph_dict)
+        initialized = processed_graph_store["initialized"]
 
-            im_array = None
-            if len(processed_graph_store["graph_ids"]) > 1:
-                # we had at least 1 already, data from one to initialize
-                fig = fig_list[0]
-                im_array = plotly_im_trace_to_array(fig["data"][0])
+        new_graph_dicts = []
+        if initialized is False:
+            for active_div in graph_id_store["active_div_ids"]:
+                gdict = {"type": _imageIDS.graph, "index": active_div["index"]}
+                if gdict not in processed_graph_store["graph_ids"]:
+                    new_graph_dicts.append(gdict)
+        elif graph_dict not in processed_graph_store["graph_ids"]:
+            new_graph_dicts.append({"type": _imageIDS.graph, "index": triggered_index})
 
-            new_fig = _get_new_im(
-                sample_name,
-                user_store,
-                slider_range_list[triggered_index_loc],
-                colormap,
-                im_data=im_array,
-            )
-            fig_list[triggered_index_loc] = new_fig
-            fig_list = _copy_layout_attrs_for_new_fig(fig_list, triggered_index_loc)
+        if len(new_graph_dicts) > 0:
+            for graph_dict in new_graph_dicts:
+                processed_graph_store["graph_ids"].append(graph_dict)
+                im_array = None
+                if len(processed_graph_store["graph_ids"]) > 1 and initialized:
+                    # we had at least 1 already, data from one to initialize
+                    fig = fig_list[0]
+                    im_array = plotly_im_trace_to_array(fig["data"][0])
+
+                new_fig = _get_new_im(
+                    sample_name,
+                    user_store,
+                    slider_range_list[graph_dict["index"]],
+                    colormap,
+                    im_data=im_array,
+                )
+                fig_list[graph_dict["index"]] = new_fig
+
+                if initialized:
+                    fig_list = _copy_layout_attrs_for_new_fig(
+                        fig_list, triggered_index_loc
+                    )
+
+            processed_graph_store["initialized"] = True
             return fig_list, processed_graph_store, shapes_store
 
         # finally, sync a number of relayouts
         relay = relayout_data_list[triggered_index_loc]
-        spectraLogger.info(f"relay keys: {relay.keys()}")
         relay_update = {}
         update_layout = False
 

@@ -32,6 +32,7 @@ def get_element_dropdown_and_slider(
     slider_start: float = 0.0,
     slider_stop: float = 15.0,
     slider_step: float = 0.1,
+    init_element_id: int = 0,
 ) -> tuple[dbc.Row, elementDropdownSliderIDS]:
 
     layoutIDs = elementDropdownSliderIDS(id_type_base, index=index)
@@ -39,12 +40,12 @@ def get_element_dropdown_and_slider(
     elements = list(element_energy_ranges_keV.keys())
     element_selector = dcc.Dropdown(
         ["none", *elements],
-        value=elements[0],
+        value=elements[init_element_id],
         id=layoutIDs.get_id_with_index("dropdown"),
         className="text-info",
     )
 
-    slider_init_range = element_energy_ranges_keV[elements[0]]
+    slider_init_range = element_energy_ranges_keV[elements[init_element_id]]
     energy_range = dcc.RangeSlider(
         slider_start,
         slider_stop,

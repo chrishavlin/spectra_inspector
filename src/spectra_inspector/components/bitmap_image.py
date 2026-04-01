@@ -68,6 +68,7 @@ def bitmap_image_layout(
     slider_start: float = 0.0,
     slider_stop: float = 15.0,
     slider_step: float = 0.1,
+    init_element_id: int = 0,
     colorscale: str = "blackbody",
 ) -> tuple[html.Div, bitmapImageLayoutIDs]:
 
@@ -98,6 +99,7 @@ def bitmap_image_layout(
         slider_start=slider_start,
         slider_stop=slider_stop,
         slider_step=slider_step,
+        init_element_id=init_element_id,
     )
 
     colormap_dropdown = dcc.Dropdown(
