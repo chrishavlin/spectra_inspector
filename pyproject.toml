@@ -3,18 +3,20 @@ name = "spectra-inspector"
 version = "0.1.0"
 description = "Add your description here"
 readme = "README.md"
-authors = [
-    { name = "chrishavlin", email = "chris.havlin@gmail.com" }
-]
+authors = [{ name = "chrishavlin", email = "chris.havlin@gmail.com" }]
 requires-python = ">=3.13"
 dependencies = [
-    "dash>=4.0.0",
-    "dash-bootstrap-components>=2.0.4",
-    "dash-bootstrap-templates>=2.1.0",
-    "pandas>=3.0.1",
-    "plotly>=6.6.0",
-    "pydantic>=2.12.5",
-    "unyt>=3.1.0",
+  "dash>=4.0.0",
+  "dash-bootstrap-components>=2.0.4",
+  "dash-bootstrap-templates>=2.1.0",
+  "fpdf2>=2.8.7",
+  "kaleido>=1.2.0",
+  "pandas>=3.0.1",
+  "plotly>=6.6.0",
+  "pydantic>=2.12.5",
+  "pydantic-settings>=2.13.1",
+  "rosettasciio>=0.13.0",
+  "unyt>=3.1.0",
 ]
 
 [project.scripts]
@@ -25,15 +27,9 @@ requires = ["hatchling"]
 build-backend = "hatchling.build"
 
 [dependency-groups]
-test = [
-    "pytest>=9.0.2",
-    "pytest-mock>=3.15.1",
-]
-lint = [
-    "pre-commit>=4.5.1",
-]
-dev = [{ include-group = "test" },
-{ include-group ="lint" }]
+test = ["pytest>=9.0.2", "pytest-mock>=3.15.1"]
+lint = ["pre-commit>=4.5.1"]
+dev = [{ include-group = "test" }, { include-group = "lint" }]
 
 
 [tool.ruff]
@@ -83,6 +79,7 @@ ignore = [
   "PTH123",  # replace open() with Path.open()
   "RET504",  # unnecessary-assign (sometimes its nice actually)
   "SIM108",  # use if-else ternary operator
+  "PLC0415", # top-level imports only
 ]
 # Uncomment if using a _compat.typing backport
 # typing-modules = ["spectra_inspector_server._compat.typing"]
