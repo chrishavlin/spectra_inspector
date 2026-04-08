@@ -28,6 +28,7 @@ from spectra_inspector.components.scalebar import scalebarHandler
 from spectra_inspector.logging import spectraLogger
 from spectra_inspector.user_store_model import USER_STORE_DIV_ID, UserStore
 from spectra_inspector.utilities.coerce import (
+    copy_layout_attrs,
     copy_layout_attrs_for_new_fig,
     placeholder_to_spaces,
     plotly_im_trace_to_array,
@@ -40,13 +41,6 @@ dash.register_page(__name__, order=1, path_template="/inspector/<sample_name>")
 NUMBER_OF_INITIAL_FIGURES = 3
 
 scalebar_handler = scalebarHandler()
-
-_resetAxesRelay = {
-    "xaxis.autorange": True,
-    "xaxis.showspikes": False,
-    "yaxis.autorange": True,
-    "yaxis.showspikes": False,
-}
 
 
 def _valid_sample_name(sample_name: str | None):
@@ -94,6 +88,7 @@ def selected_sample_contents(sample_name: str | None) -> str:
 
 class inspectorIDs(BaseModel):
     add_image: str = "dynamic-add-image-btn"
+    reset_all_axes: str = "reset-all-axes"
     metadata: str = "metadata-info"
     sample_name: str = "sample-name"
     image_container: str = "image-container"
@@ -162,7 +157,20 @@ def layout(sample_name: str | None = None, **kwargs):  # noqa: ARG001
     _layout_rows.append(html.Div(hidden=True, id=_IDS.metadata))
 
     _layout_rows.append(
-        dbc.Row(dbc.Col(Button("Add Image", id=_IDS.add_image, n_clicks=0), width=12))
+        dbc.Row(
+            [dbc.Col(Button("Add Image", id=_IDS.add_image, n_clicks=0), width=12)]
+        ),
+    )
+
+    _layout_rows.append(
+        dbc.Row(
+            [
+                dbc.Col(
+                    Button("Reset All Axes", id=_IDS.reset_all_axes, n_clicks=0),
+                    width=12,
+                )
+            ]
+        ),
     )
 
     im_container = dcc.Loading(
@@ -405,6 +413,7 @@ def add_or_delete_image(
     Input({"type": _imageIDS.refresh, "index": ALL}, "n_clicks"),
     Input({"type": _imageIDS.graph, "index": ALL}, "relayoutData"),
     Input({"type": _imageIDS.colorscale, "index": ALL}, "value"),
+    Input(_IDS.reset_all_axes, "n_clicks"),
     State(_IDS.graph_id_store, "data"),
     State({"type": _imageSliderIds.slider, "index": ALL}, "value"),
     State({"type": _imageIDS.graph, "index": ALL}, "id"),
@@ -416,12 +425,14 @@ def add_or_delete_image(
     running=[
         (Output("full-im-container-loading", "display"), "show", "hide"),
         (Output(_IDS.add_image, "disabled"), True, False),
+        (Output(_IDS.reset_all_axes, "disabled"), True, False),
     ],
 )
 def update_graph_figure(
     n_clicks: list[int | None],
     relayout_data_list: list,
     colormap_choices: list[str | None],
+    reset_nclicks: int | None,
     graph_id_store: dict,
     slider_range_list: list[tuple[float, float]],
     graph_ids: list[dict[str, str | int]],
@@ -441,9 +452,8 @@ def update_graph_figure(
     user_store = UserStore(**user_store_dict)
 
     triggered_id = ctx.triggered_id
+
     if triggered_id is None:
-        # first pass through on callback creation: dont want to prevent
-        # first call though?
         spectraLogger.info(f"no trigger id, initial call passthrough {len(fig_list)}")
         return (
             [
@@ -453,6 +463,23 @@ def update_graph_figure(
             processed_graph_store,
             shapes_store,
         )
+
+    colorscale_changed = (
+        "type" in triggered_id and triggered_id["type"] == _imageIDS.colorscale
+    )
+    reset_axis_button_clicked = (
+        triggered_id == _IDS.reset_all_axes and reset_nclicks is not None
+    )
+    if colorscale_changed or reset_axis_button_clicked:
+        new_list = _recopy_all_figs(
+            fig_list,
+            user_store,
+            slider_range_list,
+            colormap_choices,
+        )
+        new_list = copy_layout_attrs(new_list, fig_list[0], layout_attrs=["shapes"])
+
+        return new_list, processed_graph_store, shapes_store
 
     triggered_index: int = 0  # the html id index
     triggered_index_loc: int = 0  # the position in the list
@@ -489,11 +516,17 @@ def update_graph_figure(
 
     graph_triggered = triggered_id["type"] == _imageIDS.graph
     if graph_triggered:
+        # add new figures!
         initialized = processed_graph_store["initialized"]
 
         new_graph_dicts = []
+        active_divs = graph_id_store["active_div_ids"]
+        div_index_to_list_index = {
+            active_div["index"]: idiv for idiv, active_div in enumerate(active_divs)
+        }
+
         if initialized is False:
-            for active_div in graph_id_store["active_div_ids"]:
+            for active_div in active_divs:
                 gdict = {"type": _imageIDS.graph, "index": active_div["index"]}
                 if gdict not in processed_graph_store["graph_ids"]:
                     new_graph_dicts.append(gdict)
@@ -509,14 +542,15 @@ def update_graph_figure(
                     fig = fig_list[0]
                     im_array = plotly_im_trace_to_array(fig["data"][0])
 
+                list_pos = div_index_to_list_index[graph_dict["index"]]
                 new_fig = get_new_im(
                     user_store,
-                    slider_range_list[graph_dict["index"]],
+                    slider_range_list[list_pos],
                     colormap,
                     im_data=im_array,
                     scalebar_handler=scalebar_handler,
                 )
-                fig_list[graph_dict["index"]] = new_fig
+                fig_list[list_pos] = new_fig
 
                 if initialized:
                     fig_list = copy_layout_attrs_for_new_fig(
@@ -543,7 +577,6 @@ def update_graph_figure(
                 relay_update["shapes"] = [
                     relay_update["shapes"][-1],
                 ]
-
             shapes_store["active_shapes"] = relay_update["shapes"]
 
         # handle any updates to axes by copying over the modified
@@ -568,24 +601,6 @@ def update_graph_figure(
                 new_fig_list = sync_layouts(relay_update, new_fig_list)
             return new_fig_list, processed_graph_store, shapes_store
 
-    colormap_updated = triggered_id["type"] == _imageIDS.colorscale
-    if colormap_updated:
-        fig = fig_list[triggered_index_loc]
-
-        # convert figure data back to np array
-        im_array = plotly_im_trace_to_array(fig["data"][0])
-
-        new_fig = get_new_im(
-            user_store,
-            slider_range_list[triggered_index_loc],
-            colormap,
-            im_data=im_array,
-            scalebar_handler=scalebar_handler,
-        )
-        fig_list[triggered_index_loc] = new_fig
-        fig_list = copy_layout_attrs_for_new_fig(fig_list, triggered_index_loc)
-        return fig_list, processed_graph_store, shapes_store
-
     return (
         [
             no_update,
@@ -594,3 +609,21 @@ def update_graph_figure(
         processed_graph_store,
         shapes_store,
     )
+
+
+def _recopy_all_figs(fig_list, user_store, slider_range_list, colormap_choices):
+    """
+    refreshes all figures without fetching data again.
+    """
+    new_list = []
+    for igraph in range(len(fig_list)):
+        im_array = plotly_im_trace_to_array(fig_list[igraph]["data"][0])
+        new_fig = get_new_im(
+            user_store,
+            slider_range_list[igraph],
+            colormap_choices[igraph],
+            im_data=im_array,
+            scalebar_handler=scalebar_handler,
+        )
+        new_list.append(new_fig)
+    return new_list
