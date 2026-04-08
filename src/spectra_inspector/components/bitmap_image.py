@@ -91,6 +91,7 @@ def bitmap_image_layout(
                     "drawrect",
                     "eraseshape",
                 ],
+                "modeBarButtonsToRemove": ["resetScale", "autoScale"],
                 "displayModeBar": True,
                 "displaylogo": False,
             },
