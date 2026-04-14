@@ -118,6 +118,6 @@ def get_layout(
     rows.append(dcc.Download(id=layoutIDs.downloadsummary))
     rows.append(dcc.Download(id=layoutIDs.downloadmsa))
 
-    cont = dbc.Container(rows, style={"width": "32rem"})
+    cont = dbc.Container(rows)
 
     return cont, layoutIDs

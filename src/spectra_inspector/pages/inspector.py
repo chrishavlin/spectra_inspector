@@ -176,7 +176,7 @@ def layout(sample_name: str | None = None, **kwargs):  # noqa: ARG001
     )
 
     im_container = dcc.Loading(
-        dbc.Row([], id=_IDS.image_container, className="g-0"),
+        dbc.Row([], id=_IDS.image_container, className="gx-1 gy-1"),
         id="full-im-container-loading",
         overlay_style={"visibility": "visible", "filter": "blur(2px)"},
         type="circle",
@@ -198,7 +198,11 @@ def layout(sample_name: str | None = None, **kwargs):  # noqa: ARG001
         type="circle",
     )
 
-    spectrum_div = dbc.Row(dbc.Col(spectrum_graph, width=12))
+    spectrum_div = dbc.Card(
+        dbc.CardBody(dbc.Row(dbc.Col(spectrum_graph, width=12), className="gx-1 gy-1")),
+        color="primary",
+        style={"margin-top": "1rem"},
+    )
 
     _layout_rows.append(_get_div_store())
     _layout_rows.append(spectrum_div)
@@ -206,6 +210,7 @@ def layout(sample_name: str | None = None, **kwargs):  # noqa: ARG001
     export_panel = dbc.Row(
         [
             dbc.Col(data_export_panel.get_layout()[0], width=6),
+            dbc.Col([], width=6),
         ],
         style={"margin-top": "1rem"},
     )
@@ -535,7 +540,6 @@ def export_summary(
                 energy_range,
                 cmap,
                 im,
-                im_height=im.shape[1],
                 scalebar_handler=scalebar_handler,
                 zmin=zmin,
                 zmax=zmax,
