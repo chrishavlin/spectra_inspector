@@ -1,5 +1,6 @@
 from dataclasses import dataclass
 from pathlib import Path
+from typing import Any
 
 from pydantic import BaseModel
 
@@ -28,6 +29,8 @@ class Spectrum1dDict:
     intensity: list[float]
     energy_min: float
     energy_max: float
+    metadata: dict[str, Any] | None = None
+    original_metadata: dict[str, Any] | None = None
 
 
 class GeneralMetadata(BaseModel):

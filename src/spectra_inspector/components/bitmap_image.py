@@ -158,21 +158,30 @@ def get_new_im(
     im_data: npt.NDArray | None = None,
     im_height: int = 600,
     scalebar_handler: scalebarHandler | None = None,
+    zmin: float | None = None,
+    zmax: float | None = None,
 ):
 
     sisi = SpectraInspectorServerInterface()
     md = user_store.conditionally_fetch_metadata()
     assert md is not None
-    indx0 = get_closest_index(md.axes_by_index[2], slider_range[0])
-    indx1 = get_closest_index(md.axes_by_index[2], slider_range[1])
-    msg = f"fetching image data: {user_store.selected_dataset}, {indx0}, {indx1}"
-    spectraLogger.info(msg)
 
     if im_data is None:
+        indx0 = get_closest_index(md.axes_by_index[2], slider_range[0])
+        indx1 = get_closest_index(md.axes_by_index[2], slider_range[1])
+
+        msg = f"fetching image data: {user_store.selected_dataset}, {indx0}, {indx1}"
+        spectraLogger.info(msg)
         im = sisi.image_data_summed(user_store.selected_dataset, (indx0, indx1))
         im_data = np.array(im.image).reshape(im.shape)
 
-    fig = px.imshow(im_data, color_continuous_scale=color_scale, height=im_height)
+    fig = px.imshow(
+        im_data,
+        color_continuous_scale=color_scale,
+        height=im_height,
+        zmin=zmin,
+        zmax=zmax,
+    )
     fig.update_layout(
         coloraxis_showscale=False,
         margin_b=0,

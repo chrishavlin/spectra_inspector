@@ -1,3 +1,5 @@
+from typing import Literal
+
 import dash
 import dash_bootstrap_components as dbc
 import numpy as np
@@ -21,6 +23,7 @@ from pydantic import BaseModel
 from spectra_inspector.components import (
     bitmap_image_layout,
     bitmapImageLayoutIDs,
+    data_export_panel,
     get_new_im,
 )
 from spectra_inspector.components.energy_range_slider import elementDropdownSliderIDS
@@ -35,6 +38,7 @@ from spectra_inspector.utilities.coerce import (
     sync_layouts,
 )
 from spectra_inspector.utilities.interface import SpectraInspectorServerInterface
+from spectra_inspector.utilities.summary_writer import summaryWriter
 
 dash.register_page(__name__, order=1, path_template="/inspector/<sample_name>")
 
@@ -73,7 +77,17 @@ def get_spectrum(
     spectraLogger.info(f"fetched spectrum with size {sz}, {min_e=}, {max_e=}")
     dx = e_diff / sz
     energy_scaled = np.arange(sz) * dx + min_e
-    return pd.DataFrame({"intensity": spectrum.intensity, "energy": energy_scaled})
+    df = pd.DataFrame({"intensity": spectrum.intensity, "energy": energy_scaled})
+    attrs = {
+        "energy_max": spectrum.energy_max,
+        "energy_min": spectrum.energy_min,
+    }
+    if spectrum.metadata is not None:
+        attrs["metadata"] = spectrum.metadata
+    if spectrum.original_metadata is not None:
+        attrs["original_metadata"] = spectrum.original_metadata
+    df.attrs = attrs
+    return df
 
 
 def selected_sample_contents(sample_name: str | None) -> str:
@@ -98,26 +112,13 @@ class inspectorIDs(BaseModel):
     processed_graph_id_store: str = "processed-graph-ids"
     graph_id_store: str = "graph-id-store"
     full_spectrum_store: str = "full-spectrum-store"
+    active_spectrum_metadata: str = "active-spectrum-metadata"
 
 
 _IDS = inspectorIDs()
 _imageIDS = bitmapImageLayoutIDs()
 _imageSliderIds = elementDropdownSliderIDS()
-
-
-def get_initial_figure(sample_name: str | None):
-    if _valid_sample_name(sample_name):
-        spectraLogger.info("creating full spectrum plot")
-        assert isinstance(sample_name, str)
-        df = get_spectrum(sample_name)
-        current_figure = go.Figure()
-        current_figure.add_trace(
-            go.Scatter(
-                x=df.energy, y=df.intensity, mode="lines", name="Full energy range"
-            )
-        )
-        return {"figure": current_figure}, df
-    return {}, None
+_dataExportIDS = data_export_panel.dataExportPanelIDS(index=0)
 
 
 def _get_div_store() -> html.Div:
@@ -139,6 +140,7 @@ def _get_div_store() -> html.Div:
                 data={},
             ),
             dcc.Store(id=_IDS.full_spectrum_store, storage_type="memory", data={}),
+            dcc.Store(id=_IDS.active_spectrum_metadata, storage_type="memory", data={}),
         ]
     )
 
@@ -200,6 +202,14 @@ def layout(sample_name: str | None = None, **kwargs):  # noqa: ARG001
 
     _layout_rows.append(_get_div_store())
     _layout_rows.append(spectrum_div)
+
+    export_panel = dbc.Row(
+        [
+            dbc.Col(data_export_panel.get_layout()[0], width=6),
+        ],
+        style={"margin-top": "1rem"},
+    )
+    _layout_rows.append(export_panel)
     return html.Div(
         _layout_rows,
         className="container",
@@ -229,6 +239,7 @@ def initialize_full_spectrum_data(sample_name: str | None, spectrum_store: dict 
         new_store_data = {}
         new_store_data["intensity"] = df.intensity.tolist()
         new_store_data["energy"] = df.energy.tolist()
+        new_store_data["attrs"] = df.attrs
         return new_store_data
 
     return no_update
@@ -236,10 +247,12 @@ def initialize_full_spectrum_data(sample_name: str | None, spectrum_store: dict 
 
 @callback(
     Output(_IDS.spectrum_container, "figure"),
+    Output(_IDS.active_spectrum_metadata, "data"),
     Input(_IDS.shapes_store, "data"),
     Input(_IDS.full_spectrum_store, "data"),
     State(_IDS.sample_name, "children"),
     State(_IDS.spectrum_container, "figure"),
+    State(_IDS.active_spectrum_metadata, "data"),
     running=[
         (Output("spectrum-loading", "display"), "show", "hide"),
         (Output(_IDS.add_image, "disabled"), True, False),
@@ -251,13 +264,14 @@ def update_spectrum(
     full_spectrum_store: dict | None,
     sample_name: str | None,
     current_figure,
+    active_spectrum_metadata: dict | None,
 ):
 
     spectraLogger.info(f"update_spectrum trigger: {ctx.triggered_id}")
 
     if full_spectrum_store is None or "intensity" not in full_spectrum_store:
         # full spectrum data not fetched yet, return
-        return no_update
+        return no_update, no_update
 
     if current_figure is None:
         # now we have data but no figure, create it
@@ -276,23 +290,23 @@ def update_spectrum(
         current_figure.update_xaxes(title_text="Energy (keV)")
         current_figure.update_yaxes(title_text="Intensity")
         current_figure.update_xaxes(autorangeoptions_maxallowed=8)
-        return current_figure
+
+        active_spectrum_metadata = full_spectrum_store.copy()
+
+        return current_figure, active_spectrum_metadata
 
     # finally, we have a figure, but only update if the annotations have changed
     if shapes_store is not None:
         shapes = shapes_store.get("active_shapes", [])
         name = "full spectrum"
+
+        if active_spectrum_metadata is None:
+            active_spectrum_metadata = {}
+
         if len(shapes) > 0:
             assert isinstance(sample_name, str)
             shp = shapes[0]
-            if shp["type"] != "rect":
-                msg = f"Unsupported shape type of {shp['type']}"
-                raise TypeError(msg)
-
-            index1_range = [int(np.floor(shp["x0"])), int(np.floor(shp["x1"]))]
-            index1_range.sort()
-            index0_range = [int(np.floor(shp["y0"])), int(np.floor(shp["y1"]))]
-            index0_range.sort()
+            index0_range, index1_range = _index_range_from_shape(shp)
 
             spectraLogger.info(
                 f"fetching subsample spectrum with ranges {index0_range}, {index1_range}"
@@ -303,9 +317,13 @@ def update_spectrum(
                 index1_range=(index1_range[0], index1_range[1]),
             )
             name = "spatial subset"
+            active_spectrum_metadata["intensity"] = df.intensity.tolist()
+            active_spectrum_metadata["energy"] = df.energy.tolist()
+            active_spectrum_metadata["attrs"] = df.attrs
         else:
             # just re-load the full spectum
             df = full_spectrum_store
+            active_spectrum_metadata = full_spectrum_store.copy()
 
         new_trace = {
             "mode": "lines",
@@ -316,9 +334,9 @@ def update_spectrum(
         }
 
         current_figure["data"][0] = new_trace
-        return current_figure
+        return current_figure, active_spectrum_metadata
 
-    return no_update
+    return no_update, no_update
 
 
 @callback(
@@ -341,6 +359,18 @@ def _find_id_in_list(
     if id_to_find2 in el_list:
         return el_list.index(id_to_find2)
     return None
+
+
+def _index_range_from_shape(shp):
+    if shp["type"] != "rect":
+        msg = f"Unsupported shape type of {shp['type']}"
+        raise TypeError(msg)
+
+    index1_range = [int(np.floor(shp["x0"])), int(np.floor(shp["x1"]))]
+    index1_range.sort()
+    index0_range = [int(np.floor(shp["y0"])), int(np.floor(shp["y1"]))]
+    index0_range.sort()
+    return index0_range, index1_range
 
 
 @callback(
@@ -407,6 +437,129 @@ def add_or_delete_image(
 
 
 @callback(
+    Output(_dataExportIDS.downloadmsa, "data"),
+    Input(_dataExportIDS.exportmsa, "n_clicks"),
+    State(_IDS.active_spectrum_metadata, "data"),
+    State(_dataExportIDS.msafileformat, "value"),
+    running=[
+        (Output(_dataExportIDS.exportsummary, "disabled"), True, False),
+        (Output(_dataExportIDS.exportmsa, "disabled"), True, False),
+    ],
+    prevent_initial_call=True,
+)
+def export_msa(
+    export_clicks: int | None,
+    active_spectrum_metadata,
+    msafileformat: Literal["Y", "XY"] | None,
+):
+    if export_clicks is None:
+        return None
+
+    s = summaryWriter()
+    f = s.write_MSA(active_spectrum_metadata, file_format=msafileformat)
+    return dcc.send_file(f)
+
+
+@callback(
+    Output(_dataExportIDS.downloadsummary, "data"),
+    Input(_dataExportIDS.exportsummary, "n_clicks"),
+    State({"type": _imageIDS.graph, "index": ALL}, "figure"),
+    State(_IDS.shapes_store, "data"),
+    State("sample-name", "children"),
+    State({"type": _imageSliderIds.slider, "index": ALL}, "value"),
+    State({"type": _imageSliderIds.dropdown, "index": ALL}, "value"),
+    State(_IDS.spectrum_container, "figure"),
+    State({"type": _imageIDS.colorscale, "index": ALL}, "value"),
+    State(USER_STORE_DIV_ID, "data"),
+    State(_dataExportIDS.formatdropdown, "value"),
+    State(_IDS.active_spectrum_metadata, "data"),
+    State(_dataExportIDS.msafileformat, "value"),
+    prevent_initial_call=True,
+    running=[
+        (Output(_dataExportIDS.exportsummary, "disabled"), True, False),
+        (Output(_dataExportIDS.exportmsa, "disabled"), True, False),
+    ],
+)
+def export_summary(
+    export_clicks: int | None,
+    fig_list,
+    shapes_store,
+    sample_name,
+    slider_range_list,
+    slider_range_labels,
+    spectrum_figure,
+    colormaps,
+    user_store_dict,
+    export_summary_format: Literal[".zip", "PDF"] | None,
+    active_spectrum_metadata: dict | None,
+    msafileformat: Literal["Y", "XY"] | None,
+):
+
+    if export_clicks is None or export_clicks == 0:
+        return None
+
+    if "selected_dataset" not in user_store_dict:
+        user_store_dict["selected_dataset"] = sample_name
+    user_store = UserStore(**user_store_dict)
+
+    # get individual image arrays
+    n_shapes = len(shapes_store["active_shapes"])
+    index0_range = None
+    index1_range = None
+    if n_shapes > 0:
+        # get image subests
+        shp = shapes_store["active_shapes"][0]
+        index0_range, index1_range = _index_range_from_shape(shp)
+
+    figs_to_write = {}
+    for igraph in range(len(fig_list)):
+        cmap = colormaps[igraph]
+        energy_range = slider_range_list[igraph]
+        energy_label = slider_range_labels[igraph]
+
+        im_name = f"bitmap_{str(igraph).zfill(2)}"
+        if energy_label != "none":
+            im_name += f"_{energy_label}"
+        figs_to_write[im_name] = fig_list[igraph]
+
+        if index0_range and index1_range:
+            im = plotly_im_trace_to_array(fig_list[igraph]["data"][0])
+            zmin, zmax = np.min(im), np.max(im)
+            im = im[
+                index0_range[0] : index0_range[1],
+                index1_range[0] : index1_range[1],
+            ]
+
+            newfig = get_new_im(
+                user_store,
+                energy_range,
+                cmap,
+                im,
+                im_height=im.shape[1],
+                scalebar_handler=scalebar_handler,
+                zmin=zmin,
+                zmax=zmax,
+            )
+
+            im_name += "_subset"
+            figs_to_write[im_name] = newfig
+
+    figs_to_write["spectrum"] = spectrum_figure
+
+    s = summaryWriter()
+    s.write_static_figures(figs_to_write)
+
+    if export_summary_format == "PDF":
+        return dcc.send_file(s.get_pdf_path(generate_pdf=True))
+    if export_summary_format == ".zip" and active_spectrum_metadata is not None:
+        # include the MSA for the zip
+        _ = s.write_MSA(active_spectrum_metadata, file_format=msafileformat)
+        return dcc.send_file(s.get_zip())
+    msg = f"Unexpected value for format, {export_summary_format=}"
+    raise ValueError(msg)
+
+
+@callback(
     Output({"type": _imageIDS.graph, "index": ALL}, "figure"),
     Output(_IDS.processed_graph_id_store, "data"),
     Output(_IDS.shapes_store, "data"),
@@ -426,6 +579,8 @@ def add_or_delete_image(
         (Output("full-im-container-loading", "display"), "show", "hide"),
         (Output(_IDS.add_image, "disabled"), True, False),
         (Output(_IDS.reset_all_axes, "disabled"), True, False),
+        (Output(_dataExportIDS.exportsummary, "disabled"), True, False),
+        (Output(_dataExportIDS.exportmsa, "disabled"), True, False),
     ],
 )
 def update_graph_figure(
