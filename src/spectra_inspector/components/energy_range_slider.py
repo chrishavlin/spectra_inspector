@@ -46,19 +46,31 @@ def get_element_dropdown_and_slider(
     )
 
     slider_init_range = element_energy_ranges_keV[elements[init_element_id]]
-    energy_range = dcc.RangeSlider(
-        slider_start,
-        slider_stop,
-        step=slider_step,
-        value=slider_init_range,
-        id=layoutIDs.get_id_with_index("slider"),
-        className="text-info",
+
+    energy_range = dbc.Card(
+        dbc.CardBody(
+            [
+                dcc.RangeSlider(
+                    slider_start,
+                    slider_stop,
+                    step=slider_step,
+                    value=slider_init_range,
+                    id=layoutIDs.get_id_with_index("slider"),
+                    className="text-info",
+                )
+            ]
+        ),
+        color="light",
     )
 
     row = dbc.Row(
         [
             dbc.Col(element_selector),
             dbc.Col(energy_range, width=9),
+            dbc.Tooltip(
+                "Adjust endpoints to set energy bounds (keV)",
+                target=layoutIDs.get_id_with_index("slider"),
+            ),
         ],
         align="center",
     )

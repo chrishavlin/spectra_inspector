@@ -69,9 +69,8 @@ class bitmapImageLayoutIDs(indexedLayoutIDMapper):
 def bitmap_image_layout(
     index: int,
     id_type_base: str = "bitmap-image",
-    bg_hexcolor: str = "#FFFFFF",
-    button_label: str = "Apply Bounds",
-    delete_button_label: str = "Delete Image",
+    button_label: str = "Apply",
+    delete_button_label: str = "X",
     slider_start: float = 0.0,
     slider_stop: float = 15.0,
     slider_step: float = 0.1,
@@ -110,42 +109,74 @@ def bitmap_image_layout(
         init_element_id=init_element_id,
     )
 
+    _controls_row_1 = dbc.Row(
+        [
+            dbc.Col(energy_range_selector, width=10),
+            dbc.Col(
+                Button(
+                    button_label,
+                    id=imIDs.get_id_with_index("refresh"),
+                    color="secondary",
+                ),
+                width=2,
+            ),
+        ],
+        align="center",
+    )
+
     colormap_dropdown = dcc.Dropdown(
         id=imIDs.get_id_with_index("colorscale"),
         options=_colorscales,
         value=colorscale,
         searchable=False,
         placeholder=colorscale,
-        style={"color": "#000000"},
+        className="text-info",
     )
 
     _controls_row_2 = dbc.Row(
         [
-            dbc.Col(Button(button_label, id=imIDs.get_id_with_index("refresh"))),
+            dbc.Col(dcc.Markdown("Colormap:"), width=2),
+            dbc.Col(colormap_dropdown, width=4),
+        ],
+        align="center",
+        class_name="gx-0",
+    )
+
+    _controls_row_3 = dbc.Row(
+        [
             dbc.Col(
                 Button(
                     delete_button_label,
                     id=imIDs.get_id_with_index("delete"),
+                    color="secondary",
                 ),
+                width=1,
             ),
-            dbc.Col(colormap_dropdown),
+            dbc.Col([], width=11),
         ],
-        align="center",
+        class_name="g-0",
     )
 
-    _primary_graph_div = html.Div(
-        [
-            energy_range_selector,
-            _controls_row_2,
-            dbc.Row(dbc.Col(fig_image), align="center"),
-        ],
+    _primary_graph_div = dbc.Card(
+        dbc.CardBody(
+            [
+                _controls_row_1,
+                _controls_row_2,
+                dbc.Row(dbc.Col(fig_image), align="center"),
+                _controls_row_3,
+                dbc.Tooltip(
+                    "Delete bitmap image panel",
+                    target=imIDs.get_id_with_index("delete"),
+                ),
+                dbc.Tooltip(
+                    "Apply changes to energy bounds",
+                    target=imIDs.get_id_with_index("refresh"),
+                ),
+            ]
+        ),
         id=imIDs.get_id_with_index("div"),
-        style={
-            "padding": "5px",
-            "backgroundColor": bg_hexcolor,
-            "minHeight": "600px",
-            # "border": "2px black solid",
-        },
+        color="primary",
+        inverse=True,
     )
 
     return _primary_graph_div, imIDs
@@ -156,7 +187,6 @@ def get_new_im(
     slider_range: tuple[float, float],
     color_scale: str,
     im_data: npt.NDArray | None = None,
-    im_height: int = 600,
     scalebar_handler: scalebarHandler | None = None,
     zmin: float | None = None,
     zmax: float | None = None,
@@ -178,18 +208,17 @@ def get_new_im(
     fig = px.imshow(
         im_data,
         color_continuous_scale=color_scale,
-        height=im_height,
+        # height=im_height,
         zmin=zmin,
         zmax=zmax,
     )
     fig.update_layout(
         coloraxis_showscale=False,
-        margin_b=0,
-        margin_l=0,
-        margin_r=0,
-        margin_t=50,
+        margin_b=5,
+        margin_l=5,
+        margin_r=5,
+        margin_t=5,
         autosize=True,
-        # pad=0
     )
     fig.update_xaxes(visible=False)
     fig.update_yaxes(visible=False)
