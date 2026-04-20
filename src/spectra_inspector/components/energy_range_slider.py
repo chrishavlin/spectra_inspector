@@ -1,5 +1,5 @@
 import dash_bootstrap_components as dbc
-from dash import MATCH, Input, Output, callback, ctx, dcc, no_update
+from dash import MATCH, Input, Output, State, callback, ctx, dcc, no_update
 
 from spectra_inspector.components.layout_ids import indexedLayoutIDMapper
 from spectra_inspector.utilities.element_energy_ranges import element_energy_ranges_keV
@@ -10,6 +10,9 @@ class elementDropdownSliderIDS(indexedLayoutIDMapper):
         "div",
         "dropdown",
         "slider",
+        "collapse",
+        "collapsebutton",
+        "refreshbutton",
     )
 
     def __init__(
@@ -25,6 +28,18 @@ class elementDropdownSliderIDS(indexedLayoutIDMapper):
     def slider(self) -> str:
         return self.full_id("-slider")
 
+    @property
+    def collapse(self) -> str:
+        return self.full_id("-collapse")
+
+    @property
+    def collapsebutton(self) -> str:
+        return self.full_id("-collapsebutton")
+
+    @property
+    def refreshbutton(self) -> str:
+        return self.full_id("-refreshbutton")
+
 
 def get_element_dropdown_and_slider(
     id_type_base: str = "element-dropdown-slider",
@@ -33,7 +48,7 @@ def get_element_dropdown_and_slider(
     slider_stop: float = 15.0,
     slider_step: float = 0.1,
     init_element_id: int = 0,
-) -> tuple[dbc.Row, elementDropdownSliderIDS]:
+) -> tuple[dbc.Container, elementDropdownSliderIDS]:
 
     layoutIDs = elementDropdownSliderIDS(id_type_base, index=index)
 
@@ -43,9 +58,13 @@ def get_element_dropdown_and_slider(
         value=elements[init_element_id],
         id=layoutIDs.get_id_with_index("dropdown"),
         className="text-info",
+        searchable=False,
+        clearable=False,
     )
 
     slider_init_range = element_energy_ranges_keV[elements[init_element_id]]
+
+    energy_marks = {val: val for val in range(0, 16, 3)}
 
     energy_range = dbc.Card(
         dbc.CardBody(
@@ -57,16 +76,31 @@ def get_element_dropdown_and_slider(
                     value=slider_init_range,
                     id=layoutIDs.get_id_with_index("slider"),
                     className="text-info",
+                    marks=energy_marks,
                 )
             ]
         ),
         color="light",
     )
 
-    row = dbc.Row(
+    element_selector_row = dbc.Row(
         [
-            dbc.Col(element_selector),
-            dbc.Col(energy_range, width=9),
+            dbc.Col(element_selector, width=4),
+            dbc.Col(width=4),
+            dbc.Col(
+                dbc.Button(
+                    "Apply",
+                    id=layoutIDs.get_id_with_index("refreshbutton"),
+                    color="secondary",
+                ),
+                width=2,
+            ),
+        ]
+    )
+
+    range_row = dbc.Row(
+        [
+            dbc.Col(energy_range, width=12),
             dbc.Tooltip(
                 "Adjust endpoints to set energy bounds (keV)",
                 target=layoutIDs.get_id_with_index("slider"),
@@ -75,7 +109,41 @@ def get_element_dropdown_and_slider(
         align="center",
     )
 
-    return row, layoutIDs
+    collapse_button = dbc.Button(
+        "Adjust energy bounds",
+        id=layoutIDs.get_id_with_index("collapsebutton"),
+        className="mb-3",
+        color="secondary",
+        n_clicks=0,
+    )
+
+    slider_collapse = dbc.Collapse(
+        dbc.Card(dbc.CardBody(range_row)),
+        id=layoutIDs.get_id_with_index("collapse"),
+        is_open=False,
+    )
+
+    cont = dbc.Container(
+        [
+            element_selector_row,
+            collapse_button,
+            slider_collapse,
+            dbc.Tooltip(
+                "Click to show or hide the manual energy range adjustment panel",
+                target=layoutIDs.get_id_with_index("collapsebutton"),
+            ),
+            dbc.Tooltip(
+                "Click to apply any changes in element or energy bounds range",
+                target=layoutIDs.get_id_with_index("refreshbutton"),
+            ),
+            dbc.Tooltip(
+                "Select an element map",
+                target=layoutIDs.get_id_with_index("dropdown"),
+            ),
+        ]
+    )
+
+    return cont, layoutIDs
 
 
 _imageSliderIds = elementDropdownSliderIDS()
@@ -101,3 +169,14 @@ def sync_element_selector_dropdown(
         return slider_range, "none"
     msg = "unexpected trigger."
     raise RuntimeError(msg)
+
+
+@callback(
+    Output({"type": _imageSliderIds.collapse, "index": MATCH}, "is_open"),
+    [Input({"type": _imageSliderIds.collapsebutton, "index": MATCH}, "n_clicks")],
+    [State({"type": _imageSliderIds.collapse, "index": MATCH}, "is_open")],
+)
+def toggle_energy_slider_collapse(n, is_open):
+    if n:
+        return not is_open
+    return is_open

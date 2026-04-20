@@ -567,7 +567,7 @@ def export_summary(
     Output({"type": _imageIDS.graph, "index": ALL}, "figure"),
     Output(_IDS.processed_graph_id_store, "data"),
     Output(_IDS.shapes_store, "data"),
-    Input({"type": _imageIDS.refresh, "index": ALL}, "n_clicks"),
+    Input({"type": _imageSliderIds.refreshbutton, "index": ALL}, "n_clicks"),
     Input({"type": _imageIDS.graph, "index": ALL}, "relayoutData"),
     Input({"type": _imageIDS.colorscale, "index": ALL}, "value"),
     Input(_IDS.reset_all_axes, "n_clicks"),
@@ -654,7 +654,7 @@ def update_graph_figure(
     # check for figure refresh
     colormap = colormap_choices[triggered_index_loc]
     assert isinstance(colormap, str)
-    refresh = triggered_id["type"] == _imageIDS.refresh
+    refresh = triggered_id["type"] == _imageSliderIds.refreshbutton
     if (
         refresh
         and _valid_sample_name(sample_name)
