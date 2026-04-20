@@ -104,6 +104,7 @@ class summaryWriter:
                 bitmaps.append(self.write_dir / f)
             elif f.stem.startswith("spectr"):
                 spectrum.append(self.write_dir / f)
+        bitmaps.sort()
 
         pdf = fpdf.FPDF(orientation="portrait", format="A4")
         pdf.set_font("Helvetica", size=18)

@@ -69,14 +69,13 @@ class bitmapImageLayoutIDs(indexedLayoutIDMapper):
 def bitmap_image_layout(
     index: int,
     id_type_base: str = "bitmap-image",
-    button_label: str = "Apply",
     delete_button_label: str = "X",
     slider_start: float = 0.0,
     slider_stop: float = 15.0,
     slider_step: float = 0.1,
     init_element_id: int = 0,
     colorscale: str = "blackbody",
-) -> tuple[html.Div, bitmapImageLayoutIDs]:
+) -> tuple[dbc.Card, bitmapImageLayoutIDs]:
 
     imIDs = bitmapImageLayoutIDs(id_type_base=id_type_base, index=index)
 
@@ -111,15 +110,7 @@ def bitmap_image_layout(
 
     _controls_row_1 = dbc.Row(
         [
-            dbc.Col(energy_range_selector, width=10),
-            dbc.Col(
-                Button(
-                    button_label,
-                    id=imIDs.get_id_with_index("refresh"),
-                    color="secondary",
-                ),
-                width=2,
-            ),
+            dbc.Col(energy_range_selector, width=12),
         ],
         align="center",
     )
@@ -135,11 +126,10 @@ def bitmap_image_layout(
 
     _controls_row_2 = dbc.Row(
         [
-            dbc.Col(dcc.Markdown("Colormap:"), width=2),
-            dbc.Col(colormap_dropdown, width=4),
+            dbc.Col(dcc.Markdown("Colormap:"), width=4),
+            dbc.Col(colormap_dropdown, width=8),
         ],
         align="center",
-        class_name="gx-0",
     )
 
     _controls_row_3 = dbc.Row(
@@ -160,8 +150,11 @@ def bitmap_image_layout(
     _primary_graph_div = dbc.Card(
         dbc.CardBody(
             [
+                html.Hr(),
                 _controls_row_1,
+                html.Hr(),
                 _controls_row_2,
+                html.Hr(),
                 dbc.Row(dbc.Col(fig_image), align="center"),
                 _controls_row_3,
                 dbc.Tooltip(
