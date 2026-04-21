@@ -19,7 +19,7 @@ def dataset_selector(sisi: SpectraInspectorServerInterface) -> html.Div:
         ]
         _data_selector = html.Div(
             [
-                "Select a map: ",
+                "Select a sample: ",
                 Dropdown(
                     _menu_items,
                     id="data-dropdown",

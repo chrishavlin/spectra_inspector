@@ -17,7 +17,6 @@ from dash import (
     html,
     no_update,
 )
-from dash_bootstrap_components import Button
 from pydantic import BaseModel
 
 from spectra_inspector.components import (
@@ -148,32 +147,53 @@ def _get_div_store() -> html.Div:
 def layout(sample_name: str | None = None, **kwargs):  # noqa: ARG001
 
     _layout_rows = []
-    _layout_rows.append(
-        dbc.Row(
-            dbc.Col(
-                html.Div(selected_sample_contents(sample_name), id=_IDS.sample_name),
-                width=12,
-            )
-        )
-    )
     _layout_rows.append(html.Div(hidden=True, id=_IDS.metadata))
 
-    _layout_rows.append(
-        dbc.Row(
-            [dbc.Col(Button("Add Image", id=_IDS.add_image, n_clicks=0), width=12)]
-        ),
+    image_control_card = dbc.Card(
+        dbc.CardBody(
+            [
+                dbc.Row(
+                    [
+                        dbc.Col(html.H4("Dataset:"), width=6),
+                        dbc.Col(
+                            html.Div(
+                                selected_sample_contents(sample_name),
+                                id=_IDS.sample_name,
+                            ),
+                            width=6,
+                        ),
+                    ]
+                ),
+                html.Hr(),
+                dbc.Row(
+                    [
+                        dbc.Col(
+                            dbc.Button(
+                                "Add Image",
+                                id=_IDS.add_image,
+                                n_clicks=0,
+                                color="secondary",
+                            ),
+                            width=6,
+                        ),
+                        dbc.Col(
+                            dbc.Button(
+                                "Reset All Axes",
+                                id=_IDS.reset_all_axes,
+                                n_clicks=0,
+                                color="secondary",
+                            ),
+                            width=6,
+                        ),
+                    ]
+                ),
+            ]
+        )
     )
 
-    _layout_rows.append(
-        dbc.Row(
-            [
-                dbc.Col(
-                    Button("Reset All Axes", id=_IDS.reset_all_axes, n_clicks=0),
-                    width=12,
-                )
-            ]
-        ),
-    )
+    _top_image_controls = html.Div([image_control_card], style={"width": "20%"})
+
+    _layout_rows.append(_top_image_controls)
 
     im_container = dcc.Loading(
         dbc.Row([], id=_IDS.image_container, className="gx-1 gy-1"),
@@ -200,7 +220,7 @@ def layout(sample_name: str | None = None, **kwargs):  # noqa: ARG001
 
     spectrum_div = dbc.Card(
         dbc.CardBody(dbc.Row(dbc.Col(spectrum_graph, width=12), className="gx-1 gy-1")),
-        color="primary",
+        # color="primary",
         style={"margin-top": "1rem"},
     )
 

@@ -168,8 +168,8 @@ def bitmap_image_layout(
             ]
         ),
         id=imIDs.get_id_with_index("div"),
-        color="primary",
-        inverse=True,
+        # color="primary",
+        # inverse=True,
     )
 
     return _primary_graph_div, imIDs

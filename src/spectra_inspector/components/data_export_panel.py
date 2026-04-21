@@ -109,8 +109,8 @@ def get_layout(
                 dbc.Container(msa_row),
             ]
         ),
-        color="primary",
-        inverse=True,
+        # color="primary",
+        # inverse=True,
     )
 
     rows = []
