@@ -29,7 +29,7 @@ def put_dict_in_accordian(d: dict[str, Any]) -> dbc.Accordion:
             )
         accord_its.append(new_it)
 
-    return dbc.Accordion(accord_its, start_collapsed=True)
+    return dbc.Accordion(accord_its, start_collapsed=True, flush=True)
 
 
 def nested_accordian(val: dict[str, Any]) -> dbc.Accordion:
