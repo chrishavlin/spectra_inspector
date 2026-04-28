@@ -2,13 +2,17 @@ from dash import html
 from dash.dcc import Dropdown
 
 from spectra_inspector.utilities.interface import SpectraInspectorServerInterface
+from spectra_inspector.utilities.model import sampleMetadata
 
 
-def dataset_selector(sisi: SpectraInspectorServerInterface) -> html.Div:
+def dataset_selector(
+    sisi: SpectraInspectorServerInterface,
+) -> tuple[html.Div, sampleMetadata | None]:
     _available: list[str] = ["none"]
-
+    datasets = None
     if sisi.connected:
         datasets = sisi.get_available_datasets()
+
         all_data = _available + datasets.available_files
         _menu_items = [
             {
@@ -32,4 +36,4 @@ def dataset_selector(sisi: SpectraInspectorServerInterface) -> html.Div:
             ["Could not connect to spectra_inspector_server backend."]
         )
 
-    return _data_selector
+    return _data_selector, datasets
