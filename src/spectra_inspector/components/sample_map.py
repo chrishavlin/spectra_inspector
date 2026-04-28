@@ -7,6 +7,7 @@ import plotly.graph_objects as go
 from dash import MATCH, Input, Output, State, callback, dcc, no_update
 
 from spectra_inspector.components.layout_ids import indexedLayoutIDMapper
+from spectra_inspector.utilities.degrees import Latitude, Longitude
 from spectra_inspector.utilities.model import AvailableDatasets
 
 _map_styles = {
@@ -114,14 +115,35 @@ def get_map(
     else:
         df = pd.DataFrame(available_data.sample_metadata["records"])
         df["marker_size"] = 10
-        hd_cols = [
-            "group_name",
-            "sample_type",
-            "description",
-            "lat",
-            "lon",
-            "elevation",
-        ]
+
+        def _attach_better_latlon(row):
+
+            if not pd.isna(row["lat"]):
+                lat = Latitude(row["lat"], cardinal_str="N")
+                row["latitude"] = lat.to_str()
+
+            if not pd.isna(row["lon"]):
+                lon = Longitude(row["lon"], cardinal_str="E")
+                row["longitude"] = lon.to_str()
+
+            return row
+
+        df["latitude"] = ""
+        df["longitude"] = ""
+
+        df = df.apply(_attach_better_latlon, axis=1)
+
+        hd_cols = {
+            "group_name": True,
+            "sample_type": True,
+            "description": True,
+            "lat": False,
+            "lon": False,
+            "longitude": True,
+            "latitude": True,
+            "elevation": True,
+            "marker_size": False,
+        }
 
     # https://plotly.github.io/plotly.py-docs/generated/plotly.express.scatter_map.html
     fig = px.scatter_map(
