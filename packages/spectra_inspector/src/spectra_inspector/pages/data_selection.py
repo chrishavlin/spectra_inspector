@@ -1,14 +1,17 @@
 import dash
 import dash_bootstrap_components as dbc
-from dash import Input, Output, State, callback, html
+from dash import Input, Output, State, callback, html, no_update
 
 from spectra_inspector.components import dataset_selector, sample_map
 from spectra_inspector.components.nested_accordian import nested_accordian
+from spectra_inspector.logging import spectraLogger
 from spectra_inspector.user_store_model import USER_STORE_DIV_ID, updateDataStore
 from spectra_inspector.utilities.coerce import spaces_to_placeholder
 from spectra_inspector.utilities.interface import SpectraInspectorServerInterface
 
 dash.register_page(__name__, path="/", order=0)
+
+_basemapIDs = sample_map.sampleMapLayoutIDs()
 
 
 def layout(**kwargs) -> html.Div:  # noqa: ARG001
@@ -88,3 +91,13 @@ def update_selected_dataset(
     )
 
     return nl, md, new_user_data
+
+
+@callback(
+    Output("data-dropdown", "value"),
+    Input({"type": _basemapIDs.samplemap, "index": 0}, "clickData"),
+)
+def update_graph_figure(selectedData):
+    spectraLogger.info("map selection")
+    spectraLogger.info(selectedData)
+    return no_update
