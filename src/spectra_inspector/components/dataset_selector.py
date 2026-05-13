@@ -2,12 +2,12 @@ from dash import html
 from dash.dcc import Dropdown
 
 from spectra_inspector.utilities.interface import SpectraInspectorServerInterface
-from spectra_inspector.utilities.model import sampleMetadata
+from spectra_inspector.utilities.model import AvailableDatasets
 
 
 def dataset_selector(
     sisi: SpectraInspectorServerInterface,
-) -> tuple[html.Div, sampleMetadata | None]:
+) -> tuple[html.Div, AvailableDatasets | None]:
     _available: list[str] = ["none"]
     datasets = None
     if sisi.connected:
