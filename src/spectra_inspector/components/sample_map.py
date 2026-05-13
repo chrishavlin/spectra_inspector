@@ -7,6 +7,8 @@ import plotly.graph_objects as go
 from dash import MATCH, Input, Output, State, callback, dcc, no_update
 
 from spectra_inspector.components.layout_ids import indexedLayoutIDMapper
+from spectra_inspector.utilities.degrees import Latitude, Longitude
+from spectra_inspector.utilities.model import AvailableDatasets
 
 _map_styles = {
     "OpenStreetMap": "open-street-map",
@@ -88,30 +90,69 @@ class sampleMapLayoutIDs(indexedLayoutIDMapper):
         return self.full_id("-dropdown")
 
 
-def get_map(map_style: str) -> go.Figure:
+def get_map(
+    map_style: str, available_data: AvailableDatasets | None = None
+) -> go.Figure:
 
     ms = mapSettings()
 
-    recs = [
-        {
-            "lat": ms.center_lat,
-            "lon": ms.center_lon,
-            "name": ms.placename,
-            "elevation_m": ms.elevation_m,
-            "marker_size": 20,
-            "sample_id": "0",
-        },
-    ]
+    if available_data is None:
+        recs = [
+            {
+                "lat": ms.center_lat,
+                "lon": ms.center_lon,
+                "name": ms.placename,
+                "elevation": ms.elevation_m,
+                "marker_size": 20,
+                "sample_id": "0",
+                "group_name": "0",
+            },
+        ]
 
-    df = pd.DataFrame(recs)
+        df = pd.DataFrame(recs)
+        hd_cols = ["group_name", "lat", "lon", "elevation"]
+
+    else:
+        df = pd.DataFrame(available_data.sample_metadata["records"])
+        df["marker_size"] = 10
+
+        def _attach_better_latlon(row):
+
+            if not pd.isna(row["lat"]):
+                lat = Latitude(row["lat"], cardinal_str="N")
+                row["latitude"] = lat.to_str()
+
+            if not pd.isna(row["lon"]):
+                lon = Longitude(row["lon"], cardinal_str="E")
+                row["longitude"] = lon.to_str()
+
+            return row
+
+        df["latitude"] = ""
+        df["longitude"] = ""
+
+        df = df.apply(_attach_better_latlon, axis=1)
+
+        hd_cols = {
+            "group_name": True,
+            "sample_type": True,
+            "description": True,
+            "lat": False,
+            "lon": False,
+            "longitude": True,
+            "latitude": True,
+            "elevation": True,
+            "marker_size": False,
+        }
 
     # https://plotly.github.io/plotly.py-docs/generated/plotly.express.scatter_map.html
     fig = px.scatter_map(
         df,
         lat="lat",
         lon="lon",
-        color="sample_id",
-        hover_name="name",
+        color="group_name",
+        hover_name="sample_id",
+        hover_data=hd_cols,
         map_style=map_style,
         size="marker_size",
         opacity=1.0,
@@ -156,13 +197,14 @@ def get_map(map_style: str) -> go.Figure:
 def get_layout(
     id_type_base: str = "sample-map",
     index: int = 0,
+    available_data: None | AvailableDatasets = None,
 ) -> tuple[dbc.Container, sampleMapLayoutIDs]:
 
     IDS = sampleMapLayoutIDs(id_type_base=id_type_base, index=index)
 
     default_style = _map_styles["Satellite"]
 
-    fig = get_map(default_style)
+    fig = get_map(default_style, available_data=available_data)
 
     OK_styles = list(_map_styles.keys())
     OK_styles.sort()

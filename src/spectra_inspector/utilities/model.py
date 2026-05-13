@@ -91,8 +91,26 @@ class Info:
 
 
 @dataclass
+class sampleMetadataCSVrecord:
+    sample_id: str
+    lat: float
+    lon: float
+    elevation: float
+    group_name: str
+    sample_type: str
+    description: str
+
+
+@dataclass
+class sampleMetadata:
+    records: list[sampleMetadataCSVrecord] | None = None
+    map_samples: dict[str, str] | None = None
+
+
+@dataclass
 class AvailableDatasets:
     available_files: list[str]
+    sample_metadata: sampleMetadata | None = None
 
 
 class raveledImage(BaseModel):

@@ -14,9 +14,9 @@ dash.register_page(__name__, path="/", order=0)
 def layout(**kwargs) -> html.Div:  # noqa: ARG001
 
     sisi = SpectraInspectorServerInterface()
-    _data_selector = dataset_selector(sisi)
+    _data_selector, available_data = dataset_selector(sisi)
 
-    base_map, _ = sample_map.get_layout()
+    base_map, _ = sample_map.get_layout(available_data=available_data)
     base_map_card = dbc.Card(dbc.CardBody(base_map))
     left_panel = dbc.Card(
         dbc.CardBody(
