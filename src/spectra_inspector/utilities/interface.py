@@ -1,9 +1,7 @@
 import requests
 
+from spectra_inspector.settings import Settings
 from spectra_inspector.utilities import model
-
-_DEFAULT_DEBUG_HOST = "0.0.0.0"
-_DEFAULT_DEBUG_PORT = 8000
 
 
 class SpectraInspectorServerInterface:
@@ -17,13 +15,15 @@ class SpectraInspectorServerInterface:
         port: int | str | None = None,
         protocol: str = "http",
     ) -> None:
+
+        env_settings = Settings()
         if host is None:
-            valid_host = _DEFAULT_DEBUG_HOST
+            valid_host = env_settings.server_host
         else:
             valid_host = host
 
         if port is None:
-            valid_port = str(_DEFAULT_DEBUG_PORT)
+            valid_port = str(env_settings.server_port)
         else:
             valid_port = str(port)
 
