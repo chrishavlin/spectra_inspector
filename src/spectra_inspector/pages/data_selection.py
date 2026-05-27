@@ -1,6 +1,6 @@
 import dash
 import dash_bootstrap_components as dbc
-from dash import Input, Output, State, callback, html
+from dash import Input, Output, State, callback, dcc, html
 
 from spectra_inspector.components import dataset_selector, sample_map
 from spectra_inspector.components.nested_accordian import nested_accordian
@@ -18,6 +18,9 @@ def layout(**kwargs) -> html.Div:  # noqa: ARG001
 
     base_map, _ = sample_map.get_layout(available_data=available_data)
     base_map_card = dbc.Card(dbc.CardBody(base_map))
+
+    _load_Button = dbc.Button("Load Selected", id="load-selected-button", disabled=True)
+
     left_panel = dbc.Card(
         dbc.CardBody(
             [
@@ -26,13 +29,18 @@ def layout(**kwargs) -> html.Div:  # noqa: ARG001
                 html.Div(
                     [
                         dbc.NavLink(
-                            dbc.Button("Load Selected"),
+                            _load_Button,
                             href="/inspector",
                         ),
                     ],
                     id="nav-link-loader-div",
                 ),
-                html.Div(id="metadata-display"),
+                dcc.Loading(
+                    html.Div(id="metadata-display"),
+                    id="metadata-loading",
+                    overlay_style={"visibility": "visible", "filter": "blur(2px)"},
+                    type="circle",
+                ),
             ]
         )
     )
@@ -58,9 +66,14 @@ def layout(**kwargs) -> html.Div:  # noqa: ARG001
     Output("nav-link-loader-div", "children"),
     Output("metadata-display", "children"),
     Output(USER_STORE_DIV_ID, "data"),
+    Output("load-selected-button", "disabled"),
     Input("data-dropdown", "value"),
     State(USER_STORE_DIV_ID, "data"),
     prevent_initial_call=True,
+    running=[
+        (Output("load-selected-button", "disabled"), True, False),
+        (Output("metadata-loading", "display"), "show", "hide"),
+    ],
 )
 def update_selected_dataset(
     input_value: str | None, current_user_data: dict
@@ -83,8 +96,9 @@ def update_selected_dataset(
 
     valid_input_vale = spaces_to_placeholder(input_value)
     nl = dbc.NavLink(
-        dbc.Button("Load Selected"),
+        dbc.Button("Load Selected", id="load-selected-button"),
         href=f"/inspector/{valid_input_vale}",
     )
 
-    return nl, md, new_user_data
+    disable_button = input_value == "none"
+    return nl, md, new_user_data, disable_button
