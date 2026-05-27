@@ -1,7 +1,9 @@
 from dash import html
 
 from spectra_inspector.components.dataset_selector import dataset_selector
-from spectra_inspector.utilities.interface import SpectraInspectorServerInterface
+from spectra_inspector.utilities.external_interface import (
+    SpectraInspectorServerInterface,
+)
 
 
 def test_dataset_selector_no_connection():
