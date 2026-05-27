@@ -1,40 +1,74 @@
-from spectra_inspector.server import api as si_api
+import requests
+
 from spectra_inspector.server import model
+from spectra_inspector.settings import Settings
 
 
 class SpectraInspectorServerInterface:
-    host: str | None
-    port: str | None
-    protocol: str | None
+    host: str
+    port: str
+    protocol: str
 
     def __init__(
         self,
         host: str | None = None,
         port: int | str | None = None,
-        protocol: str | None = None,
+        protocol: str = "http",
     ) -> None:
 
-        # not actually used, but included to keep in sync with the
-        # exgternal_interface
-        self.host = host
-        self.port = port
+        env_settings = Settings()
+        if host is None:
+            valid_host = env_settings.server_host
+        else:
+            valid_host = host
+
+        if port is None:
+            valid_port = str(env_settings.server_port)
+        else:
+            valid_port = str(port)
+
+        self.host = valid_host
+        self.port = valid_port
         self.protocol = protocol
 
     @property
+    def uri(self):
+        return f"{self.protocol}://{self.host}:{self.port}"
+
+    def _get_endpoint(self, endpoint: str) -> str:
+        return f"{self.uri}/{endpoint}"
+
+    @property
     def connected(self):
-        return True
+        uri = self._get_endpoint("info")
+        try:
+            r = requests.get(uri)
+        except requests.exceptions.ConnectionError:
+            return False
+        else:
+            return r.status_code == 200
 
     def get_info(self) -> model.Info:
-        return si_api.info()
+        uri = self._get_endpoint("info")
+        r = requests.get(uri)
+        return model.Info(**r.json())
 
     def get_available_datasets(self) -> model.AvailableDatasets:
-        return si_api.available_datasets()
+        uri = self._get_endpoint("available-datasets")
+        r = requests.get(uri)
+        return model.AvailableDatasets(**r.json())
 
     def get_image_metadata(self, sample_name: str) -> model.MetadataModel:
-        return si_api.image_metadata(sample_name)
+        payload = {"sample_name": sample_name}
+        uri = self._get_endpoint("image-metadata")
+        r = requests.get(uri, params=payload)
+        return model.MetadataModel(**r.json())
 
     def get_combined_image_metadata(self, sample_name: str) -> model.CombinedMetadata:
-        return si_api.image_metadata_combined(sample_name)
+        payload = {"sample_name": sample_name}
+        uri = self._get_endpoint("image-metadata-combined")
+        r = requests.get(uri, params=payload)
+        return model.CombinedMetadata(**r.json())
 
     def get_image_spectrum(
         self,
@@ -45,7 +79,7 @@ class SpectraInspectorServerInterface:
     ) -> model.Spectrum1dDict:
 
         payload: dict[str, str | int]
-        payload = {}
+        payload = {"sample_name": sample_name}
 
         if isinstance(channel_range, tuple):
             payload["channel_0"] = channel_range[0]
@@ -59,7 +93,9 @@ class SpectraInspectorServerInterface:
             payload["index1_0"] = index1_range[0]
             payload["index1_1"] = index1_range[1]
 
-        return si_api.image_spectrum(sample_name, **payload)
+        uri = self._get_endpoint("image-spectrum")
+        r = requests.get(uri, params=payload)
+        return model.Spectrum1dDict(**r.json())
 
     def get_image(
         self,
@@ -70,6 +106,7 @@ class SpectraInspectorServerInterface:
     ) -> model.raveledImage:
 
         payload = {
+            "sample_name": sample_name,
             "channel_index": channel_index,
         }
         if isinstance(index0_range, tuple):
@@ -79,8 +116,9 @@ class SpectraInspectorServerInterface:
         if isinstance(index1_range, tuple):
             payload["index1_0"] = index1_range[0]
             payload["index1_1"] = index1_range[1]
-
-        return si_api.image_data(sample_name, **payload)
+        uri = self._get_endpoint("image-data")
+        r = requests.get(uri, params=payload)
+        return model.raveledImage(**r.json())
 
     def image_data_summed(
         self,
@@ -91,6 +129,7 @@ class SpectraInspectorServerInterface:
     ) -> model.raveledImage:
 
         payload = {
+            "sample_name": sample_name,
             "channel_0": channel_range[0],
             "channel_1": channel_range[1],
         }
@@ -103,4 +142,6 @@ class SpectraInspectorServerInterface:
             payload["index1_0"] = index1_range[0]
             payload["index1_1"] = index1_range[1]
 
-        return si_api.image_data_summed(sample_name, **payload)
+        uri = self._get_endpoint("image-data-summed")
+        r = requests.get(uri, params=payload)
+        return model.raveledImage(**r.json())

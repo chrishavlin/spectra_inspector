@@ -7,8 +7,8 @@ import plotly.graph_objects as go
 from dash import MATCH, Input, Output, State, callback, dcc, no_update
 
 from spectra_inspector.components.layout_ids import indexedLayoutIDMapper
+from spectra_inspector.server.model import AvailableDatasets
 from spectra_inspector.utilities.degrees import Latitude, Longitude
-from spectra_inspector.utilities.model import AvailableDatasets
 
 _map_styles = {
     "OpenStreetMap": "open-street-map",

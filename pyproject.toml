@@ -80,9 +80,8 @@ ignore = [
   "RET504",  # unnecessary-assign (sometimes its nice actually)
   "SIM108",  # use if-else ternary operator
   "PLC0415", # top-level imports only
+  "PD015",   # pandas Use `df.merge` instead of `pd.merge`
 ]
-# Uncomment if using a _compat.typing backport
-# typing-modules = ["spectra_inspector_server._compat.typing"]
 
 [tool.ruff.lint.per-file-ignores]
 "tests/**" = ["T20"]
