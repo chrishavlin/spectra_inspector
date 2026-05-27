@@ -1,7 +1,7 @@
 import requests
 
+from spectra_inspector.server import model
 from spectra_inspector.settings import Settings
-from spectra_inspector.utilities import model
 
 
 class SpectraInspectorServerInterface:
