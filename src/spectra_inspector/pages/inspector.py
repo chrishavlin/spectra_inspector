@@ -248,6 +248,7 @@ def layout(sample_name: str | None = None, **kwargs):  # noqa: ARG001
     Output(_IDS.full_spectrum_store, "data"),
     Input(_IDS.sample_name, "children"),
     Input(_IDS.full_spectrum_store, "data"),
+    background=True,
     running=[
         (Output("spectrum-loading", "display"), "show", "hide"),
         (Output(_IDS.add_image, "disabled"), True, False),
@@ -278,6 +279,7 @@ def initialize_full_spectrum_data(sample_name: str | None, spectrum_store: dict 
     State(_IDS.sample_name, "children"),
     State(_IDS.spectrum_container, "figure"),
     State(_IDS.active_spectrum_metadata, "data"),
+    background=True,
     running=[
         (Output("spectrum-loading", "display"), "show", "hide"),
         (Output(_IDS.add_image, "disabled"), True, False),
@@ -499,6 +501,7 @@ def export_msa(
     State(_dataExportIDS.formatdropdown, "value"),
     State(_IDS.active_spectrum_metadata, "data"),
     State(_dataExportIDS.msafileformat, "value"),
+    background=True,
     prevent_initial_call=True,
     running=[
         (Output(_dataExportIDS.exportsummary, "disabled"), True, False),
@@ -599,6 +602,7 @@ def export_summary(
     State("sample-name", "children"),
     State({"type": _imageIDS.graph, "index": ALL}, "figure"),
     State(_IDS.shapes_store, "data"),
+    background=True,
     running=[
         (Output("full-im-container-loading", "display"), "show", "hide"),
         (Output(_IDS.add_image, "disabled"), True, False),

@@ -1,10 +1,19 @@
 # Import packages
+from uuid import uuid4
+
 import dash
 import dash_bootstrap_components as dbc
-from dash import Dash, dcc, html
+import diskcache
+from dash import Dash, DiskcacheManager, dcc, html
 from dash_bootstrap_templates import ThemeSwitchAIO
 
 from .user_store_model import USER_STORE_DIV_ID
+
+launch_uid = uuid4()
+cache = diskcache.Cache("./cache")
+background_callback_manager = DiskcacheManager(
+    cache, cache_by=[lambda: launch_uid], expire=120
+)
 
 # Set style sheet
 dbc_css = "https://cdn.jsdelivr.net/gh/AnnMarieW/dash-bootstrap-templates/dbc.min.css"
@@ -14,6 +23,7 @@ app = Dash(
     __name__,
     use_pages=True,
     external_stylesheets=[[dbc.themes.FLATLY, dbc_css], dbc.icons.FONT_AWESOME],
+    background_callback_manager=background_callback_manager,
 )
 
 
