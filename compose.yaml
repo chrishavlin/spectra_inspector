@@ -14,6 +14,9 @@ services:
     # Alternatively, you could set `UV_PROJECT_ENVIRONMENT` to a path owned by the non-root user
     user: root
 
+    volumes:
+      - TorresSamplesFromBox:${SPECTRA_INSPECTOR_DATA_ROOT}
+
     develop:
       # Create a `watch` configuration to update the app
       # https://docs.docker.com/compose/file-watch/#compose-watch-versus-bind-mounts
@@ -30,3 +33,11 @@ services:
         # Rebuild the image if dependencies change by checking uv.lock
         - action: rebuild
           path: ./uv.lock
+
+volumes:
+  TorresSamplesFromBox:
+    driver: local
+    driver_opts:
+      type: none
+      device: ${SPECTRA_INSPECTOR_HOST_DATA_ROOT}
+      o: bind

@@ -1,6 +1,5 @@
 from typing import Literal
 
-from spectra_inspector.logging import spectraLogger
 from spectra_inspector.server._file_tree_handling import EDAXPathHandler
 from spectra_inspector.server._testing import pytest_running
 from spectra_inspector.server.dependencies import get_database_session, get_settings
@@ -150,8 +149,6 @@ def image_data_summed(
     channel_range = _validate_range_kwarg(channel_0, channel_1)
     assert isinstance(channel_range, tuple)
     assert len(channel_range) == 2
-    msg = f"fetching summed channel intensity for {sample_name} with {channel_range=}, {index0_range=}, {index1_range=}"
-    spectraLogger.info(msg)
 
     result = ops.get_raveled_multi_channel_intensity_image(
         sample_name,

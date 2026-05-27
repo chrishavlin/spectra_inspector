@@ -38,6 +38,12 @@ RUN --mount=type=cache,target=/root/.cache/uv \
 COPY . /app
 RUN --mount=type=cache,target=/root/.cache/uv uv sync --locked
 
+# we need chrome for dash's figure export for now. ugh. i'm sorry.
+# first deps are cause we want a browser on a slim OS image, second runs kaleido's chrome installer
+# it triggers some warnings about ubuntu and get_browser() but seems to work ok.
+RUN apt-get install -y --no-install-recommends libnss3 libatk-bridge2.0-0 libcups2 libxcomposite1 libxdamage1 libxfixes3 libxrandr2 libgbm1 libxkbcommon0 libpango-1.0-0 libcairo2 libasound2
+RUN --mount=type=cache,target=/root/.cache/uv uv run kaleido_get_chrome
+
 # Place executables in the environment at the front of the path
 ENV PATH="/app/.venv/bin:$PATH"
 
