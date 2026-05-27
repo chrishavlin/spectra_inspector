@@ -3,8 +3,10 @@ from dataclasses import asdict
 
 import numpy as np
 
-from spectra_inspector.utilities.interface import SpectraInspectorServerInterface
-from spectra_inspector.utilities.model import Spectrum1dDict
+from spectra_inspector.server.model import Spectrum1dDict
+from spectra_inspector.utilities.external_interface import (
+    SpectraInspectorServerInterface,
+)
 
 
 def test_init():

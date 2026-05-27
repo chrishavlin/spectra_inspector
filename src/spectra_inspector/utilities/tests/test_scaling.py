@@ -1,4 +1,4 @@
-from spectra_inspector.utilities.model import EDAX_axis
+from spectra_inspector.server.model import EDAX_axis
 from spectra_inspector.utilities.scaling import get_closest_index
 
 

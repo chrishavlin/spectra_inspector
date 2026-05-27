@@ -2,8 +2,8 @@ import dataclasses
 import json
 from typing import Any
 
+from spectra_inspector.server.model import CombinedMetadata
 from spectra_inspector.utilities.interface import SpectraInspectorServerInterface
-from spectra_inspector.utilities.model import CombinedMetadata
 
 USER_STORE_DIV_ID = "user-mem-store"
 

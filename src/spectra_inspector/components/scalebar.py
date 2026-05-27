@@ -5,7 +5,7 @@ import numpy as np
 from plotly.graph_objects import Figure
 from unyt import unyt_quantity
 
-from spectra_inspector.utilities.model import CombinedMetadata, EDAX_axis
+from spectra_inspector.server.model import CombinedMetadata, EDAX_axis
 
 
 def get_pixel_scalebar(ax: EDAX_axis, scalebar_length: unyt_quantity) -> int:

@@ -1,6 +1,6 @@
 import numpy as np
 
-from spectra_inspector.utilities.model import EDAX_axis
+from spectra_inspector.server.model import EDAX_axis
 
 
 def get_closest_index(ax: EDAX_axis, value: float) -> int:
