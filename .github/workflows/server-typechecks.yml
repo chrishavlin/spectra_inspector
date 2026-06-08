@@ -1,0 +1,50 @@
+name: type-checking
+
+on:
+  pull_request:
+    paths:
+      - src/**/*.py
+      - pyproject.toml
+      - .github/workflows/type-checking.yaml
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: false
+
+env:
+  # Many color libraries just need this variable to be set to any value.
+  # Set it to 3 to support 8-bit color graphics (256 colors per channel)
+  # for libraries that care about the value set.
+  FORCE_COLOR: 3
+
+jobs:
+  checks:
+    name: Check Python ${{ matrix.python-version }} on ${{ matrix.runs-on }}
+    runs-on: ${{ matrix.runs-on }}
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version: ["3.12"]
+        runs-on: [ubuntu-latest]
+    defaults:
+      run:
+        working-directory: ./packages/spectra_inspector_server
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v7
+
+      - uses: actions/setup-python@v6
+        with:
+          python-version: ${{ matrix.python-version }}
+          allow-prereleases: true
+
+      - name: uv sync
+        run: uv sync --group typing
+
+      - name: Run mypy
+        run: uv run mypy src/*
