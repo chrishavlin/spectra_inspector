@@ -1,7 +1,8 @@
-name: unit tests
+name: frontend unit tests
 
 on:
   pull_request:
+
   workflow_dispatch:
 
 concurrency:

@@ -1,4 +1,4 @@
-name: type-checking
+name: type-checking server
 
 on:
   pull_request:

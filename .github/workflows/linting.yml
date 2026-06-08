@@ -37,9 +37,6 @@ jobs:
           python-version: ${{ matrix.python-version }}
           allow-prereleases: true
 
-      - name: uv sync
-        run: uv sync --group lint
-
       - name: pre-commit install
         run: uv run pre-commit install
 
