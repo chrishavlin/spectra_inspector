@@ -3,9 +3,9 @@ name: type-checking server
 on:
   pull_request:
     paths:
-      - src/**/*.py
+      - packages/spectra_inspector_server/src/**/*.py
       - pyproject.toml
-      - .github/workflows/type-checking.yaml
+      - packages/spectra_inspector_server/pyproject.toml
   workflow_dispatch:
 
 concurrency:

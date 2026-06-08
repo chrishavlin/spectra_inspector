@@ -2,7 +2,10 @@ name: frontend unit tests
 
 on:
   pull_request:
-
+    paths:
+      - packages/spectra_inspector/src/**/*.py
+      - pyproject.toml
+      - packages/spectra_inspector/pyproject.toml
   workflow_dispatch:
 
 concurrency:

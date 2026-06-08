@@ -2,7 +2,10 @@ name: server unit tests
 
 on:
   pull_request:
-
+    paths:
+      - packages/spectra_inspector_server/src/**/*.py
+      - pyproject.toml
+      - packages/spectra_inspector_server/pyproject.toml
   workflow_dispatch:
 
 concurrency:
