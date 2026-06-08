@@ -57,10 +57,12 @@ def process_handler(ph: EDAXPathHandler, item: queueOpsItem) -> OptionalOpsRetur
     if item.ops_args is None and item.ops_kwargs is None:
         result = func()
     elif item.ops_args is not None and item.ops_kwargs is not None:
+        assert isinstance(item.ops_args, tuple)
         result = func(*item.ops_args, **item.ops_kwargs)
     elif item.ops_args is None and item.ops_kwargs is not None:
         result = func(**item.ops_kwargs)
     elif item.ops_args is not None and item.ops_kwargs is None:
+        assert isinstance(item.ops_args, tuple)
         result = func(*item.ops_args)
     return result
 

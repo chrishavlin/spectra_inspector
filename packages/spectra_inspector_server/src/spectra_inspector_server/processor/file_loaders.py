@@ -6,7 +6,7 @@ from spectra_inspector_server.model import EDAX_file_set, EDAX_raw_ds
 
 
 def load_edax_spd(edax_files: EDAX_file_set) -> EDAX_raw_ds:
-    ds = edax.file_reader(edax_files.spd, ipr_fname=edax_files.ipr)  # type: ignore[no-untyped-call]
+    ds = edax.file_reader(edax_files.spd, ipr_fname=edax_files.ipr)
     if len(ds) > 1:
         msg = f"The following EDAX file includes more than one ds object, only the first will be loaded: {edax_files.spd}"
         spectraLogger.info(msg)
