@@ -4,9 +4,10 @@ import dash_bootstrap_components as dbc
 import pandas as pd
 import plotly.express as px
 import plotly.graph_objects as go
-from dash import MATCH, Input, Output, State, callback, dcc, no_update
+from dash import dcc
 
 from spectra_inspector.components.layout_ids import indexedLayoutIDMapper
+from spectra_inspector.logging import spectraLogger
 from spectra_inspector.utilities.degrees import Latitude, Longitude
 from spectra_inspector.utilities.model import AvailableDatasets
 
@@ -150,13 +151,18 @@ def get_map(
         df,
         lat="lat",
         lon="lon",
-        color="group_name",
         hover_name="sample_id",
         hover_data=hd_cols,
         map_style=map_style,
         size="marker_size",
         opacity=1.0,
         height=1000,  # width=1000
+    )
+
+    fig.update_traces(
+        marker_color="blue",
+        selected={"marker": {"color": "orange", "opacity": 1.0}},
+        unselected={"marker": {"color": "blue", "opacity": 1.0}},
     )
 
     # too low res, but shows how to use the map_layers arg
@@ -190,6 +196,91 @@ def get_map(
         # map_layers=map_layers,
         map=map_dict,
     )
+
+    # attach `customdata` with sample ids to each trace so callbacks can
+    # identify points across traces (Plotly/px may create multiple traces
+    # when coloring by group).
+    sample_ids = df["sample_id"].astype(str).tolist()
+
+    for trace in fig.data:
+        # determine number of points in this trace (scattermapbox traces
+        # expose `lat`/`lon` arrays)
+        if "lat" in trace:
+            n_pts = len(trace["lat"])
+        else:
+            n_pts = 0
+        trace["customdata"] = sample_ids[:n_pts]
+
+    return fig
+
+
+def _validate_sample_name(sample_id: str | None):
+    """coerce "C-12 map 2" etc. to "C-12" """
+    if sample_id is None:
+        return None
+    return sample_id.split(" ")[0]
+
+
+def highlight_selected_point_in_figure(
+    figure: dict | go.Figure, sample_id: str | None, metadata: list[dict] | None = None
+):
+    """Return a modified figure with the point matching `sample_id` selected.
+
+    The function looks for traces that include `customdata` (set to sample ids)
+    and sets `trace['selectedpoints']` to the index of the matching point.
+    If no match is found, any existing `selectedpoints` entries are cleared.
+    """
+
+    if figure is None:
+        return figure
+
+    # work with a JSON-serializable dict representation
+    if hasattr(figure, "to_plotly_json"):
+        fig = figure.to_plotly_json()
+    else:
+        fig = dict(figure)
+
+    valid_sample_id = _validate_sample_name(sample_id)
+    lat: None | float = None
+    lon: None | float = None
+    if metadata is not None:
+        df = pd.DataFrame(metadata["records"])
+        df_id = df[df.sample_id == valid_sample_id]
+        if len(df_id) == 1:
+            lat = float(df_id.iloc[0].lat)
+            lon = float(df_id.iloc[0].lon)
+
+    # Track a new center if we find a selected point
+    new_center = None
+    for trace in fig.get("data", []):
+        custom = trace.get("customdata", []) or []
+        sel_idx = None
+        if valid_sample_id not in (None, "none"):
+            for i, v in enumerate(custom):
+                if str(v) == str(valid_sample_id):
+                    sel_idx = i
+                    break
+
+        if sel_idx is not None:
+            trace["selectedpoints"] = [sel_idx]
+            try:
+                if lat is not None and lon is not None:
+                    new_center = {"lat": lat, "lon": lon}
+            except RuntimeError:
+                spectraLogger.exception("Failed to extract lat/lon for selected point")
+        # clear selection for this trace
+        elif "selectedpoints" in trace:
+            trace["selectedpoints"] = []
+
+    # ensure selection persists sensibly across updates
+    fig.setdefault("layout", {})
+    fig["layout"].setdefault("uirevision", "samplemap-selection")
+
+    # If we found a center from a selected point, update the map center
+    if new_center:
+        fig["layout"].setdefault("map", {})
+        # keep other map settings (zoom/bearing) intact if present
+        fig["layout"]["map"]["center"] = new_center
 
     return fig
 
@@ -227,33 +318,19 @@ def get_layout(
             ),
             dbc.Row(
                 dbc.Col(
-                    dcc.Graph(figure=fig, id=IDS.get_id_with_index("samplemap")),
+                    dcc.Graph(
+                        figure=fig,
+                        id=IDS.get_id_with_index("samplemap"),
+                        config={
+                            "modeBarButtonsToRemove": [
+                                "lasso2d",
+                                "select2d",
+                            ]
+                        },
+                    ),
                     width=12,
                 )
             ),
         ]
     )
     return layout, IDS
-
-
-_sample_map_IDs = sampleMapLayoutIDs(index=0)
-
-
-@callback(
-    Output({"type": _sample_map_IDs.samplemap, "index": MATCH}, "figure"),
-    [Input({"type": _sample_map_IDs.dropdown, "index": MATCH}, "value")],
-    [State({"type": _sample_map_IDs.samplemap, "index": MATCH}, "figure")],
-)
-def toggle_energy_slider_collapse(
-    new_map_style: None | str, current_figure: None | go.Figure
-):
-
-    if new_map_style is None or current_figure is None:
-        return no_update
-
-    valid_style = _map_styles[new_map_style]
-    if current_figure["layout"]["map"]["style"] == valid_style:
-        return no_update
-
-    current_figure["layout"]["map"]["style"] = valid_style
-    return current_figure

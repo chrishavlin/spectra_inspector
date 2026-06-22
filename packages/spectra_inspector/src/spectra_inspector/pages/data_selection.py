@@ -83,8 +83,13 @@ def update_selected_dataset(
 
     new_user_data = updateDataStore(current_user_data, "metadata_json", meta_json_str)
     new_user_data = updateDataStore(new_user_data, "selected_dataset", input_value)
+    if new_user_data.get("sample_metadata", None) is None:
+        available = sisi.get_available_datasets().sample_metadata
+        if available is not None:
+            new_user_data = updateDataStore(new_user_data, "sample_metadata", available)
 
     valid_input_vale = spaces_to_placeholder(input_value)
+
     nl = dbc.NavLink(
         dbc.Button("Load Selected"),
         href=f"/inspector/{valid_input_vale}",
@@ -94,10 +99,58 @@ def update_selected_dataset(
 
 
 @callback(
-    Output("data-dropdown", "value"),
-    Input({"type": _basemapIDs.samplemap, "index": 0}, "clickData"),
+    Output({"type": _basemapIDs.samplemap, "index": 0}, "figure"),
+    Input(USER_STORE_DIV_ID, "data"),
+    Input({"type": _basemapIDs.dropdown, "index": 0}, "value"),
+    State({"type": _basemapIDs.samplemap, "index": 0}, "figure"),
+    prevent_initial_call=True,
 )
-def update_graph_figure(selectedData):
-    spectraLogger.info("map selection")
-    spectraLogger.info(selectedData)
-    return no_update
+def update_map_figure(
+    user_data: dict | None, new_map_style: None | str, current_figure: dict | None
+):
+    """Handle updates to the map figure triggered by either the user
+    store (selection changes) or the map-style dropdown.
+    """
+
+    ctx = dash.callback_context
+    if not ctx.triggered:
+        return no_update
+
+    if current_figure is None:
+        return no_update
+
+    # Determine which input triggered the callback
+    triggered = ctx.triggered[-1]["prop_id"].split(".")[0]
+
+    # If the user store triggered, update the selected point highlight
+    if triggered == USER_STORE_DIV_ID:
+        if not user_data:
+            return no_update
+
+        selected = user_data.get("selected_dataset", None)
+
+        try:
+            metadata = user_data.get("sample_metadata", None)
+            new_fig = sample_map.highlight_selected_point_in_figure(
+                current_figure, selected, metadata
+            )
+        except (RuntimeError, KeyError):
+            spectraLogger.exception("Failed to update map selection")
+            return no_update
+        return new_fig
+
+    # Otherwise, assume the map-style dropdown triggered and update style
+    if new_map_style is None:
+        return no_update
+
+    try:
+        valid_style = sample_map._map_styles[new_map_style]
+    except KeyError:
+        spectraLogger.exception("Unknown map style requested")
+        return no_update
+
+    if current_figure.get("layout", {}).get("map", {}).get("style") == valid_style:
+        return no_update
+
+    current_figure.setdefault("layout", {}).setdefault("map", {})["style"] = valid_style
+    return current_figure
