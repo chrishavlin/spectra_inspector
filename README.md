@@ -1,23 +1,44 @@
 # spectra_inspector
 
-A dash-plotly web app for subsampling EDAX filesets
+## Deployment
 
-# Developer notes
+### Initialize data
 
-## Deployment - Docker
+### Running via Docker
 
-### environment variables
+#### Initialize environment variables
 
-Set in `.env`:
+#### Build with docker compose
 
-- `WRITE_DIR`='/path/to/a/writeable/directory' occasionally cleared by the
-  frontend, used for storing temp files provided as downloads to user
-- `MAX_TMP_DIRS`=100 max number of tmp directories before they start clearing
-- `SERVER_HOST`=host to use. Use "host.docker.internal" for deployment when the
-  `spectra_inspector_server` is running via docker on the same machine.
-- `SERVER_PORT`=port to access `spectra_inspector_server` api on
+The following helper script will load in environment variables, build the
+containers and spin them up:
 
-## Credits
+`./compose_build_and_up.sh`
 
-Initial multi-page dash template modified from
-https://github.com/open-resources/dash_curriculum
+### Running via uv
+
+#### Initialize environment variables
+
+#### Initialize uv environment:
+
+From top level,
+
+```
+uv sync
+```
+
+#### Start the server and frontend:
+
+Terminal 1:
+
+```shell
+cd packages/spectra_inspector_server
+uv run fastapi run src/spectra_inspector_server/main.py
+```
+
+Terminal 2:
+
+```shell
+cd packages/spectra_inspector
+uv run python serve.py
+```

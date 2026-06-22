@@ -1,7 +1,11 @@
-name: pre-commit checks
+name: type-checking server
 
 on:
   pull_request:
+    paths:
+      - packages/spectra_inspector_server/src/**/*.py
+      - pyproject.toml
+      - packages/spectra_inspector_server/pyproject.toml
   workflow_dispatch:
 
 concurrency:
@@ -23,7 +27,9 @@ jobs:
       matrix:
         python-version: ["3.12"]
         runs-on: [ubuntu-latest]
-
+    defaults:
+      run:
+        working-directory: ./packages/spectra_inspector_server
     steps:
       - uses: actions/checkout@v6
         with:
@@ -38,10 +44,7 @@ jobs:
           allow-prereleases: true
 
       - name: uv sync
-        run: uv run pip install pre-commit
+        run: uv sync --group typing
 
-      - name: pre-commit install
-        run: uv run pre-commit install
-
-      - name: Run pre-commit
-        run: uv run pre-commit run --all-files --show-diff-on-failure
+      - name: Run mypy
+        run: uv run mypy src/*
