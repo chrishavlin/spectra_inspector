@@ -161,26 +161,19 @@ def layout(sample_name: str | None = None, **kwargs):  # noqa: ARG001
     _layout_rows.append(html.Div(hidden=True, id=_IDS.metadata))
 
     sisi = SpectraInspectorServerInterface()
-    _data_selector, _ = dataset_selector(sisi, component_index=1, sample_id=sample_name)
-    dataset_mini_selector = [
-        dbc.Col(
-            _data_selector,
-            width=12,
-        ),
-        dbc.Col(
-            html.Div(
-                selected_sample_contents(sample_name), id=_IDS.sample_name, hidden=True
-            ),
-        ),
-    ]
+    _data_selector, _ = dataset_selector(
+        sisi, component_index=1, sample_id=sample_name, dropdown_label="Sample: "
+    )
 
     image_control_card = dbc.Card(
         dbc.CardBody(
             [
-                dbc.Row(dataset_mini_selector),
-                html.Hr(),
                 dbc.Row(
                     [
+                        dbc.Col(
+                            _data_selector,
+                            width=4,
+                        ),
                         dbc.Col(
                             dbc.Button(
                                 "Add Image",
@@ -188,7 +181,7 @@ def layout(sample_name: str | None = None, **kwargs):  # noqa: ARG001
                                 n_clicks=0,
                                 color="secondary",
                             ),
-                            width=6,
+                            width=4,
                         ),
                         dbc.Col(
                             dbc.Button(
@@ -197,15 +190,24 @@ def layout(sample_name: str | None = None, **kwargs):  # noqa: ARG001
                                 n_clicks=0,
                                 color="secondary",
                             ),
-                            width=6,
+                            width=4,
                         ),
-                    ]
+                    ],
+                    align="center",
                 ),
             ]
         )
     )
 
-    _top_image_controls = html.Div([image_control_card], style={"width": "20%"})
+    _top_image_controls = html.Div(
+        [
+            image_control_card,
+            html.Div(
+                selected_sample_contents(sample_name), id=_IDS.sample_name, hidden=True
+            ),
+        ],
+        style={"width": "45%"},
+    )
 
     _layout_rows.append(_top_image_controls)
 

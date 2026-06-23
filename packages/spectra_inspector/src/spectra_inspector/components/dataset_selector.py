@@ -23,6 +23,7 @@ def dataset_selector(
     sisi: SpectraInspectorServerInterface,
     component_index: int = 0,
     sample_id: str | None = None,
+    dropdown_label: str = "Select a sample: ",
 ) -> tuple[html.Div, AvailableDatasets | None]:
     _available: list[str] = ["none"]
     datasets = None
@@ -41,7 +42,7 @@ def dataset_selector(
         ]
         _data_selector = html.Div(
             [
-                "Select a sample: ",
+                dropdown_label,
                 Dropdown(
                     _menu_items,
                     id=dataset_selector_IDS.get_id_with_index("dropdown"),
