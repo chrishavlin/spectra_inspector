@@ -23,12 +23,18 @@ from spectra_inspector.components import (
     bitmap_image_layout,
     bitmapImageLayoutIDs,
     data_export_panel,
+    dataset_selector,
+    datasetSelectorLayoutIDs,
     get_new_im,
 )
 from spectra_inspector.components.energy_range_slider import elementDropdownSliderIDS
 from spectra_inspector.components.scalebar import scalebarHandler
 from spectra_inspector.logging import spectraLogger
-from spectra_inspector.user_store_model import USER_STORE_DIV_ID, UserStore
+from spectra_inspector.user_store_model import (
+    USER_STORE_DIV_ID,
+    UserStore,
+    updateDataStore,
+)
 from spectra_inspector.utilities.coerce import (
     copy_layout_attrs,
     copy_layout_attrs_for_new_fig,
@@ -44,6 +50,8 @@ dash.register_page(__name__, order=1, path_template="/inspector/<sample_name>")
 NUMBER_OF_INITIAL_FIGURES = 3
 
 scalebar_handler = scalebarHandler()
+
+secondDatasetSelector = datasetSelectorLayoutIDs(index=1)
 
 
 def _valid_sample_name(sample_name: str | None):
@@ -144,29 +152,28 @@ def _get_div_store() -> html.Div:
     )
 
 
+selectorIDs = datasetSelectorLayoutIDs(index=1)
+
+
 def layout(sample_name: str | None = None, **kwargs):  # noqa: ARG001
 
     _layout_rows = []
     _layout_rows.append(html.Div(hidden=True, id=_IDS.metadata))
+
+    sisi = SpectraInspectorServerInterface()
+    _data_selector, _ = dataset_selector(
+        sisi, component_index=1, sample_id=sample_name, dropdown_label="Sample: "
+    )
 
     image_control_card = dbc.Card(
         dbc.CardBody(
             [
                 dbc.Row(
                     [
-                        dbc.Col(html.H4("Dataset:"), width=6),
                         dbc.Col(
-                            html.Div(
-                                selected_sample_contents(sample_name),
-                                id=_IDS.sample_name,
-                            ),
-                            width=6,
+                            _data_selector,
+                            width=4,
                         ),
-                    ]
-                ),
-                html.Hr(),
-                dbc.Row(
-                    [
                         dbc.Col(
                             dbc.Button(
                                 "Add Image",
@@ -174,7 +181,7 @@ def layout(sample_name: str | None = None, **kwargs):  # noqa: ARG001
                                 n_clicks=0,
                                 color="secondary",
                             ),
-                            width=6,
+                            width=4,
                         ),
                         dbc.Col(
                             dbc.Button(
@@ -183,15 +190,24 @@ def layout(sample_name: str | None = None, **kwargs):  # noqa: ARG001
                                 n_clicks=0,
                                 color="secondary",
                             ),
-                            width=6,
+                            width=4,
                         ),
-                    ]
+                    ],
+                    align="center",
                 ),
             ]
         )
     )
 
-    _top_image_controls = html.Div([image_control_card], style={"width": "20%"})
+    _top_image_controls = html.Div(
+        [
+            image_control_card,
+            html.Div(
+                selected_sample_contents(sample_name), id=_IDS.sample_name, hidden=True
+            ),
+        ],
+        style={"width": "45%"},
+    )
 
     _layout_rows.append(_top_image_controls)
 
@@ -245,13 +261,14 @@ def layout(sample_name: str | None = None, **kwargs):  # noqa: ARG001
 
 
 @callback(
-    Output(_IDS.full_spectrum_store, "data"),
+    Output(_IDS.full_spectrum_store, "data", allow_duplicate=True),
     Input(_IDS.sample_name, "children"),
     Input(_IDS.full_spectrum_store, "data"),
     running=[
         (Output("spectrum-loading", "display"), "show", "hide"),
         (Output(_IDS.add_image, "disabled"), True, False),
     ],
+    prevent_initial_call=True,
 )
 def initialize_full_spectrum_data(sample_name: str | None, spectrum_store: dict | None):
 
@@ -271,8 +288,8 @@ def initialize_full_spectrum_data(sample_name: str | None, spectrum_store: dict 
 
 
 @callback(
-    Output(_IDS.spectrum_container, "figure"),
-    Output(_IDS.active_spectrum_metadata, "data"),
+    Output(_IDS.spectrum_container, "figure", allow_duplicate=True),
+    Output(_IDS.active_spectrum_metadata, "data", allow_duplicate=True),
     Input(_IDS.shapes_store, "data"),
     Input(_IDS.full_spectrum_store, "data"),
     State(_IDS.sample_name, "children"),
@@ -399,8 +416,8 @@ def _index_range_from_shape(shp):
 
 
 @callback(
-    Output(_IDS.image_container, "children"),
-    Output(_IDS.graph_id_store, "data"),
+    Output(_IDS.image_container, "children", allow_duplicate=True),
+    Output(_IDS.graph_id_store, "data", allow_duplicate=True),
     Input(_IDS.add_image, "n_clicks"),
     Input({"type": _imageIDS.delete, "index": ALL}, "n_clicks"),
     State(_IDS.image_container, "children"),
@@ -408,6 +425,7 @@ def _index_range_from_shape(shp):
     running=[
         (Output(_IDS.add_image, "disabled"), True, False),
     ],
+    prevent_initial_call=True,
 )
 def add_or_delete_image(
     n_clicks: int | None,
@@ -806,3 +824,62 @@ def _recopy_all_figs(fig_list, user_store, slider_range_list, colormap_choices):
         )
         new_list.append(new_fig)
     return new_list
+
+
+@callback(
+    Output(USER_STORE_DIV_ID, "data", allow_duplicate=True),
+    Output(_IDS.sample_name, "children"),
+    Output(_IDS.graph_id_store, "data", allow_duplicate=True),
+    Output(_IDS.processed_graph_id_store, "data", allow_duplicate=True),
+    Output(_IDS.full_spectrum_store, "data", allow_duplicate=True),
+    Output(_IDS.active_spectrum_metadata, "data", allow_duplicate=True),
+    Output(_IDS.image_container, "children", allow_duplicate=True),
+    Output(_IDS.spectrum_container, "figure"),
+    Input(selectorIDs.get_id_with_index("dropdown"), "value"),
+    State(USER_STORE_DIV_ID, "data"),
+    prevent_initial_call=True,
+)
+def update_selected_dataset(
+    input_value: str | None, current_user_data: dict
+) -> tuple[dict, str, dict, dict, dict, dict, list, None]:
+    sisi = SpectraInspectorServerInterface()
+
+    if input_value is None:
+        input_value = "none"
+
+    meta_json_str: str = ""
+    new_user_data = current_user_data.copy()
+    if (
+        current_user_data.get("metadata_json", "") == ""
+        and input_value
+        and input_value != "none"
+    ):
+        meta = sisi.get_combined_image_metadata(input_value)
+        meta_json_str = meta.model_dump_json()
+        new_user_data = updateDataStore(
+            current_user_data, "metadata_json", meta_json_str
+        )
+
+    new_user_data = updateDataStore(new_user_data, "selected_dataset", input_value)
+
+    if new_user_data.get("sample_metadata", None) is None:
+        available = sisi.get_available_datasets().sample_metadata
+        if available is not None:
+            new_user_data = updateDataStore(new_user_data, "sample_metadata", available)
+
+    # reset state
+    graph_id_store = {"initialized": False}
+    processed_graph_id_store = {"initialized": False}
+    active_spectrum_metadata = {}
+    full_spectrum_store = {}
+    figure_div_children = []
+    return (
+        new_user_data,
+        input_value,
+        graph_id_store,
+        processed_graph_id_store,
+        full_spectrum_store,
+        active_spectrum_metadata,
+        figure_div_children,
+        None,
+    )

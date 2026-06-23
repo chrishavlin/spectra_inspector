@@ -156,16 +156,20 @@ class OperationEDAXStateHandler:
             sample_name, input_index_ranges
         )
         index_ranges = [valid_index_ranges[0], valid_index_ranges[1], channel_range]
-
         orig_ranges = index_ranges.copy()
 
         shapes_by_dim = [indx[1] - indx[0] for indx in index_ranges]
         final_shape: tuple[int, int] = (shapes_by_dim[0], shapes_by_dim[1])
 
         index_offsets = [indx[0] for indx in index_ranges[:-1]]
-        im_output = np.zeros(final_shape, dtype=int)
+        im_output = np.zeros(final_shape, dtype=np.int64)
 
         assert im_output.ndim == 2
+
+        # prepare channel slice once
+        channel_slice = slice(channel_range[0], channel_range[1])
+
+        edax_ds = self.ph.load_edax(sample_name)
 
         i_chunk_0 = orig_ranges[chunking_index][0]
         while i_chunk_0 < orig_ranges[chunking_index][1]:
@@ -174,16 +178,17 @@ class OperationEDAXStateHandler:
 
             index_ranges[chunking_index] = (i_chunk_0, i_chunk_1)
 
-            im = self.get_image(
-                sample_name,
-                index_ranges[2],
-                index0_range=index_ranges[0],
-                index1_range=index_ranges[1],
+            # build slices for direct memmap access
+            data_slices = (
+                slice(index_ranges[0][0], index_ranges[0][1]),
+                slice(index_ranges[1][0], index_ranges[1][1]),
+                channel_slice,
             )
 
-            im_subset = im.sum(axis=-1)
+            # Sum directly from the memmap along the channel axis using
+            # numpy's accumulation dtype to avoid creating large int64 copies.
+            im_subset = np.sum(edax_ds.data[data_slices], axis=-1, dtype=np.int64)
 
-            # find the indices to put it in
             slcs = [
                 slice(
                     index_ranges[idim][0] - index_offsets[idim],
@@ -191,7 +196,8 @@ class OperationEDAXStateHandler:
                 )
                 for idim in range(2)
             ]
-            im_output[slcs[0], slcs[1]] = im_output[slcs[0], slcs[1]] + im_subset
+
+            im_output[slcs[0], slcs[1]] += im_subset
 
             i_chunk_0 += chunksize
 

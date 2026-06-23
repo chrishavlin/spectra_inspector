@@ -2,7 +2,11 @@ import dash
 import dash_bootstrap_components as dbc
 from dash import Input, Output, State, callback, html, no_update
 
-from spectra_inspector.components import dataset_selector, sample_map
+from spectra_inspector.components import (
+    dataset_selector,
+    datasetSelectorLayoutIDs,
+    sample_map,
+)
 from spectra_inspector.components.nested_accordian import nested_accordian
 from spectra_inspector.logging import spectraLogger
 from spectra_inspector.user_store_model import USER_STORE_DIV_ID, updateDataStore
@@ -12,6 +16,9 @@ from spectra_inspector.utilities.interface import SpectraInspectorServerInterfac
 dash.register_page(__name__, path="/", order=0)
 
 _basemapIDs = sample_map.sampleMapLayoutIDs()
+
+
+selectorIDs = datasetSelectorLayoutIDs(index=0)
 
 
 def layout(**kwargs) -> html.Div:  # noqa: ARG001
@@ -61,7 +68,8 @@ def layout(**kwargs) -> html.Div:  # noqa: ARG001
     Output("nav-link-loader-div", "children"),
     Output("metadata-display", "children"),
     Output(USER_STORE_DIV_ID, "data"),
-    Input("data-dropdown", "value"),
+    # Output(USER_STORE_DIV_ID, "data", allow_duplicate=True),
+    Input(selectorIDs.get_id_with_index("dropdown"), "value"),
     State(USER_STORE_DIV_ID, "data"),
     prevent_initial_call=True,
 )
