@@ -148,20 +148,25 @@ def _get_div_store() -> html.Div:
     )
 
 
+selectorIDs = datasetSelectorLayoutIDs(index=1)
+
+
 def layout(sample_name: str | None = None, **kwargs):  # noqa: ARG001
 
     _layout_rows = []
     _layout_rows.append(html.Div(hidden=True, id=_IDS.metadata))
 
-    _data_selector, available_data = dataset_selector(sisi)
+    sisi = SpectraInspectorServerInterface()
+    _data_selector, _ = dataset_selector(sisi, component_index=1, sample_id=sample_name)
     dataset_mini_selector = [
-        dbc.Col(html.H4("Dataset:"), width=6),
+        dbc.Col(
+            _data_selector,
+            width=12,
+        ),
         dbc.Col(
             html.Div(
-                selected_sample_contents(sample_name),
-                id=_IDS.sample_name,
+                selected_sample_contents(sample_name), id=_IDS.sample_name, hidden=True
             ),
-            width=6,
         ),
     ]
 
@@ -251,7 +256,7 @@ def layout(sample_name: str | None = None, **kwargs):  # noqa: ARG001
 
 @callback(
     Output(_IDS.full_spectrum_store, "data"),
-    Input(_IDS.sample_name, "children"),
+    Input(selectorIDs.get_id_with_index("dropdown"), "value"),
     Input(_IDS.full_spectrum_store, "data"),
     running=[
         (Output("spectrum-loading", "display"), "show", "hide"),
@@ -280,7 +285,7 @@ def initialize_full_spectrum_data(sample_name: str | None, spectrum_store: dict 
     Output(_IDS.active_spectrum_metadata, "data"),
     Input(_IDS.shapes_store, "data"),
     Input(_IDS.full_spectrum_store, "data"),
-    State(_IDS.sample_name, "children"),
+    State(selectorIDs.get_id_with_index("dropdown"), "value"),
     State(_IDS.spectrum_container, "figure"),
     State(_IDS.active_spectrum_metadata, "data"),
     running=[
@@ -371,7 +376,7 @@ def update_spectrum(
 
 @callback(
     Output(_IDS.add_image, "n_clicks"),
-    Input(_IDS.sample_name, "children"),
+    Input(selectorIDs.get_id_with_index("dropdown"), "value"),
 )
 def initial_update(input_value: str | None):
     if _valid_sample_name(input_value):

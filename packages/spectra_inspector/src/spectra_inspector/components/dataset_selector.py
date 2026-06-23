@@ -22,6 +22,7 @@ class datasetSelectorLayoutIDs(indexedLayoutIDMapper):
 def dataset_selector(
     sisi: SpectraInspectorServerInterface,
     component_index: int = 0,
+    sample_id: str | None = None,
 ) -> tuple[html.Div, AvailableDatasets | None]:
     _available: list[str] = ["none"]
     datasets = None
@@ -45,6 +46,7 @@ def dataset_selector(
                     _menu_items,
                     id=dataset_selector_IDS.get_id_with_index("dropdown"),
                     placeholder="Select an EDAX set to load",
+                    value=sample_id,
                 ),
             ]
         )
