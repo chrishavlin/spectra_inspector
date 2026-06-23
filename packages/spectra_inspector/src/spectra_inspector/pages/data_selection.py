@@ -68,6 +68,7 @@ def layout(**kwargs) -> html.Div:  # noqa: ARG001
     Output("nav-link-loader-div", "children"),
     Output("metadata-display", "children"),
     Output(USER_STORE_DIV_ID, "data"),
+    # Output(USER_STORE_DIV_ID, "data", allow_duplicate=True),
     Input(selectorIDs.get_id_with_index("dropdown"), "value"),
     State(USER_STORE_DIV_ID, "data"),
     prevent_initial_call=True,

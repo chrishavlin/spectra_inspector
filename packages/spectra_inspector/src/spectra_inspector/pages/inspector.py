@@ -30,7 +30,11 @@ from spectra_inspector.components import (
 from spectra_inspector.components.energy_range_slider import elementDropdownSliderIDS
 from spectra_inspector.components.scalebar import scalebarHandler
 from spectra_inspector.logging import spectraLogger
-from spectra_inspector.user_store_model import USER_STORE_DIV_ID, UserStore
+from spectra_inspector.user_store_model import (
+    USER_STORE_DIV_ID,
+    UserStore,
+    updateDataStore,
+)
 from spectra_inspector.utilities.coerce import (
     copy_layout_attrs,
     copy_layout_attrs_for_new_fig,
@@ -255,13 +259,14 @@ def layout(sample_name: str | None = None, **kwargs):  # noqa: ARG001
 
 
 @callback(
-    Output(_IDS.full_spectrum_store, "data"),
-    Input(selectorIDs.get_id_with_index("dropdown"), "value"),
+    Output(_IDS.full_spectrum_store, "data", allow_duplicate=True),
+    Input(_IDS.sample_name, "children"),
     Input(_IDS.full_spectrum_store, "data"),
     running=[
         (Output("spectrum-loading", "display"), "show", "hide"),
         (Output(_IDS.add_image, "disabled"), True, False),
     ],
+    prevent_initial_call=True,
 )
 def initialize_full_spectrum_data(sample_name: str | None, spectrum_store: dict | None):
 
@@ -281,11 +286,11 @@ def initialize_full_spectrum_data(sample_name: str | None, spectrum_store: dict 
 
 
 @callback(
-    Output(_IDS.spectrum_container, "figure"),
-    Output(_IDS.active_spectrum_metadata, "data"),
+    Output(_IDS.spectrum_container, "figure", allow_duplicate=True),
+    Output(_IDS.active_spectrum_metadata, "data", allow_duplicate=True),
     Input(_IDS.shapes_store, "data"),
     Input(_IDS.full_spectrum_store, "data"),
-    State(selectorIDs.get_id_with_index("dropdown"), "value"),
+    State(_IDS.sample_name, "children"),
     State(_IDS.spectrum_container, "figure"),
     State(_IDS.active_spectrum_metadata, "data"),
     running=[
@@ -376,7 +381,7 @@ def update_spectrum(
 
 @callback(
     Output(_IDS.add_image, "n_clicks"),
-    Input(selectorIDs.get_id_with_index("dropdown"), "value"),
+    Input(_IDS.sample_name, "children"),
 )
 def initial_update(input_value: str | None):
     if _valid_sample_name(input_value):
@@ -409,8 +414,8 @@ def _index_range_from_shape(shp):
 
 
 @callback(
-    Output(_IDS.image_container, "children"),
-    Output(_IDS.graph_id_store, "data"),
+    Output(_IDS.image_container, "children", allow_duplicate=True),
+    Output(_IDS.graph_id_store, "data", allow_duplicate=True),
     Input(_IDS.add_image, "n_clicks"),
     Input({"type": _imageIDS.delete, "index": ALL}, "n_clicks"),
     State(_IDS.image_container, "children"),
@@ -418,6 +423,7 @@ def _index_range_from_shape(shp):
     running=[
         (Output(_IDS.add_image, "disabled"), True, False),
     ],
+    prevent_initial_call=True,
 )
 def add_or_delete_image(
     n_clicks: int | None,
@@ -816,3 +822,62 @@ def _recopy_all_figs(fig_list, user_store, slider_range_list, colormap_choices):
         )
         new_list.append(new_fig)
     return new_list
+
+
+@callback(
+    Output(USER_STORE_DIV_ID, "data", allow_duplicate=True),
+    Output(_IDS.sample_name, "children"),
+    Output(_IDS.graph_id_store, "data", allow_duplicate=True),
+    Output(_IDS.processed_graph_id_store, "data", allow_duplicate=True),
+    Output(_IDS.full_spectrum_store, "data", allow_duplicate=True),
+    Output(_IDS.active_spectrum_metadata, "data", allow_duplicate=True),
+    Output(_IDS.image_container, "children", allow_duplicate=True),
+    Output(_IDS.spectrum_container, "figure"),
+    Input(selectorIDs.get_id_with_index("dropdown"), "value"),
+    State(USER_STORE_DIV_ID, "data"),
+    prevent_initial_call=True,
+)
+def update_selected_dataset(
+    input_value: str | None, current_user_data: dict
+) -> tuple[dict, str, dict, dict, dict, dict, list, None]:
+    sisi = SpectraInspectorServerInterface()
+
+    if input_value is None:
+        input_value = "none"
+
+    meta_json_str: str = ""
+    new_user_data = current_user_data.copy()
+    if (
+        current_user_data.get("metadata_json", "") == ""
+        and input_value
+        and input_value != "none"
+    ):
+        meta = sisi.get_combined_image_metadata(input_value)
+        meta_json_str = meta.model_dump_json()
+        new_user_data = updateDataStore(
+            current_user_data, "metadata_json", meta_json_str
+        )
+
+    new_user_data = updateDataStore(new_user_data, "selected_dataset", input_value)
+
+    if new_user_data.get("sample_metadata", None) is None:
+        available = sisi.get_available_datasets().sample_metadata
+        if available is not None:
+            new_user_data = updateDataStore(new_user_data, "sample_metadata", available)
+
+    # reset state
+    graph_id_store = {"initialized": False}
+    processed_graph_id_store = {"initialized": False}
+    active_spectrum_metadata = {}
+    full_spectrum_store = {}
+    figure_div_children = []
+    return (
+        new_user_data,
+        input_value,
+        graph_id_store,
+        processed_graph_id_store,
+        full_spectrum_store,
+        active_spectrum_metadata,
+        figure_div_children,
+        None,
+    )
