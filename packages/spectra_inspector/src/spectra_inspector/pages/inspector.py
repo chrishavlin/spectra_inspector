@@ -23,6 +23,8 @@ from spectra_inspector.components import (
     bitmap_image_layout,
     bitmapImageLayoutIDs,
     data_export_panel,
+    dataset_selector,
+    datasetSelectorLayoutIDs,
     get_new_im,
 )
 from spectra_inspector.components.energy_range_slider import elementDropdownSliderIDS
@@ -44,6 +46,8 @@ dash.register_page(__name__, order=1, path_template="/inspector/<sample_name>")
 NUMBER_OF_INITIAL_FIGURES = 3
 
 scalebar_handler = scalebarHandler()
+
+secondDatasetSelector = datasetSelectorLayoutIDs(index=1)
 
 
 def _valid_sample_name(sample_name: str | None):
@@ -149,21 +153,22 @@ def layout(sample_name: str | None = None, **kwargs):  # noqa: ARG001
     _layout_rows = []
     _layout_rows.append(html.Div(hidden=True, id=_IDS.metadata))
 
+    _data_selector, available_data = dataset_selector(sisi)
+    dataset_mini_selector = [
+        dbc.Col(html.H4("Dataset:"), width=6),
+        dbc.Col(
+            html.Div(
+                selected_sample_contents(sample_name),
+                id=_IDS.sample_name,
+            ),
+            width=6,
+        ),
+    ]
+
     image_control_card = dbc.Card(
         dbc.CardBody(
             [
-                dbc.Row(
-                    [
-                        dbc.Col(html.H4("Dataset:"), width=6),
-                        dbc.Col(
-                            html.Div(
-                                selected_sample_contents(sample_name),
-                                id=_IDS.sample_name,
-                            ),
-                            width=6,
-                        ),
-                    ]
-                ),
+                dbc.Row(dataset_mini_selector),
                 html.Hr(),
                 dbc.Row(
                     [
