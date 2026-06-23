@@ -3,7 +3,7 @@ import json
 from typing import Any
 
 from spectra_inspector.utilities.interface import SpectraInspectorServerInterface
-from spectra_inspector.utilities.model import CombinedMetadata
+from spectra_inspector.utilities.model import CombinedMetadata, sampleMetadata
 
 USER_STORE_DIV_ID = "user-mem-store"
 
@@ -12,6 +12,7 @@ USER_STORE_DIV_ID = "user-mem-store"
 class UserStore:
     selected_dataset: str = "none"
     metadata_json: str = ""
+    sample_metadata: sampleMetadata | None = None
 
     def get_metadata(self) -> CombinedMetadata | None:
         if self.metadata_json != "":
