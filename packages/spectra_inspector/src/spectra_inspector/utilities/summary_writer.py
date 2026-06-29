@@ -139,6 +139,7 @@ class summaryWriter:
         self,
         active_spectrum_metadata: dict,
         file_format: Literal["Y", "XY"] | None = None,
+        file_type: Literal[".msa", ".csv"] | None = None,
     ) -> Path:
         from rsciio.msa import file_writer
 
@@ -166,4 +167,9 @@ class summaryWriter:
 
         file_format = file_format or "XY"
         file_writer(f, signal, format=file_format)
+
+        if file_type == ".msa":
+            return f
+
+        # read it back in, the export csv
         return f

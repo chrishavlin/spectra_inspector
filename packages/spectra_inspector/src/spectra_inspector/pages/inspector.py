@@ -490,6 +490,7 @@ def add_or_delete_image(
     Input(_dataExportIDS.exportmsa, "n_clicks"),
     State(_IDS.active_spectrum_metadata, "data"),
     State(_dataExportIDS.msafileformat, "value"),
+    State(_dataExportIDS.msafiletype, "value"),
     running=[
         (Output(_dataExportIDS.exportsummary, "disabled"), True, False),
         (Output(_dataExportIDS.exportmsa, "disabled"), True, False),
@@ -500,12 +501,15 @@ def export_msa(
     export_clicks: int | None,
     active_spectrum_metadata,
     msafileformat: Literal["Y", "XY"] | None,
+    msafiletype: Literal[".msa", ".csv"] | None,
 ):
     if export_clicks is None:
         return None
 
     s = summaryWriter()
-    f = s.write_MSA(active_spectrum_metadata, file_format=msafileformat)
+    f = s.write_MSA(
+        active_spectrum_metadata, file_format=msafileformat, file_type=msafiletype
+    )
     return dcc.send_file(f)
 
 
