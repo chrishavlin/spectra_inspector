@@ -43,6 +43,10 @@ class EDAXPathHandler:
 
         spectraLogger.info(f"Initialized PathHandler with data_root {self.data_root}")
 
+    def refresh(self) -> None:
+        spectraLogger.info("re-initalizing PathHandler database")
+        self.database.refresh(self)
+
     def get_sample_dir(self, sample_name: str) -> Path:
         return self.data_root / sample_name / self.edax_dir_name
 

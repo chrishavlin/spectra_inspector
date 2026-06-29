@@ -13,7 +13,13 @@ dbc_css = "https://cdn.jsdelivr.net/gh/AnnMarieW/dash-bootstrap-templates/dbc.mi
 app = Dash(
     __name__,
     use_pages=True,
-    external_stylesheets=[[dbc.themes.FLATLY, dbc_css], dbc.icons.FONT_AWESOME],
+    external_stylesheets=[
+        [
+            dbc.themes.FLATLY,
+            dbc_css,
+        ],
+        dbc.icons.FONT_AWESOME,
+    ],
 )
 
 

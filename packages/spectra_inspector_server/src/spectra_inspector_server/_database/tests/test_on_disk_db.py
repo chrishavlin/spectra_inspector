@@ -57,15 +57,18 @@ def test_on_disk_db_init(on_disk_path: tuple[Path, list[str]]) -> None:
 
     ph = EDAXPathHandler(data_root=db_root, init_db=True)
 
-    maps: dict[str, EDAX_file_set] = ph.database.available_maps
-    assert set(maps.keys()) == set(sample_names)
+    for _ in range(2):
+        maps: dict[str, EDAX_file_set] = ph.database.available_maps
+        assert set(maps.keys()) == set(sample_names)
 
-    for sample_set in maps.values():
-        assert sample_set.bmp.exists()
-        assert sample_set.spd.exists()
-        assert sample_set.spc.exists()
-        assert sample_set.ipr.exists()
-        assert sample_set.xml.exists()
+        for sample_set in maps.values():
+            assert sample_set.bmp.exists()
+            assert sample_set.spd.exists()
+            assert sample_set.spc.exists()
+            assert sample_set.ipr.exists()
+            assert sample_set.xml.exists()
+
+        ph.refresh()
 
 
 def test_map_to_sample_id(on_disk_path: tuple[Path, list[str]]) -> None:

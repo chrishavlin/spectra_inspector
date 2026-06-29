@@ -26,6 +26,10 @@ class OnDiskDatabase:
         if init_db:
             self.inspect(ph)
 
+    def refresh(self, ph: "EDAXPathHandler") -> None:
+        self.available_maps = {}
+        self.inspect(ph)
+
     def inspect(self, ph: "EDAXPathHandler") -> None:
         spectraLogger.info(f"Inspecting {ph.data_root}")
         _recursive_inspection(ph.data_root, self)

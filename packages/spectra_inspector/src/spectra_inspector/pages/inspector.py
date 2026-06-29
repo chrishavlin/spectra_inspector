@@ -1,4 +1,4 @@
-from typing import Literal
+from typing import TYPE_CHECKING, Literal
 
 import dash
 import dash_bootstrap_components as dbc
@@ -27,6 +27,7 @@ from spectra_inspector.components import (
     datasetSelectorLayoutIDs,
     get_new_im,
 )
+from spectra_inspector.components.dataset_selector import format_selections
 from spectra_inspector.components.energy_range_slider import elementDropdownSliderIDS
 from spectra_inspector.components.scalebar import scalebarHandler
 from spectra_inspector.logging import spectraLogger
@@ -44,6 +45,9 @@ from spectra_inspector.utilities.coerce import (
 )
 from spectra_inspector.utilities.interface import SpectraInspectorServerInterface
 from spectra_inspector.utilities.summary_writer import summaryWriter
+
+if TYPE_CHECKING:
+    from spectra_inspector.utilities.model import AvailableDatasets
 
 dash.register_page(__name__, order=1, path_template="/inspector/<sample_name>")
 
@@ -172,7 +176,8 @@ def layout(sample_name: str | None = None, **kwargs):  # noqa: ARG001
                     [
                         dbc.Col(
                             _data_selector,
-                            width=4,
+                            width=6,
+                            style={"minWidth": 0},
                         ),
                         dbc.Col(
                             dbc.Button(
@@ -181,19 +186,20 @@ def layout(sample_name: str | None = None, **kwargs):  # noqa: ARG001
                                 n_clicks=0,
                                 color="secondary",
                             ),
-                            width=4,
+                            width=3,
                         ),
                         dbc.Col(
                             dbc.Button(
-                                "Reset All Axes",
+                                "Reset Images",
                                 id=_IDS.reset_all_axes,
                                 n_clicks=0,
                                 color="secondary",
                             ),
-                            width=4,
+                            width=3,
                         ),
                     ],
-                    align="center",
+                    align="top",
+                    className="g-4",
                 ),
             ]
         )
@@ -828,6 +834,8 @@ def _recopy_all_figs(fig_list, user_store, slider_range_list, colormap_choices):
 
 @callback(
     Output(USER_STORE_DIV_ID, "data", allow_duplicate=True),
+    Output(selectorIDs.get_id_with_index("dropdown"), "options"),
+    Output(selectorIDs.get_id_with_index("dropdown"), "value"),
     Output(_IDS.sample_name, "children"),
     Output(_IDS.graph_id_store, "data", allow_duplicate=True),
     Output(_IDS.processed_graph_id_store, "data", allow_duplicate=True),
@@ -836,36 +844,57 @@ def _recopy_all_figs(fig_list, user_store, slider_range_list, colormap_choices):
     Output(_IDS.image_container, "children", allow_duplicate=True),
     Output(_IDS.spectrum_container, "figure"),
     Input(selectorIDs.get_id_with_index("dropdown"), "value"),
+    Input(selectorIDs.get_id_with_index("refresh"), "n_clicks"),
     State(USER_STORE_DIV_ID, "data"),
+    State(selectorIDs.get_id_with_index("dropdown"), "options"),
     prevent_initial_call=True,
 )
 def update_selected_dataset(
-    input_value: str | None, current_user_data: dict
+    input_value: str | None,
+    n_clicks: int | None,
+    current_user_data: dict,
+    current_options,
 ) -> tuple[dict, str, dict, dict, dict, dict, list, None]:
     sisi = SpectraInspectorServerInterface()
+    trigger = ctx.triggered_id
 
     if input_value is None:
         input_value = "none"
 
-    meta_json_str: str = ""
+    is_refresh = trigger == selectorIDs.get_id_with_index("refresh") and n_clicks > 0
+
+    has_input = input_value and input_value != "none"
+
+    available: None | AvailableDatasets = None
+    if is_refresh:
+        available = sisi.get_available_datasets(refresh_db=True)
+        all_files = ["none", *available.available_files]
+        output_options = format_selections(all_files)
+        if input_value not in output_options:
+            input_value = None
+            has_input = False
+
+    else:
+        output_options = current_options
+
+    meta_json_str: str = "{}"
     new_user_data = current_user_data.copy()
-    if (
-        current_user_data.get("metadata_json", "") == ""
-        and input_value
-        and input_value != "none"
-    ):
+    if has_input:
         meta = sisi.get_combined_image_metadata(input_value)
         meta_json_str = meta.model_dump_json()
-        new_user_data = updateDataStore(
-            current_user_data, "metadata_json", meta_json_str
-        )
+    new_user_data = updateDataStore(current_user_data, "metadata_json", meta_json_str)
 
     new_user_data = updateDataStore(new_user_data, "selected_dataset", input_value)
 
     if new_user_data.get("sample_metadata", None) is None:
-        available = sisi.get_available_datasets().sample_metadata
-        if available is not None:
-            new_user_data = updateDataStore(new_user_data, "sample_metadata", available)
+        if available is None:
+            sample_metadata = sisi.get_available_datasets().sample_metadata
+        else:
+            sample_metadata = available.sample_metadata
+        if sample_metadata is not None:
+            new_user_data = updateDataStore(
+                new_user_data, "sample_metadata", sample_metadata
+            )
 
     # reset state
     graph_id_store = {"initialized": False}
@@ -875,6 +904,8 @@ def update_selected_dataset(
     figure_div_children = []
     return (
         new_user_data,
+        output_options,
+        input_value,
         input_value,
         graph_id_store,
         processed_graph_id_store,
