@@ -8,16 +8,16 @@ from .user_store_model import USER_STORE_DIV_ID
 
 # Set style sheet
 dbc_css = "https://cdn.jsdelivr.net/gh/AnnMarieW/dash-bootstrap-templates/dbc.min.css"
-dbc_icons = (
-    "https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.css"
-)
 
 # Initialise the App
 app = Dash(
     __name__,
     use_pages=True,
     external_stylesheets=[
-        [dbc.themes.FLATLY, dbc_css, dbc_icons],
+        [
+            dbc.themes.FLATLY,
+            dbc_css,
+        ],
         dbc.icons.FONT_AWESOME,
     ],
 )
