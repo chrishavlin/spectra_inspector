@@ -12,4 +12,5 @@ class Settings(BaseSettings):
         "SPECTRA_INSPECTOR_HOST_DATA_ROOT", "./"
     )
 
+    spectra_inspector_allow_db_refresh: bool = False
     model_config = SettingsConfigDict(env_file=".env")

@@ -107,16 +107,28 @@ async def info(settings: Annotated[Settings, Depends(get_settings)]) -> Info:
 
 
 @app.get("/available-datasets")
-async def available_datasets(request: Request) -> AvailableDatasets:
+async def available_datasets(
+    request: Request,
+    settings: Annotated[Settings, Depends(get_settings)],
+    refresh_db: bool = False,
+) -> AvailableDatasets:
 
     ph = ph_from_app_state(request)
+
+    if refresh_db and settings.spectra_inspector_allow_db_refresh:
+        ph.refresh()
+
     filekeys = [str(nm) for nm in ph.database.available_maps]
 
     available_samples = ph.database.available_samples
     all_meta = ph.database.sample_metadata_mapper.get_all(
         available_samples=available_samples
     )
-    return AvailableDatasets(available_files=filekeys, sample_metadata=all_meta)
+
+    return AvailableDatasets(
+        available_files=filekeys,
+        sample_metadata=all_meta,
+    )
 
 
 @app.get("/image-metadata")
