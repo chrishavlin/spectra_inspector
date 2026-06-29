@@ -115,8 +115,11 @@ async def available_datasets(
 
     ph = ph_from_app_state(request)
 
-    if refresh_db and settings.spectra_inspector_allow_db_refresh:
-        ph.refresh()
+    if refresh_db:
+        if settings.spectra_inspector_allow_db_refresh:
+            ph.refresh()
+        else:
+            spectraLogger.info("Refresh attempt denied.")
 
     filekeys = [str(nm) for nm in ph.database.available_maps]
 

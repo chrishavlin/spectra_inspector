@@ -1,12 +1,13 @@
 import dash
 import dash_bootstrap_components as dbc
-from dash import Input, Output, State, callback, html, no_update
+from dash import Input, Output, State, callback, ctx, html, no_update
 
 from spectra_inspector.components import (
     dataset_selector,
     datasetSelectorLayoutIDs,
     sample_map,
 )
+from spectra_inspector.components.dataset_selector import format_selections
 from spectra_inspector.components.nested_accordian import nested_accordian
 from spectra_inspector.logging import spectraLogger
 from spectra_inspector.user_store_model import USER_STORE_DIV_ID, updateDataStore
@@ -68,42 +69,64 @@ def layout(**kwargs) -> html.Div:  # noqa: ARG001
     Output("nav-link-loader-div", "children"),
     Output("metadata-display", "children"),
     Output(USER_STORE_DIV_ID, "data"),
-    # Output(USER_STORE_DIV_ID, "data", allow_duplicate=True),
+    Output(selectorIDs.get_id_with_index("dropdown"), "options"),
+    Output(selectorIDs.get_id_with_index("dropdown"), "value"),
     Input(selectorIDs.get_id_with_index("dropdown"), "value"),
+    Input(selectorIDs.get_id_with_index("refresh"), "n_clicks"),
     State(USER_STORE_DIV_ID, "data"),
+    State(selectorIDs.get_id_with_index("dropdown"), "options"),
     prevent_initial_call=True,
 )
 def update_selected_dataset(
-    input_value: str | None, current_user_data: dict
+    input_value: str | None,
+    n_clicks,
+    current_user_data: dict,
+    current_options,
 ) -> tuple[dbc.NavLink, html.Div, dict]:
     sisi = SpectraInspectorServerInterface()
 
-    if input_value is None:
-        input_value = "none"
+    trigger = ctx.triggered_id
+
+    is_refresh = trigger == selectorIDs.get_id_with_index("refresh") and n_clicks > 0
+    is_dropdown = trigger == selectorIDs.get_id_with_index("dropdown")
+    has_input = input_value and input_value != "none"
+
+    new_user_data = updateDataStore(current_user_data, "selected_dataset", input_value)
+    output_options = current_options
+    if new_user_data.get("sample_metadata", None) is None or is_refresh:
+        available = sisi.get_available_datasets(refresh_db=True)
+        if is_refresh:
+            all_files = ["none", *available.available_files]
+            output_options = format_selections(all_files)
+            input_value = None
+            has_input = False
+
+        sample_metadata = available.sample_metadata
+        if available is not None:
+            new_user_data = updateDataStore(
+                new_user_data, "sample_metadata", sample_metadata
+            )
 
     meta_json_str: str = "{}"
-    if input_value and input_value != "none":
+    if has_input:
         meta = sisi.get_combined_image_metadata(input_value)
         meta_json_str = meta.model_dump_json()
         md = html.Div([html.Hr(), nested_accordian(meta.model_dump())])
     else:
         md = html.Div()
+    new_user_data = updateDataStore(new_user_data, "metadata_json", meta_json_str)
 
-    new_user_data = updateDataStore(current_user_data, "metadata_json", meta_json_str)
-    new_user_data = updateDataStore(new_user_data, "selected_dataset", input_value)
-    if new_user_data.get("sample_metadata", None) is None:
-        available = sisi.get_available_datasets().sample_metadata
-        if available is not None:
-            new_user_data = updateDataStore(new_user_data, "sample_metadata", available)
-
-    valid_input_vale = spaces_to_placeholder(input_value)
+    if is_dropdown and has_input:
+        valid_input_vale = spaces_to_placeholder(input_value)
+    else:
+        valid_input_vale = "none"
 
     nl = dbc.NavLink(
         dbc.Button("Load Selected"),
         href=f"/inspector/{valid_input_vale}",
     )
 
-    return nl, md, new_user_data
+    return nl, md, new_user_data, output_options, input_value
 
 
 @callback(

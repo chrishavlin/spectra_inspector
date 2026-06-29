@@ -53,9 +53,13 @@ class SpectraInspectorServerInterface:
         r = requests.get(uri)
         return model.Info(**r.json())
 
-    def get_available_datasets(self) -> model.AvailableDatasets:
+    def get_available_datasets(
+        self, refresh_db: bool = False
+    ) -> model.AvailableDatasets:
         uri = self._get_endpoint("available-datasets")
-        r = requests.get(uri)
+
+        r = requests.get(uri, params={"refresh_db": refresh_db})
+
         return model.AvailableDatasets(**r.json())
 
     def get_image_metadata(self, sample_name: str) -> model.MetadataModel:
