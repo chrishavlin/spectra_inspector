@@ -156,9 +156,10 @@ def get_map(
         map_style=map_style,
         size="marker_size",
         opacity=1.0,
-        height=1000,  # width=1000
     )
-
+    fig.update_layout(
+        autosize=True,
+    )
     fig.update_traces(
         marker_color="blue",
         selected={"marker": {"color": "orange", "opacity": 1.0}},
@@ -326,6 +327,10 @@ def get_layout(
                                 "lasso2d",
                                 "select2d",
                             ]
+                        },
+                        style={
+                            "aspectRatio": "1 / 1",  # or "4 / 3", "16 / 9", etc.
+                            "width": "100%",
                         },
                     ),
                     width=12,
