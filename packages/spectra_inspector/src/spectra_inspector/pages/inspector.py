@@ -858,15 +858,18 @@ def update_selected_dataset(
     n_clicks: int | None,
     current_user_data: dict,
     current_options,
-) -> tuple[dict, str, dict, dict, dict, dict, list, None]:
+):
     sisi = SpectraInspectorServerInterface()
     trigger = ctx.triggered_id
 
-    if input_value is None:
-        input_value = "none"
+    data_store_selected = current_user_data.get("selected_dataset")
+    if input_value is None or (input_value == "none" and data_store_selected):
+        input_value = data_store_selected
 
-    is_refresh = trigger == selectorIDs.get_id_with_index("refresh") and n_clicks > 0
-
+    valid_clicks = n_clicks or 0
+    is_refresh = (
+        trigger == selectorIDs.get_id_with_index("refresh") and valid_clicks > 0
+    )
     has_input = input_value and input_value != "none"
 
     available: None | AvailableDatasets = None
