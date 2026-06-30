@@ -111,7 +111,17 @@ def update_selected_dataset(
     if has_input:
         meta = sisi.get_combined_image_metadata(input_value)
         meta_json_str = meta.model_dump_json()
-        md = html.Div([html.Hr(), nested_accordian(meta.model_dump())])
+        meta_dict = meta.model_dump()
+
+        sample_data = new_user_data.get("sample_metadata", {})
+        if input_value in sample_data.get("map_samples", {}):
+            sample_id = sample_data["map_samples"][input_value]
+            record = next(
+                (r for r in sample_data["records"] if r["sample_id"] == sample_id), None
+            )
+            if record:
+                meta_dict["Sample Information"] = record
+        md = html.Div([html.Hr(), nested_accordian(meta_dict)])
     else:
         md = html.Div()
     new_user_data = updateDataStore(new_user_data, "metadata_json", meta_json_str)
