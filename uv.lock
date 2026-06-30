@@ -578,6 +578,12 @@ wheels = [
     { url = "https://files.pythonhosted.org/packages/2f/fb/1be45ee9bfbf2c468de35f9d94e7896ed0fdff3413f916b788932093204e/dash-4.2.0-py3-none-any.whl", hash = "sha256:12e0bc347643b31a22237b7049e999cf96386790ff23d2d4f98e07d575c67538", size = 7256065, upload-time = "2026-06-01T20:44:18.723Z" },
 ]
 
+[package.optional-dependencies]
+fastapi = [
+    { name = "fastapi" },
+    { name = "uvicorn", extra = ["standard"] },
+]
+
 [[package]]
 name = "dash-bootstrap-components"
 version = "2.0.4"
@@ -3252,7 +3258,7 @@ name = "spectra-inspector"
 version = "0.1.0"
 source = { editable = "packages/spectra_inspector" }
 dependencies = [
-    { name = "dash" },
+    { name = "dash", extra = ["fastapi"] },
     { name = "dash-bootstrap-components" },
     { name = "dash-bootstrap-templates" },
     { name = "fpdf2" },
@@ -3281,7 +3287,7 @@ test = [
 
 [package.metadata]
 requires-dist = [
-    { name = "dash", specifier = ">=4.0.0" },
+    { name = "dash", extras = ["fastapi"], specifier = ">=4.0.0" },
     { name = "dash-bootstrap-components", specifier = ">=2.0.4" },
     { name = "dash-bootstrap-templates", specifier = ">=2.1.0" },
     { name = "fpdf2", specifier = ">=2.8.7" },

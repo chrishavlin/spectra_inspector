@@ -6,7 +6,7 @@ readme = "README.md"
 authors = [{ name = "chrishavlin", email = "chris.havlin@gmail.com" }]
 requires-python = ">=3.13"
 dependencies = [
-  "dash>=4.0.0",
+  "dash[fastapi]>=4.0.0",
   "dash-bootstrap-components>=2.0.4",
   "dash-bootstrap-templates>=2.1.0",
   "fpdf2>=2.8.7",

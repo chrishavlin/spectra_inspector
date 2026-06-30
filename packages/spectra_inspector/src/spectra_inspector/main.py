@@ -20,6 +20,7 @@ app = Dash(
         ],
         dbc.icons.FONT_AWESOME,
     ],
+    backend="fastapi",
 )
 
 
