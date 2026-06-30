@@ -1,5 +1,5 @@
 import dash_bootstrap_components as dbc
-from dash import dcc, html
+from dash import Input, Output, State, callback, dcc, html
 
 from spectra_inspector.components.layout_ids import indexedLayoutIDMapper
 
@@ -48,6 +48,10 @@ class dataExportPanelIDS(indexedLayoutIDMapper):
     @property
     def msafiletype(self) -> str:
         return self.full_id("-msafiletype")
+
+    @property
+    def msafileformatcontainer(self) -> str:
+        return self.full_id("-msafileformatcontainer")
 
 
 def get_layout(
@@ -105,6 +109,7 @@ def get_layout(
                         searchable=False,
                     ),
                 ],
+                id=layoutIDs.msafileformatcontainer,
                 width=4,
             ),
             dbc.Col(
@@ -139,3 +144,20 @@ def get_layout(
     cont = dbc.Container(rows)
 
     return cont, layoutIDs
+
+
+_layoutIDs = dataExportPanelIDS(index=0)
+
+
+@callback(
+    Output(_layoutIDs.msafileformatcontainer, "style"),
+    Input(_layoutIDs.msafiletype, "value"),
+    State(_layoutIDs.msafileformatcontainer, "style"),
+)
+def toggle_column_format(filetype, style):
+    style = dict(style or {})  # preserve existing styles
+    if filetype == ".csv":
+        style["display"] = "none"
+    else:
+        style.pop("display", None)  # restore default display
+    return style
