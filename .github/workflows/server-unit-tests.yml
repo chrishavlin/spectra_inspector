@@ -6,6 +6,7 @@ on:
       - packages/spectra_inspector_server/src/**/*.py
       - pyproject.toml
       - packages/spectra_inspector_server/pyproject.toml
+      - .github/workflows/server-unit-tests.yml
   workflow_dispatch:
 
 concurrency:
