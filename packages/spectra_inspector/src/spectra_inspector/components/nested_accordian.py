@@ -4,32 +4,60 @@ import dash_bootstrap_components as dbc
 from dash import html
 
 
-def put_dict_in_accordian(d: dict[str, Any]) -> dbc.Accordion:
+def _render_value(val: Any) -> str:
+    """Convert values into display-friendly strings."""
+    if isinstance(val, (tuple, list)):
+        return ", ".join(str(v) for v in val)
+    if isinstance(val, bool):
+        return "True" if val else "False"
+    return str(val)
 
-    accord_its = []
-    for ky, val in d.items():
-        if isinstance(val, dict):
-            new_it = dbc.AccordionItem(put_dict_in_accordian(val), title=ky)
-        else:
-            if isinstance(val, (tuple, list)):
-                entries = [str(v) for v in val]
-                item_val = ",".join(entries)
-            elif isinstance(val, bool):
-                if val:
-                    item_val = "True"
-                else:
-                    item_val = "False"
-            else:
-                item_val = val
-            new_it = dbc.AccordionItem(
+
+def _dict_to_table(d: dict[str, Any]) -> dbc.Table:
+    """Render a flat dict as a Bootstrap table."""
+    rows = []
+    for k, v in d.items():
+        # skip nested dicts here; they are handled separately in accordion
+        if isinstance(v, dict):
+            continue
+
+        rows.append(
+            html.Tr(
                 [
-                    html.Div(item_val),
-                ],
-                title=ky,
+                    html.Td(k, style={"fontWeight": "bold", "width": "40%"}),
+                    html.Td(_render_value(v)),
+                ]
             )
-        accord_its.append(new_it)
+        )
 
-    return dbc.Accordion(accord_its, start_collapsed=True, flush=True)
+    return dbc.Table(
+        [html.Tbody(rows)],
+        bordered=True,
+        striped=True,
+        hover=True,
+        size="sm",
+    )
+
+
+def put_dict_in_accordian(d: dict[str, Any]) -> dbc.Accordion:
+    items = []
+
+    # First: render non-dict fields as a table (if any exist)
+    non_dicts = {k: v for k, v in d.items() if not isinstance(v, dict)}
+    if non_dicts:
+        items.append(_dict_to_table(non_dicts))
+
+    # Second: recurse only into dicts → accordions
+    for k, v in d.items():
+        if isinstance(v, dict):
+            items.append(
+                dbc.AccordionItem(
+                    put_dict_in_accordian(v),
+                    title=k,
+                )
+            )
+
+    return dbc.Accordion(items, start_collapsed=True, flush=True)
 
 
 def nested_accordian(val: dict[str, Any]) -> dbc.Accordion:
