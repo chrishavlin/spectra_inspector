@@ -45,6 +45,10 @@ class dataExportPanelIDS(indexedLayoutIDMapper):
     def msafileformat(self) -> str:
         return self.full_id("-msafileformat")
 
+    @property
+    def msafiletype(self) -> str:
+        return self.full_id("-msafiletype")
+
 
 def get_layout(
     id_type_base: str = "data-export-panel",
@@ -77,24 +81,40 @@ def get_layout(
 
     msa_row = dbc.Row(
         [
-            dbc.Col(dcc.Markdown("MSA format:"), width=4),
             dbc.Col(
-                dcc.Dropdown(
-                    ["Y", "XY"],
-                    value="XY",
-                    id=layoutIDs.msafileformat,
-                    className="text-info",
-                    searchable=False,
-                ),
+                [
+                    "file format",
+                    dcc.Dropdown(
+                        [".msa", ".csv"],
+                        value=".msa",
+                        id=layoutIDs.msafiletype,
+                        className="text-info",
+                        searchable=False,
+                    ),
+                ],
+                width=4,
+            ),
+            dbc.Col(
+                [
+                    "column format",
+                    dcc.Dropdown(
+                        ["Y", "XY"],
+                        value="XY",
+                        id=layoutIDs.msafileformat,
+                        className="text-info",
+                        searchable=False,
+                    ),
+                ],
                 width=4,
             ),
             dbc.Col(
                 dbc.Button(
-                    "Export MSA", id=layoutIDs.exportmsa, n_clicks=0, color="secondary"
+                    "Export", id=layoutIDs.exportmsa, n_clicks=0, color="secondary"
                 ),
                 width=4,
             ),
-        ]
+        ],
+        align="end",
     )
 
     card = dbc.Card(
@@ -105,12 +125,10 @@ def get_layout(
                 html.H5("Export summary", className="card-subtitle"),
                 dbc.Container(summary_row),
                 html.Hr(),
-                html.H5("Export MSA", className="card-subtitle"),
+                html.H5("Export Spectrum", className="card-subtitle"),
                 dbc.Container(msa_row),
             ]
         ),
-        # color="primary",
-        # inverse=True,
     )
 
     rows = []

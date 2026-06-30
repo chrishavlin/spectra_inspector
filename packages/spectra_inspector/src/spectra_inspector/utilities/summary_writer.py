@@ -6,6 +6,7 @@ from typing import Literal
 from zoneinfo import ZoneInfo
 
 import fpdf
+import pandas as pd
 import plotly
 
 from spectra_inspector.logging import spectraLogger
@@ -139,31 +140,40 @@ class summaryWriter:
         self,
         active_spectrum_metadata: dict,
         file_format: Literal["Y", "XY"] | None = None,
+        file_type: Literal[".msa", ".csv"] | None = None,
     ) -> Path:
-        from rsciio.msa import file_writer
 
         intensity = active_spectrum_metadata["intensity"]
         energy = active_spectrum_metadata["energy"]
         attrs = active_spectrum_metadata["attrs"]
 
-        signal = {
-            "data": intensity,
-            "axes": [
-                {
-                    "size": len(intensity),
-                    "index_in_array": 0,
-                    "name": "Energy",
-                    "scale": energy[1] - energy[0],
-                    "offset": energy[0],
-                    "units": "keV",
-                    "navigate": False,
-                }
-            ],
-            "metadata": attrs["metadata"],
-            "original_metadata": attrs["original_metadata"],
-        }
-        f = self.full_file("spectrum.msa")
+        if file_type == ".msa":
+            from rsciio.msa import file_writer
 
-        file_format = file_format or "XY"
-        file_writer(f, signal, format=file_format)
+            f = self.full_file("spectrum.msa")
+            signal = {
+                "data": intensity,
+                "axes": [
+                    {
+                        "size": len(intensity),
+                        "index_in_array": 0,
+                        "name": "Energy",
+                        "scale": energy[1] - energy[0],
+                        "offset": energy[0],
+                        "units": "keV",
+                        "navigate": False,
+                    }
+                ],
+                "metadata": attrs["metadata"],
+                "original_metadata": attrs["original_metadata"],
+            }
+
+            file_format = file_format or "XY"
+            file_writer(f, signal, format=file_format)
+
+        elif file_type == ".csv":
+            f = self.full_file("spectrum.csv")
+            df = pd.DataFrame({"energy_keV": energy, "intensity": intensity})
+            df.to_csv(f, index=False)
+
         return f
