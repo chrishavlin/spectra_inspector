@@ -264,16 +264,16 @@ class OperationEDAXStateHandler:
 
     def get_refined_metadata(self, sample_name: str) -> MetadataModel:
         self._require_sample(sample_name)
-        fl = self.ph.load_edax(sample_name)
+        fl = self.ph.load_edax(sample_name, metadata_only=True)
         return fl.refined_metadata
 
     def get_combined_metadata(self, sample_name: str) -> CombinedMetadata:
         self._require_sample(sample_name)
-        fl = self.ph.load_edax(sample_name)
+        fl = self.ph.load_edax(sample_name, metadata_only=True)
         mm = fl.refined_metadata
 
         axes = fl.axes_by_index
-        shp = fl.data.shape
+        shp = tuple(axes[axid].size for axid in range(3))
         assert len(shp) == 3
 
         return CombinedMetadata(metadata=mm, axes_by_index=axes, data_shape=shp)
