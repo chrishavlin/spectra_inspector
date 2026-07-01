@@ -150,6 +150,7 @@ ignore = [
   "PLR2004", # Magic value used in comparison
   "PTH123",  # replace open() with Path.open()
   "PD015",   # pandas Use `df.merge` instead of `pd.merge`
+  "RET504",  # unnecesarry-assign
 ]
 # Uncomment if using a _compat.typing backport
 # typing-modules = ["spectra_inspector_server._compat.typing"]

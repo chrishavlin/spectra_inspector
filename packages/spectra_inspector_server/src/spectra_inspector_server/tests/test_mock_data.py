@@ -12,4 +12,7 @@ def test_createEDAXMock(im_shape: None | tuple[int, int, int]) -> None:
     for indx in range(3):
         ra_indx = ds.axes[indx].index_in_array
         sz = ds.axes[indx].size
+        if ds.data is None:
+            msg = "no data"
+            raise ValueError(msg)
         assert ds.data.shape[ra_indx] == sz

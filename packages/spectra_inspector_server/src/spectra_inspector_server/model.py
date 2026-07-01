@@ -117,7 +117,7 @@ class CombinedMetadata(BaseModel):
 
 
 class EDAX_raw_ds:
-    data: npt.NDArray[np.int64]
+    data: npt.NDArray[np.int64] | None
     axes: list[EDAX_axis]
     metadata: dict[str, Any]
     original_metadata: dict[str, Any]
@@ -126,9 +126,7 @@ class EDAX_raw_ds:
     def __init__(self, raw_ds: dict[str, Any]):
 
         axes = [EDAX_axis(**ax_dict) for ax_dict in raw_ds["axes"]]
-
-        valid_data: npt.NDArray[np.int64] = raw_ds["data"]
-        self.data = valid_data
+        self.data = raw_ds.get("data")
         self.axes = axes
         self.metadata = raw_ds["metadata"]
         self.original_metadata = raw_ds["original_metadata"]

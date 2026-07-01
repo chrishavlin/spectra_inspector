@@ -634,6 +634,7 @@ def export_summary(
         (Output(_dataExportIDS.exportsummary, "disabled"), True, False),
         (Output(_dataExportIDS.exportmsa, "disabled"), True, False),
     ],
+    prevent_initial_call=True,
 )
 def update_graph_figure(
     n_clicks: list[int | None],

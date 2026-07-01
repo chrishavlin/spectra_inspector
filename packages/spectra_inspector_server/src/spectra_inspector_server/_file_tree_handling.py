@@ -60,7 +60,7 @@ class EDAXPathHandler:
 
         return EDAX_file_set(**fullfiles)
 
-    def load_edax(self, sample_name: str) -> EDAX_raw_ds:
+    def load_edax(self, sample_name: str, metadata_only: bool = False) -> EDAX_raw_ds:
         if sample_name in _on_disc_mock.filenames:
             # a short-circuit for testing
             return _on_disc_mock.load(sample_name)
@@ -70,7 +70,7 @@ class EDAXPathHandler:
         if files is None:
             # fallback to guessing
             files = self.get_sample_edax_file_names(sample_name)
-        return load_edax_spd(files)
+        return load_edax_spd(files, metadata_only=metadata_only)
 
 
 __all__ = ["EDAXPathHandler"]
