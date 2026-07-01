@@ -1,4 +1,7 @@
+from typing import Any
+
 import numpy as np
+import numpy.typing as npt
 import pandas as pd
 from rsciio import edax
 
@@ -6,7 +9,7 @@ from spectra_inspector_server._logging import spectraLogger
 from spectra_inspector_server.model import EDAX_file_set, EDAX_raw_ds
 
 
-def load_edax_spd_metadata(edax_files: EDAX_file_set) -> dict[str, str]:
+def load_edax_spd_metadata(edax_files: EDAX_file_set) -> dict[str, Any]:
     # load the metadata, always use lazy load
     ds = edax.file_reader(edax_files.spd, ipr_fname=edax_files.ipr, lazy=True)
     if len(ds) > 1:
@@ -20,7 +23,9 @@ def load_edax_spd_metadata(edax_files: EDAX_file_set) -> dict[str, str]:
     }
 
 
-def load_spd_into_memmap(header: dict, spd_path: str) -> np.memmap:
+def load_spd_into_memmap(
+    header: dict[str, Any], spd_path: str
+) -> npt.NDArray[np.int64]:
     # rsciio replaced plain np.memmap with a dask-wrapped memmap. for now,
     # using a plain memmap to avoid dask dependency within fastapi.
 
@@ -33,8 +38,11 @@ def load_spd_into_memmap(header: dict, spd_path: str) -> np.memmap:
 
     with open(spd_path) as f:
         # Read data from file into a numpy memmap object
-        data = np.memmap(f, mode="r", offset=offset, dtype=data_type)
-    return data.squeeze().reshape((nx, ny, nCh), order="F")
+        data: npt.NDArray[np.int64] = np.memmap(
+            f, mode="r", offset=offset, dtype=data_type
+        )  # type: ignore[call-overload]
+    data = data.squeeze().reshape((nCh, nx, ny), order="F").T
+    return data
 
 
 def load_edax_spd(
@@ -43,7 +51,9 @@ def load_edax_spd(
     md = load_edax_spd_metadata(edax_files)
     if metadata_only:
         return EDAX_raw_ds(md)
-    data = load_spd_into_memmap(md["original_metadata"]["spd_header"], edax_files.spd)
+    data = load_spd_into_memmap(
+        md["original_metadata"]["spd_header"], str(edax_files.spd)
+    )
     md.update({"data": data})
     return EDAX_raw_ds(md)
 

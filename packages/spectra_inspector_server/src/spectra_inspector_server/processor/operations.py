@@ -13,6 +13,8 @@ from spectra_inspector_server.model import (
 )
 from spectra_inspector_server.processor.utilities import _make_serializeable_dict
 
+_DEFAULT_CHUNKSIZE = 128
+
 
 class OperationEDAXStateHandler:
     def __init__(self, ph: EDAXPathHandler, allow_mock_files: bool = False) -> None:
@@ -89,6 +91,7 @@ class OperationEDAXStateHandler:
         channel_index: int | tuple[int, int],
         index0_range: tuple[int, int] | None = None,
         index1_range: tuple[int, int] | None = None,
+        edax_ds: Any | None = None,
     ) -> npt.NDArray[np.int64]:
 
         self._require_sample(sample_name)
@@ -106,7 +109,13 @@ class OperationEDAXStateHandler:
             msg = f"unexpected type for channel_index: must be int or (int, int), but {channel_index=}"  # type:ignore[unreachable]
             raise TypeError(msg)
 
-        edax_ds = self.ph.load_edax(sample_name)
+        if edax_ds is None:
+            edax_ds = self.ph.load_edax(sample_name)
+
+        if edax_ds.data is None:
+            msg = f"data is None for sample {sample_name}"
+            raise ValueError(msg)
+
         im_subset: npt.NDArray[np.int64] = (
             edax_ds.data[
                 slice(valid_index_ranges[0][0], valid_index_ranges[0][1]),
@@ -125,7 +134,7 @@ class OperationEDAXStateHandler:
         index0_range: tuple[int, int] | None = None,
         index1_range: tuple[int, int] | None = None,
         chunking_index: int = 0,
-        chunksize: int = 32,
+        chunksize: int = _DEFAULT_CHUNKSIZE,
     ) -> raveledImage:
         result = self.get_multi_channel_intensity_image(
             sample_name,
@@ -147,7 +156,7 @@ class OperationEDAXStateHandler:
         index0_range: tuple[int, int] | None = None,
         index1_range: tuple[int, int] | None = None,
         chunking_index: int = 0,
-        chunksize: int = 32,
+        chunksize: int = _DEFAULT_CHUNKSIZE,
     ) -> npt.NDArray[np.int64]:
 
         self._require_sample(sample_name)
@@ -163,7 +172,6 @@ class OperationEDAXStateHandler:
 
         index_offsets = [indx[0] for indx in index_ranges[:-1]]
         im_output = np.zeros(final_shape, dtype=np.int64)
-
         assert im_output.ndim == 2
 
         # prepare channel slice once
@@ -187,8 +195,11 @@ class OperationEDAXStateHandler:
 
             # Sum directly from the memmap along the channel axis using
             # numpy's accumulation dtype to avoid creating large int64 copies.
+            if edax_ds.data is None:
+                msg = f"data is None for sample {sample_name}"
+                raise ValueError(msg)
             im_subset = np.sum(edax_ds.data[data_slices], axis=-1, dtype=np.int64)
-
+            im_subset = im_subset.astype(np.int64).copy()
             slcs = [
                 slice(
                     index_ranges[idim][0] - index_offsets[idim],
@@ -196,11 +207,8 @@ class OperationEDAXStateHandler:
                 )
                 for idim in range(2)
             ]
-
-            im_output[slcs[0], slcs[1]] += im_subset
-
+            im_output[slcs[0], slcs[1]] = im_output[slcs[0], slcs[1]] + im_subset
             i_chunk_0 += chunksize
-
         return im_output
 
     def get_spectrum(
@@ -210,7 +218,7 @@ class OperationEDAXStateHandler:
         index0_range: tuple[int, int] | None = None,
         index1_range: tuple[int, int] | None = None,
         chunking_index: int = 0,
-        chunksize: int = 32,
+        chunksize: int = _DEFAULT_CHUNKSIZE,
     ) -> Spectrum1d:
 
         self._require_sample(sample_name)
@@ -231,6 +239,7 @@ class OperationEDAXStateHandler:
         assert im_output.ndim == 1
 
         i_chunk_0 = orig_ranges[chunking_index][0]
+        edax_ds = self.ph.load_edax(sample_name)
         while i_chunk_0 < orig_ranges[chunking_index][1]:
             i_chunk_1 = i_chunk_0 + chunksize
             i_chunk_1 = min(i_chunk_1, orig_ranges[chunking_index][1])
@@ -242,6 +251,7 @@ class OperationEDAXStateHandler:
                 index_ranges[2],
                 index0_range=index_ranges[0],
                 index1_range=index_ranges[1],
+                edax_ds=edax_ds,
             )
 
             im_reduced = im.sum(axis=0).sum(axis=0)
@@ -269,11 +279,14 @@ class OperationEDAXStateHandler:
 
     def get_combined_metadata(self, sample_name: str) -> CombinedMetadata:
         self._require_sample(sample_name)
-        fl = self.ph.load_edax(sample_name, metadata_only=True)
+        fl = self.ph.load_edax(sample_name, metadata_only=False)
         mm = fl.refined_metadata
 
         axes = fl.axes_by_index
-        shp = tuple(axes[axid].size for axid in range(3))
+        if fl.data is None:
+            msg = f"data is None for sample {sample_name}"
+            raise ValueError(msg)
+        shp = fl.data.shape
         assert len(shp) == 3
 
         return CombinedMetadata(metadata=mm, axes_by_index=axes, data_shape=shp)
