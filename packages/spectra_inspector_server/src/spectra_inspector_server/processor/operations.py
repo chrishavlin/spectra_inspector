@@ -116,15 +116,11 @@ class OperationEDAXStateHandler:
             msg = f"data is None for sample {sample_name}"
             raise ValueError(msg)
 
-        im_subset: npt.NDArray[np.int64] = (
-            edax_ds.data[
-                slice(valid_index_ranges[0][0], valid_index_ranges[0][1]),
-                slice(valid_index_ranges[1][0], valid_index_ranges[1][1]),
-                channel_slice,
-            ]
-            .copy()
-            .astype(np.int64)
-        )
+        im_subset: npt.NDArray[np.int64] = edax_ds.data[
+            slice(valid_index_ranges[0][0], valid_index_ranges[0][1]),
+            slice(valid_index_ranges[1][0], valid_index_ranges[1][1]),
+            channel_slice,
+        ]
         return im_subset
 
     def get_raveled_multi_channel_intensity_image(
@@ -199,7 +195,6 @@ class OperationEDAXStateHandler:
                 msg = f"data is None for sample {sample_name}"
                 raise ValueError(msg)
             im_subset = np.sum(edax_ds.data[data_slices], axis=-1, dtype=np.int64)
-            im_subset = im_subset.astype(np.int64).copy()
             slcs = [
                 slice(
                     index_ranges[idim][0] - index_offsets[idim],
