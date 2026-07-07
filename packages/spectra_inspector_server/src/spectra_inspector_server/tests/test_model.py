@@ -7,7 +7,7 @@ from spectra_inspector_server.model import Spectrum1d, sampleMetadataCSVrecord
 
 def test_spectrum1d() -> None:
 
-    energy = np.arange(4)
+    energy = np.arange(4).astype(float)
     s1d = Spectrum1d(
         energy=energy,
         intensity=np.linspace(0, 10, energy.size).astype(int),

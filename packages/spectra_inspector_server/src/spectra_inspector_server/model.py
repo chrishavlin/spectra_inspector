@@ -6,6 +6,7 @@ import numpy as np
 import numpy.typing as npt
 from pydantic import BaseModel
 
+from spectra_inspector_server.calibration import CalibrationWeights, calculate_weights
 from spectra_inspector_server.processor.utilities import _get_nested_dict_element
 
 
@@ -63,6 +64,13 @@ class Spectrum1d:
             energy_max=self.energy_max,
             **extra,
         )
+
+    def energy_keV(self) -> npt.NDArray[np.float64]:
+        dE = (self.energy_max - self.energy_min) / len(self.energy)
+        return self.energy_min + self.energy * dE
+
+    def get_weights(self) -> CalibrationWeights:
+        return calculate_weights(self.intensity, self.energy_keV())
 
 
 class GeneralMetadata(BaseModel):
@@ -286,3 +294,28 @@ class AvailableDatasets:
 class raveledImage(BaseModel):
     image: list[int]
     shape: tuple[int, int]
+
+
+__all__ = [
+    "EDS",
+    "SEM",
+    "AcquisitionInstrument",
+    "AvailableDatasets",
+    "CalibrationWeights",
+    "CombinedMetadata",
+    "Detector",
+    "EDAX_axis",
+    "EDAX_file_set",
+    "EDAX_raw_ds",
+    "GeneralMetadata",
+    "Info",
+    "MetadataModel",
+    "Sample",
+    "Signal",
+    "Spectrum1d",
+    "Spectrum1dDict",
+    "Stage",
+    "raveledImage",
+    "sampleMetadata",
+    "sampleMetadataCSVrecord",
+]
