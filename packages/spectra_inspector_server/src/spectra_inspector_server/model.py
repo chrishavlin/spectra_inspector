@@ -60,7 +60,10 @@ class Spectrum1d:
             extra["original_metadata"] = self.original_metadata
 
         if include_weights:
+            print("fetching new weights")
             extra["weights"] = self.get_weights().todict()
+            print(extra["weights"])
+            print("done weights")
 
         return Spectrum1dDict(
             energy=self.energy.tolist(),

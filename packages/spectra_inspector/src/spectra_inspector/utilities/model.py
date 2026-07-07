@@ -31,6 +31,7 @@ class Spectrum1dDict:
     energy_max: float
     metadata: dict[str, Any] | None = None
     original_metadata: dict[str, Any] | None = None
+    weights: dict[str, Any] | None = None
 
 
 class GeneralMetadata(BaseModel):

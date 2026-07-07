@@ -239,7 +239,9 @@ async def image_spectrum(
         raise HTTPException(404, detail=msg) from err
 
     assert isinstance(result, Spectrum1d)
-    return result.todict(include_weights=include_weights)  # type:ignore[unreachable]
+
+    res = result.todict(include_weights=include_weights)  # type:ignore[unreachable]
+    return res
 
 
 @app.get("/image-data")
