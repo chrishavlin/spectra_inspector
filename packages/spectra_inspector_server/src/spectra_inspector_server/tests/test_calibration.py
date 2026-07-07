@@ -149,14 +149,27 @@ def test_energy_ranges_do_not_overlap() -> None:
         for element in calibration_elements
     ]
 
-    for (el1, start1, end1), (el2, start2, end2) in zip(
-        ranges,
-        ranges[1:],
-        strict=True,
-    ):
+    for idx in range(len(ranges) - 1):
+        el1, start1, end1 = ranges[idx]
+        el2, start2, end2 = ranges[idx + 1]
+
         assert end1 < start2, (
             f"Energy ranges overlap: {el1} ({start1}, {end1}) "
             f"and {el2} ({start2}, {end2})"
+        )
+
+
+def test_calibration_elements_are_ordered_by_energy_range() -> None:
+    start_energies = [
+        element_energy_ranges_keV[element][0] for element in calibration_elements
+    ]
+
+    for idx in range(len(start_energies) - 1):
+        assert start_energies[idx] < start_energies[idx + 1], (
+            f"Calibration elements are not ordered by increasing energy range: "
+            f"{calibration_elements[idx]} starts at {start_energies[idx]} keV, "
+            f"but {calibration_elements[idx + 1]} starts at "
+            f"{start_energies[idx + 1]} keV"
         )
 
 
