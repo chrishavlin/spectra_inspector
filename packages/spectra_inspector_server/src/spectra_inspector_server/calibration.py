@@ -1,5 +1,5 @@
-from dataclasses import dataclass
-from typing import Literal
+from dataclasses import asdict, dataclass
+from typing import Any, Literal
 
 import numpy as np
 import numpy.typing as npt
@@ -22,6 +22,9 @@ class CalibrationWeights:
     total_count: float
     counts_14_15_kev: float
     DH_assessment: float
+
+    def todict(self) -> dict[str, Any]:
+        return asdict(self)
 
 
 element_energy_ranges_keV: dict[str, tuple[float, float]] = {

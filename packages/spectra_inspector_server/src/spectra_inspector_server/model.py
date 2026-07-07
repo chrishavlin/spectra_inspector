@@ -1,3 +1,4 @@
+from collections.abc import Mapping
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
@@ -36,6 +37,7 @@ class Spectrum1dDict:
     energy_max: float
     metadata: dict[str, Any] | None = None
     original_metadata: dict[str, Any] | None = None
+    weights: dict[str, Any] | None = None
 
 
 @dataclass
@@ -50,12 +52,15 @@ class Spectrum1d:
     def tolist(self) -> list[list[float]]:
         return [self.energy.tolist(), self.intensity.tolist()]
 
-    def todict(self) -> Spectrum1dDict:
+    def todict(self, include_weights: bool = False) -> Spectrum1dDict:
         extra = {}
         if self.metadata:
             extra["metadata"] = self.metadata
         if self.original_metadata:
             extra["original_metadata"] = self.original_metadata
+
+        if include_weights:
+            extra["weights"] = self.get_weights().todict()
 
         return Spectrum1dDict(
             energy=self.energy.tolist(),
@@ -67,7 +72,7 @@ class Spectrum1d:
 
     def energy_keV(self) -> npt.NDArray[np.float64]:
         dE = (self.energy_max - self.energy_min) / len(self.energy)
-        return self.energy_min + self.energy * dE
+        return np.astype(self.energy_min + self.energy * dE, np.float64)
 
     def get_weights(self) -> CalibrationWeights:
         return calculate_weights(self.intensity, self.energy_keV())
@@ -249,22 +254,22 @@ class sampleMetadataCSVrecord:
     description: str
 
     @staticmethod
-    def from_rec(rec: dict[str, str | float]) -> "sampleMetadataCSVrecord":
+    def from_rec(rec: Mapping[str, Any]) -> "sampleMetadataCSVrecord":
 
         sid = str(rec["sample_id"])
         sample_type = str(rec["sample_type"])
         group_name = str(rec["group_name"])
         description = str(rec["description"])
 
-        elevation = None
+        elevation: float | None = None
         if rec["elevation"]:
             elevation = float(rec["elevation"])
 
-        lat = None
+        lat: float | None = None
         if rec["lat"]:
             lat = float(rec["lat"])
 
-        lon = None
+        lon: float | None = None
         if rec["lon"]:
             lon = float(rec["lon"])
 
