@@ -63,7 +63,8 @@ def test_image_combined_metadata(app_client: TestClient) -> None:
 
 def test_image_spectrum(app_client: TestClient) -> None:
     response = app_client.get(
-        "/image-spectrum", params={"sample_name": _on_disc_mock.filenames[0]}
+        "/image-spectrum",
+        params={"sample_name": _on_disc_mock.filenames[0], "include_weights": False},
     )
     assert response.status_code == 200
     spectrum = Spectrum1dDict(**response.json())
