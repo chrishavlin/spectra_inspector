@@ -114,7 +114,7 @@ def update_selected_dataset(
         meta_dict = meta.model_dump()
 
         sample_data = new_user_data.get("sample_metadata", {})
-        if input_value in sample_data.get("map_samples", {}):
+        if sample_data and input_value in sample_data.get("map_samples", {}):
             sample_id = sample_data["map_samples"][input_value]
             record = next(
                 (r for r in sample_data["records"] if r["sample_id"] == sample_id), None

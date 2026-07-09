@@ -97,7 +97,7 @@ def get_map(
 
     ms = mapSettings()
 
-    if available_data is None:
+    if available_data is None or available_data.sample_metadata is None:
         recs = [
             {
                 "lat": ms.center_lat,

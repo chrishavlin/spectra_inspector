@@ -86,6 +86,7 @@ def test_map_to_sample_id(on_disk_path: tuple[Path, list[str]]) -> None:
     assert ph.database.sample_metadata_fullpath is not None
     assert ph.database.sample_metadata_fullpath.is_file()
 
+    assert ph.database.sample_metadata_mapper is not None
     smd = ph.database.sample_metadata_mapper.get_all()
     assert smd.records is not None
     assert len(smd.records) == len(sample_names)

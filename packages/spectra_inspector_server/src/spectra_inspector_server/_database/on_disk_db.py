@@ -48,8 +48,10 @@ class OnDiskDatabase:
         self.available_maps[basename] = new_set
 
     @property
-    def sample_metadata_mapper(self) -> SampleMetadataMapper:
-        return SampleMetadataMapper(self.sample_metadata_fullpath)
+    def sample_metadata_mapper(self) -> SampleMetadataMapper | None:
+        if self.sample_metadata_fullpath:
+            return SampleMetadataMapper(self.sample_metadata_fullpath)
+        return None
 
     _available_samples: dict[str, str] | None = None
 
