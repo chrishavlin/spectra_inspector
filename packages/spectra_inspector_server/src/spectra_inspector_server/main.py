@@ -21,6 +21,7 @@ from spectra_inspector_server.model import (
     Spectrum1d,
     Spectrum1dDict,
     raveledImage,
+    sampleMetadata,
 )
 from spectra_inspector_server.processor.operations import OperationEDAXStateHandler
 from spectra_inspector_server.settings import Settings
@@ -124,9 +125,11 @@ async def available_datasets(
     filekeys = [str(nm) for nm in ph.database.available_maps]
 
     available_samples = ph.database.available_samples
-    all_meta = ph.database.sample_metadata_mapper.get_all(
-        available_samples=available_samples
-    )
+    all_meta: sampleMetadata | None = None
+    if ph.database.sample_metadata_mapper:
+        all_meta = ph.database.sample_metadata_mapper.get_all(
+            available_samples=available_samples
+        )
 
     return AvailableDatasets(
         available_files=filekeys,
