@@ -289,14 +289,6 @@ def initialize_full_spectrum_data(sample_name: str | None, spectrum_store: dict 
         new_store_data["intensity"] = df.intensity.tolist()
         new_store_data["energy"] = df.energy.tolist()
         new_store_data["attrs"] = df.attrs
-        print("attrs????")
-        print(df.attrs.keys())
-        if "weights" in df.attrs:
-            print("has weights")
-            print(df.attrs["weights"])
-        else:
-            print("no weights")
-        print("weight check")
         return new_store_data
 
     return no_update
