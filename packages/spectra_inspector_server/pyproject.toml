@@ -6,7 +6,7 @@ description = "backend server for the spectra_inspector"
 readme = "README.md"
 license = "BSD-3-Clause"
 license-files = ["LICENSE"]
-requires-python = ">=3.10"
+requires-python = ">=3.12"
 classifiers = [
   "Development Status :: 1 - Planning",
   "Intended Audience :: Science/Research",
@@ -15,8 +15,6 @@ classifiers = [
   "Programming Language :: Python",
   "Programming Language :: Python :: 3",
   "Programming Language :: Python :: 3 :: Only",
-  "Programming Language :: Python :: 3.10",
-  "Programming Language :: Python :: 3.11",
   "Programming Language :: Python :: 3.12",
   "Programming Language :: Python :: 3.13",
   "Programming Language :: Python :: 3.14",
@@ -49,12 +47,12 @@ examples = ["matplotlib", "jupyterlab"]
 
 [dependency-groups]
 test = [
- "httpx2>=2.3.0",
- "pytest >=9",
- "pytest-cov >=7",
+  "httpx2>=2.3.0",
+  "pytest>=9",
+  "pytest-cov>=7",
 ]
 lint = ["pre-commit"]
-dev = [{ include-group = "test" }, { include-group ="lint" }]
+dev = [{ include-group = "test" }, { include-group = "lint" }]
 docs = [
   "sphinx>=7.0",
   "myst_parser>=0.13",
@@ -71,7 +69,6 @@ dependency-groups = ["dev"]
 dependency-groups = ["test"]
 env-vars.PYTHONWARNDEFAULTENCODING = "1"
 
-
 [tool.pytest]
 minversion = "9.0"
 addopts = ["-ra", "--showlocals"]
@@ -80,7 +77,6 @@ filterwarnings = ["error"]
 log_level = "INFO"
 testpaths = ["tests", "src/spectra_inspector_server"]
 
-
 [tool.coverage]
 run.source = ["spectra_inspector_server"]
 report.exclude_also = ['\.\.\.', 'if typing.TYPE_CHECKING:']
@@ -88,7 +84,7 @@ report.exclude_also = ['\.\.\.', 'if typing.TYPE_CHECKING:']
 [tool.mypy]
 plugins = ["pydantic.mypy"]
 files = ["src", "tests"]
-python_version = "3.10"
+python_version = "3.12"
 warn_unused_configs = true
 strict = true
 enable_error_code = ["ignore-without-code", "redundant-expr", "truthy-bool"]
@@ -97,14 +93,13 @@ disallow_untyped_defs = false
 disallow_incomplete_defs = false
 follow_untyped_imports = true
 
-
 [[tool.mypy.overrides]]
 module = "spectra_inspector_server.*"
 disallow_untyped_defs = true
 disallow_incomplete_defs = true
 
-
 [tool.ruff]
+target-version = "py312"
 
 [tool.ruff.lint]
 extend-select = [
@@ -150,7 +145,8 @@ ignore = [
   "PLR2004", # Magic value used in comparison
   "PTH123",  # replace open() with Path.open()
   "PD015",   # pandas Use `df.merge` instead of `pd.merge`
-  "RET504",  # unnecesarry-assign
+  "RET504",  # unnecessary-assign
+  "RUF007",  # Prefer `itertools.pairwise()` over `zip()` when iterating over successive pairs
 ]
 # Uncomment if using a _compat.typing backport
 # typing-modules = ["spectra_inspector_server._compat.typing"]
@@ -158,9 +154,8 @@ ignore = [
 [tool.ruff.lint.per-file-ignores]
 "tests/**" = ["T20"]
 
-
 [tool.pylint]
-py-version = "3.10"
+py-version = "3.12"
 ignore-paths = [".*/_version.py"]
 reports.output-format = "colorized"
 similarities.ignore-imports = "yes"

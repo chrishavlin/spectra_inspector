@@ -82,8 +82,8 @@ class OperationEDAXStateHandler:
         )
 
         shp = im.shape
-        im = im.ravel().tolist()
-        return raveledImage(image=im, shape=shp)
+        im1d = im.ravel().tolist()
+        return raveledImage(image=im1d, shape=shp)
 
     def get_image(
         self,

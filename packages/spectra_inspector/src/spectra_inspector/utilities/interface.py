@@ -80,10 +80,11 @@ class SpectraInspectorServerInterface:
         channel_range: tuple[int, int] | None = None,
         index0_range: tuple[int, int] | None = None,
         index1_range: tuple[int, int] | None = None,
+        include_weights: bool = True,
     ) -> model.Spectrum1dDict:
 
         payload: dict[str, str | int]
-        payload = {"sample_name": sample_name}
+        payload = {"sample_name": sample_name, "include_weights": include_weights}
 
         if isinstance(channel_range, tuple):
             payload["channel_0"] = channel_range[0]

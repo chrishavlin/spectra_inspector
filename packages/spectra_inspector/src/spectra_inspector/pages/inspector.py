@@ -97,6 +97,8 @@ def get_spectrum(
         attrs["metadata"] = spectrum.metadata
     if spectrum.original_metadata is not None:
         attrs["original_metadata"] = spectrum.original_metadata
+    if spectrum.weights is not None:
+        attrs["weights"] = spectrum.weights
     df.attrs = attrs
     return df
 
@@ -251,8 +253,7 @@ def layout(sample_name: str | None = None, **kwargs):  # noqa: ARG001
 
     export_panel = dbc.Row(
         [
-            dbc.Col(data_export_panel.get_layout()[0], width=6),
-            dbc.Col([], width=6),
+            dbc.Col(data_export_panel.get_layout()[0], width=12),
         ],
         style={"margin-top": "1rem"},
     )
@@ -291,6 +292,22 @@ def initialize_full_spectrum_data(sample_name: str | None, spectrum_store: dict 
         return new_store_data
 
     return no_update
+
+
+@callback(
+    Output(_dataExportIDS.elementweightsdiv, "children"),
+    Input(
+        _IDS.active_spectrum_metadata,
+        "data",
+    ),
+)
+def update_element_weights(
+    active_spectrum_metadata: dict | None,
+):
+    if "attrs" in active_spectrum_metadata:
+        tble = data_export_panel.get_formatted_element_weights(active_spectrum_metadata)
+        return html.Div(tble)
+    return html.Div()
 
 
 @callback(

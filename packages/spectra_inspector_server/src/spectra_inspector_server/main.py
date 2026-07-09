@@ -190,6 +190,7 @@ async def image_spectrum(
     index0_1: int | None | Literal["none"] = None,
     index1_0: int | None | Literal["none"] = None,
     index1_1: int | None | Literal["none"] = None,
+    include_weights: bool = True,
 ) -> Spectrum1dDict:
 
     ph = ph_from_app_state(request)
@@ -238,7 +239,9 @@ async def image_spectrum(
         raise HTTPException(404, detail=msg) from err
 
     assert isinstance(result, Spectrum1d)
-    return result.todict()  # type:ignore[unreachable]
+
+    res = result.todict(include_weights=include_weights)  # type:ignore[unreachable]
+    return res
 
 
 @app.get("/image-data")

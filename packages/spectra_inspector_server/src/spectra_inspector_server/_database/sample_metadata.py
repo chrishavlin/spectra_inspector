@@ -1,5 +1,6 @@
 import json
 from pathlib import Path
+from typing import Any, cast
 
 import pandas as pd
 
@@ -38,7 +39,10 @@ class SampleMetadataMapper:
     def get_sample(self, sample_id: str) -> sampleMetadataCSVrecord | None:
         dfi = self.df[self.df.sample_id == sample_id]
         if len(dfi) == 1:
-            rec = dfi.iloc[0].to_dict()
+            rec = cast(
+                "dict[str, Any]",
+                dfi.iloc[0].to_dict(),
+            )
             return sampleMetadataCSVrecord.from_rec(rec)
         return None
 
