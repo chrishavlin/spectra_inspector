@@ -65,7 +65,7 @@ class OnDiskDatabase:
         return self._available_samples
 
 
-_expected_exts = [".spd", ".spc", ".ipr", ".bmp", ".xml"]
+_expected_exts = [".spd", ".spc", ".ipr"]  # , ".bmp", ".xml"]
 
 
 def _get_expected_files(spd_file: Path) -> dict[str, Path]:
@@ -89,6 +89,8 @@ def _has_all_files(spd_file: Path) -> bool:
 def _recursive_inspection(dirname: Path, db: OnDiskDatabase) -> None:
     if dirname.is_dir():
         for fh in dirname.iterdir():
+            msg = f"inspecting {fh}"
+            spectraLogger.debug(msg)
             if fh.is_dir():
                 _recursive_inspection(fh, db)
             if fh.is_file() and fh.suffix == ".spd" and _has_all_files(fh):
