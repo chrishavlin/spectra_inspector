@@ -41,7 +41,10 @@ class EDAXPathHandler:
 
         self.database = OnDiskDatabase(self, init_db=init_db)
 
-        spectraLogger.info(f"Initialized PathHandler with data_root {self.data_root}")
+        nmaps = len(self.database.available_maps)
+        spectraLogger.info(
+            f"Initialized PathHandler with data_root {self.data_root} with {nmaps} EDAX sets."
+        )
 
     def refresh(self) -> None:
         spectraLogger.info("re-initalizing PathHandler database")

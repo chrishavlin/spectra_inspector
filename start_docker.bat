@@ -1,2 +1,2 @@
 @echo off
-powershell -ExecutionPolicy Bypass -File "%~dp0start-docker.ps1"
+powershell -ExecutionPolicy Bypass -File "%~dp0start_docker.ps1"
