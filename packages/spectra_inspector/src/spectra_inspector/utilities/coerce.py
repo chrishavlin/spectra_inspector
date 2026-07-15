@@ -5,6 +5,7 @@ import plotly.graph_objects as go
 from matplotlib import colormaps
 
 from spectra_inspector.logging import spectraLogger
+from spectra_inspector.utilities.matplotib_importer import Rectangle
 from spectra_inspector.utilities.matplotib_importer import mpl_pyplot as plt
 
 _place_holder = "___"
@@ -53,6 +54,7 @@ def plotly_to_matplotlib(
     fig: dict | go.Figure | None,
     im_data: npt.NDArray | None = None,
     cmap: str | None = None,
+    include_colorbar: bool = False,
 ):
     """Convert a Plotly figure into a Matplotlib figure for static exports.
 
@@ -95,8 +97,33 @@ def plotly_to_matplotlib(
             cmap_name = _mpl_cmaps_lower[cmap_name]
 
         im = ax.imshow(z, cmap=cmap_name)
+        ax.set_aspect("equal", adjustable="box")
+
+        # add on box annotations
+        for shape in layout.get("shapes", []) or []:
+            if shape.get("type") != "rect":
+                continue
+
+            x0 = shape.get("x0")
+            x1 = shape.get("x1")
+            y0 = shape.get("y0")
+            y1 = shape.get("y1")
+            if None in {x0, x1, y0, y1}:
+                continue
+
+            rect = Rectangle(
+                (x0, y0),
+                x1 - x0,
+                y1 - y0,
+                fill=False,
+                edgecolor="black",
+                linewidth=2,
+            )
+            ax.add_patch(rect)
+
         ax.set_axis_off()
-        fig_mpl.colorbar(im, ax=ax, fraction=0.046, pad=0.04)
+        if include_colorbar:
+            fig_mpl.colorbar(im, ax=ax, fraction=0.046, pad=0.04)
 
         title_text = title.get("text") if isinstance(title, dict) else None
         if title_text:
@@ -123,6 +150,7 @@ def plotly_to_matplotlib(
                 if color:
                     line_kwargs["color"] = color
             ax.plot(x, y, label=trace.get("name"), **line_kwargs)
+            ax.set_xlim(left=0, right=8)
 
     if isinstance(xaxis, dict):
         title_text = xaxis.get("title", {}).get("text")
