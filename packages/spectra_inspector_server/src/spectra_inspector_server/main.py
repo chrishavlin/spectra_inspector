@@ -96,6 +96,9 @@ async def lifespan(
     yield {"q": q, "ph": ph}
 
 
+# configure logger once at startup.
+settings = Settings()
+spectraLogger.setLevel(settings.spectra_inspector_log_level.upper())
 app = FastAPI(lifespan=lifespan)
 
 

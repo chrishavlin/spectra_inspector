@@ -36,7 +36,12 @@ class OnDiskDatabase:
 
         smp = ph.data_root / self.sample_metadata_csv
         if smp.is_file():
+            msg = f"Found sample metadata csv at {smp}"
+            spectraLogger.debug(msg)
             self.sample_metadata_fullpath = smp
+        else:
+            msg = f"Could not find expected sample metadata csv at {smp}"
+            spectraLogger.debug(msg)
 
     def add_fileset(self, basename: str, files: dict[str, Path]) -> None:
         if basename in self.available_maps:
@@ -87,7 +92,11 @@ def _has_all_files(spd_file: Path) -> bool:
 
 
 def _recursive_inspection(dirname: Path, db: OnDiskDatabase) -> None:
+    msg = f"inspecting input path {dirname}"
+    spectraLogger.debug(msg)
     if dirname.is_dir():
+        msg = f"inspecting directory {dirname}"
+        spectraLogger.debug(msg)
         for fh in dirname.iterdir():
             msg = f"inspecting {fh}"
             spectraLogger.debug(msg)
@@ -96,3 +105,6 @@ def _recursive_inspection(dirname: Path, db: OnDiskDatabase) -> None:
             if fh.is_file() and fh.suffix == ".spd" and _has_all_files(fh):
                 # we have a sample!
                 db.add_fileset(fh.stem, _get_expected_files(fh))
+    else:
+        msg = f"{dirname} is not a directory."
+        spectraLogger.debug(msg)
