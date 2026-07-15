@@ -15,8 +15,8 @@ class EDAX_file_set(BaseModel):
     spd: Path
     spc: Path
     ipr: Path
-    bmp: Path
-    xml: Path
+    bmp: Path | None = None
+    xml: Path | None = None
 
 
 class EDAX_axis(BaseModel):

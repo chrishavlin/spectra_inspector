@@ -70,14 +70,15 @@ class OnDiskDatabase:
         return self._available_samples
 
 
-_expected_exts = [".spd", ".spc", ".ipr"]  # , ".bmp", ".xml"]
+_possible_exts = [".spd", ".spc", ".ipr", ".bmp", ".xml"]
+_required_exts = [".spd", ".spc", ".ipr"]
 
 
 def _get_expected_files(spd_file: Path) -> dict[str, Path]:
     basename = spd_file.stem
 
     file_set_args = {}
-    for ext in _expected_exts:
+    for ext in _possible_exts:
         newfi = basename + ext
         file_set_args[ext.replace(".", "")] = spd_file.parent / newfi
 
@@ -86,7 +87,7 @@ def _get_expected_files(spd_file: Path) -> dict[str, Path]:
 
 def _has_all_files(spd_file: Path) -> bool:
     for expected_file in _get_expected_files(spd_file).values():
-        if not expected_file.is_file():
+        if not expected_file.is_file() and expected_file.suffix in _required_exts:
             return False
     return True
 
