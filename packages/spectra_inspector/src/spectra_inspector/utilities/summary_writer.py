@@ -18,6 +18,7 @@ from spectra_inspector.settings import Settings
 class summaryWriter:
     folder_name: Path = Path("spector-inspector")
     pdf_name: Path = Path("SpectraInspectorSummary.pdf")
+    element_weights_name: Path = Path("ElementWeights.txt")
     parent_write_dir: Path
     unique_write_dir: Path
     settings: Settings
@@ -87,6 +88,12 @@ class summaryWriter:
                 plotly.io.write_image(fig, outfile, format=figformat)
 
         spectraLogger.info(f"wrote image files to {self.write_dir}")
+
+    def write_element_weights(self, wts: dict) -> Path:
+        fi = self.full_file(self.element_weights_name)
+        with open(fi, "w", encoding="utf-8") as f:
+            f.writelines(f"{element}\t{weight}\n" for element, weight in wts.items())
+        return fi
 
     def get_zip(self, include_pdf: bool = False) -> Path:
 

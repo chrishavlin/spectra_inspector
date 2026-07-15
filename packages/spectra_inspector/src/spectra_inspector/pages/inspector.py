@@ -627,6 +627,13 @@ def export_summary(
             active_spectrum_metadata, file_type=".msa", file_format=msafileformat
         )
         _ = s.write_MSA(active_spectrum_metadata, file_type=".csv")
+        if (
+            "attrs" in active_spectrum_metadata
+            and "weights" in active_spectrum_metadata["attrs"]
+        ):
+            wts = active_spectrum_metadata["attrs"]["weights"]
+            _ = s.write_element_weights(wts)
+
         return dcc.send_file(s.get_zip())
     msg = f"Unexpected value for format, {export_summary_format=}"
     raise ValueError(msg)
