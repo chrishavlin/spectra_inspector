@@ -41,6 +41,7 @@ from spectra_inspector.utilities.coerce import (
     copy_layout_attrs_for_new_fig,
     placeholder_to_spaces,
     plotly_im_trace_to_array,
+    plotly_to_matplotlib,
     sync_layouts,
 )
 from spectra_inspector.utilities.interface import SpectraInspectorServerInterface
@@ -590,7 +591,7 @@ def export_summary(
         im_name = f"bitmap_{str(igraph).zfill(2)}"
         if energy_label != "none":
             im_name += f"_{energy_label}"
-        figs_to_write[im_name] = fig_list[igraph]
+        figs_to_write[im_name] = plotly_to_matplotlib(fig_list[igraph])
 
         if index0_range and index1_range:
             im = plotly_im_trace_to_array(fig_list[igraph]["data"][0])
@@ -611,9 +612,9 @@ def export_summary(
             )
 
             im_name += "_subset"
-            figs_to_write[im_name] = newfig
+            figs_to_write[im_name] = plotly_to_matplotlib(newfig, im_data=im)
 
-    figs_to_write["spectrum"] = spectrum_figure
+    figs_to_write["spectrum"] = plotly_to_matplotlib(spectrum_figure)
 
     s = summaryWriter()
     s.write_static_figures(figs_to_write)
@@ -621,8 +622,11 @@ def export_summary(
     if export_summary_format == "PDF":
         return dcc.send_file(s.get_pdf_path(generate_pdf=True))
     if export_summary_format == ".zip" and active_spectrum_metadata is not None:
-        # include the MSA for the zip
-        _ = s.write_MSA(active_spectrum_metadata, file_format=msafileformat)
+        # include the MSA for the zip as .msa and .csv
+        _ = s.write_MSA(
+            active_spectrum_metadata, file_type=".msa", file_format=msafileformat
+        )
+        _ = s.write_MSA(active_spectrum_metadata, file_type=".csv")
         return dcc.send_file(s.get_zip())
     msg = f"Unexpected value for format, {export_summary_format=}"
     raise ValueError(msg)

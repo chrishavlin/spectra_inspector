@@ -1,8 +1,12 @@
 from unittest.mock import patch
 
+import matplotlib as mpl
+import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
 import pytest
+
+mpl.use("Agg")
 
 from spectra_inspector.settings import Settings
 from spectra_inspector.utilities import model as m
@@ -71,6 +75,18 @@ def metadata():
             "original_metadata": {},
         },
     }
+
+
+def test_write_static_figures_writes_matplotlib_figure(writer):
+    fig = plt.figure()
+    ax = fig.add_subplot(111)
+    ax.imshow(np.arange(4).reshape(2, 2), cmap="viridis")
+
+    writer.write_static_figures({"bitmap": fig}, figformat="png")
+
+    out_file = writer.full_file("bitmap.png")
+    assert out_file.exists()
+    assert out_file.stat().st_size > 0
 
 
 class TestWriteMSA:
