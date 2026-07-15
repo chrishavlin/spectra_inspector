@@ -62,10 +62,12 @@ def test_on_disk_db_init(on_disk_path: tuple[Path, list[str]]) -> None:
         assert set(maps.keys()) == set(sample_names)
 
         for sample_set in maps.values():
+            assert sample_set.bmp
             assert sample_set.bmp.exists()
             assert sample_set.spd.exists()
             assert sample_set.spc.exists()
             assert sample_set.ipr.exists()
+            assert sample_set.xml
             assert sample_set.xml.exists()
 
         ph.refresh()

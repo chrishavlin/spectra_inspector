@@ -36,7 +36,12 @@ class OnDiskDatabase:
 
         smp = ph.data_root / self.sample_metadata_csv
         if smp.is_file():
+            msg = f"Found sample metadata csv at {smp}"
+            spectraLogger.debug(msg)
             self.sample_metadata_fullpath = smp
+        else:
+            msg = f"Could not find expected sample metadata csv at {smp}"
+            spectraLogger.debug(msg)
 
     def add_fileset(self, basename: str, files: dict[str, Path]) -> None:
         if basename in self.available_maps:
@@ -65,14 +70,15 @@ class OnDiskDatabase:
         return self._available_samples
 
 
-_expected_exts = [".spd", ".spc", ".ipr", ".bmp", ".xml"]
+_possible_exts = [".spd", ".spc", ".ipr", ".bmp", ".xml"]
+_required_exts = [".spd", ".spc", ".ipr"]
 
 
 def _get_expected_files(spd_file: Path) -> dict[str, Path]:
     basename = spd_file.stem
 
     file_set_args = {}
-    for ext in _expected_exts:
+    for ext in _possible_exts:
         newfi = basename + ext
         file_set_args[ext.replace(".", "")] = spd_file.parent / newfi
 
@@ -81,16 +87,25 @@ def _get_expected_files(spd_file: Path) -> dict[str, Path]:
 
 def _has_all_files(spd_file: Path) -> bool:
     for expected_file in _get_expected_files(spd_file).values():
-        if not expected_file.is_file():
+        if not expected_file.is_file() and expected_file.suffix in _required_exts:
             return False
     return True
 
 
 def _recursive_inspection(dirname: Path, db: OnDiskDatabase) -> None:
+    msg = f"inspecting input path {dirname}"
+    spectraLogger.debug(msg)
     if dirname.is_dir():
+        msg = f"inspecting directory {dirname}"
+        spectraLogger.debug(msg)
         for fh in dirname.iterdir():
+            msg = f"inspecting {fh}"
+            spectraLogger.debug(msg)
             if fh.is_dir():
                 _recursive_inspection(fh, db)
             if fh.is_file() and fh.suffix == ".spd" and _has_all_files(fh):
                 # we have a sample!
                 db.add_fileset(fh.stem, _get_expected_files(fh))
+    else:
+        msg = f"{dirname} is not a directory."
+        spectraLogger.debug(msg)
