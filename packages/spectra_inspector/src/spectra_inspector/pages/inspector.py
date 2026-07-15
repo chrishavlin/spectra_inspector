@@ -591,7 +591,7 @@ def export_summary(
         im_name = f"bitmap_{str(igraph).zfill(2)}"
         if energy_label != "none":
             im_name += f"_{energy_label}"
-        figs_to_write[im_name] = plotly_to_matplotlib(fig_list[igraph])
+        figs_to_write[im_name] = plotly_to_matplotlib(fig_list[igraph], cmap=cmap)
 
         if index0_range and index1_range:
             im = plotly_im_trace_to_array(fig_list[igraph]["data"][0])
@@ -612,7 +612,7 @@ def export_summary(
             )
 
             im_name += "_subset"
-            figs_to_write[im_name] = plotly_to_matplotlib(newfig, im_data=im)
+            figs_to_write[im_name] = plotly_to_matplotlib(newfig, im_data=im, cmap=cmap)
 
     figs_to_write["spectrum"] = plotly_to_matplotlib(spectrum_figure)
 

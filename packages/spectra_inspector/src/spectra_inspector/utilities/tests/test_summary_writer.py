@@ -1,15 +1,12 @@
 from unittest.mock import patch
 
-import matplotlib as mpl
-import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
 import pytest
 
-mpl.use("Agg")
-
 from spectra_inspector.settings import Settings
 from spectra_inspector.utilities import model as m
+from spectra_inspector.utilities.matplotib_importer import mpl_pyplot as plt
 from spectra_inspector.utilities.summary_writer import summaryWriter
 
 

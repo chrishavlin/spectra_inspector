@@ -1,11 +1,32 @@
-import matplotlib.pyplot as plt
 import numpy as np
 import numpy.typing as npt
+import plotly.express as px
 import plotly.graph_objects as go
+from matplotlib import colormaps
 
 from spectra_inspector.logging import spectraLogger
+from spectra_inspector.utilities.matplotib_importer import mpl_pyplot as plt
 
 _place_holder = "___"
+
+_mpl_cmaps_lower = {name.lower(): name for name in colormaps}
+
+
+def get_sequential_colorscales(restrict_to_common: bool = True) -> list[str]:
+    all_colors = px.colors.named_colorscales()
+    seq_attrs = [
+        att.lower() for att in dir(px.colors.sequential) if not att.startswith("_")
+    ]
+
+    plotly_colormaps = [clr for clr in all_colors if clr.lower() in seq_attrs]
+
+    if restrict_to_common:
+        plotly_colormaps = [
+            clr for clr in plotly_colormaps if clr.lower() in _mpl_cmaps_lower
+        ]
+
+    plotly_colormaps.sort()
+    return plotly_colormaps
 
 
 def spaces_to_placeholder(input: str) -> str:
@@ -29,7 +50,9 @@ def plotly_im_trace_to_array(trace_data: dict) -> npt.NDArray:
 
 
 def plotly_to_matplotlib(
-    fig: dict | go.Figure | None, im_data: npt.NDArray | None = None
+    fig: dict | go.Figure | None,
+    im_data: npt.NDArray | None = None,
+    cmap: str | None = None,
 ):
     """Convert a Plotly figure into a Matplotlib figure for static exports.
 
@@ -62,16 +85,14 @@ def plotly_to_matplotlib(
             z = im_data
         spectraLogger.info(f"extracted data {z.shape}, {z.dtype}")
         fig_mpl, ax = plt.subplots(figsize=(6, 4), dpi=150)
-        cmap = first_trace.get("colorscale")
+
+        # handle colormap coercion
         if isinstance(cmap, str):
             cmap_name = cmap
         else:
             cmap_name = "viridis"
-
-        try:
-            plt.get_cmap(cmap_name)
-        except ValueError:
-            cmap_name = "viridis"
+        if cmap_name in _mpl_cmaps_lower:
+            cmap_name = _mpl_cmaps_lower[cmap_name]
 
         im = ax.imshow(z, cmap=cmap_name)
         ax.set_axis_off()
