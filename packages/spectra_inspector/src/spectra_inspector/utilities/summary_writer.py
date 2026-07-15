@@ -6,8 +6,10 @@ from typing import Literal
 from zoneinfo import ZoneInfo
 
 import fpdf
+import matplotlib.pyplot as plt
 import pandas as pd
 import plotly
+from matplotlib.figure import Figure
 
 from spectra_inspector.logging import spectraLogger
 from spectra_inspector.settings import Settings
@@ -16,6 +18,7 @@ from spectra_inspector.settings import Settings
 class summaryWriter:
     folder_name: Path = Path("spector-inspector")
     pdf_name: Path = Path("SpectraInspectorSummary.pdf")
+    element_weights_name: Path = Path("ElementWeights.txt")
     parent_write_dir: Path
     unique_write_dir: Path
     settings: Settings
@@ -72,14 +75,25 @@ class summaryWriter:
 
     def write_static_figures(
         self,
-        figures: dict[str, plotly.graph_objs.Figure],
+        figures: dict[str, Figure | plotly.graph_objs.Figure],
         figformat: Literal["png", "svg", "pdf"] = "png",
     ):
 
-        fig_files = [self.full_file(f"{f}.{figformat}") for f in figures]
-        fig_list = list(figures.values())
-        plotly.io.write_images(fig_list, fig_files, format=figformat)
+        for name, fig in figures.items():
+            outfile = self.full_file(f"{name}.{figformat}")
+            if isinstance(fig, Figure):
+                fig.savefig(outfile, format=figformat, bbox_inches="tight")
+                plt.close(fig)
+            else:
+                plotly.io.write_image(fig, outfile, format=figformat)
+
         spectraLogger.info(f"wrote image files to {self.write_dir}")
+
+    def write_element_weights(self, wts: dict) -> Path:
+        fi = self.full_file(self.element_weights_name)
+        with open(fi, "w", encoding="utf-8") as f:
+            f.writelines(f"{element}\t{weight}\n" for element, weight in wts.items())
+        return fi
 
     def get_zip(self, include_pdf: bool = False) -> Path:
 
@@ -146,6 +160,8 @@ class summaryWriter:
         intensity = active_spectrum_metadata["intensity"]
         energy = active_spectrum_metadata["energy"]
         attrs = active_spectrum_metadata["attrs"]
+
+        file_type = file_type or ".msa"
 
         if file_type == ".msa":
             from rsciio.msa import file_writer

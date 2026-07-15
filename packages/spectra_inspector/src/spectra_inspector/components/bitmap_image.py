@@ -12,22 +12,11 @@ from spectra_inspector.components.layout_ids import indexedLayoutIDMapper
 from spectra_inspector.components.scalebar import scalebarHandler
 from spectra_inspector.logging import spectraLogger
 from spectra_inspector.user_store_model import UserStore
+from spectra_inspector.utilities.coerce import get_sequential_colorscales
 from spectra_inspector.utilities.interface import SpectraInspectorServerInterface
 from spectra_inspector.utilities.scaling import get_closest_index
 
-
-def _get_sequential_colorscales() -> list[str]:
-    _all_colors = px.colors.named_colorscales()
-    seq_attrs = [
-        att.lower() for att in dir(px.colors.sequential) if not att.startswith("_")
-    ]
-
-    colornames = [clr for clr in _all_colors if clr.lower() in seq_attrs]
-    colornames.sort()
-    return colornames
-
-
-_colorscales = _get_sequential_colorscales()
+_colorscales = get_sequential_colorscales()
 
 
 class bitmapImageLayoutIDs(indexedLayoutIDMapper):
@@ -74,7 +63,7 @@ def bitmap_image_layout(
     slider_stop: float = 15.0,
     slider_step: float = 0.1,
     init_element_id: int = 0,
-    colorscale: str = "blackbody",
+    colorscale: str = "reds",
 ) -> tuple[dbc.Card, bitmapImageLayoutIDs]:
 
     imIDs = bitmapImageLayoutIDs(id_type_base=id_type_base, index=index)
