@@ -25,3 +25,22 @@ def test_plotly_to_matplotlib_preserves_heatmap_box_annotation():
     assert len(ax.patches) == 1
     assert ax.patches[0].get_edgecolor() == (0.0, 0.0, 0.0, 1.0)
     assert ax.patches[0].get_linewidth() == 2
+
+
+def test_plotly_to_matplotlib_preserves_heatmap_overlay_trace_and_annotation():
+    im_data = [[1, 2], [3, 4]]
+    fig = {
+        "data": [
+            {"type": "heatmap", "z": im_data},
+            {"type": "scatter", "x": [0, 1], "y": [0, 1]},
+        ],
+        "layout": {
+            "annotations": [{"text": "scale", "x": 0.5, "y": 0.5, "showarrow": False}]
+        },
+    }
+
+    mpl_fig = plotly_to_matplotlib(fig, im_data=np.asarray(im_data))
+    ax = mpl_fig.axes[0]
+
+    assert len(ax.lines) == 1
+    assert ax.texts[0].get_text() == "scale"

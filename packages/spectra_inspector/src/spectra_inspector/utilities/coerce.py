@@ -121,6 +121,51 @@ def plotly_to_matplotlib(
             )
             ax.add_patch(rect)
 
+        # scale bar
+        if len(data) > 1:
+            scalebar_trace = next(
+                (
+                    trace
+                    for trace in data[1:]
+                    if trace.get("type") in {"scatter", "line"}
+                ),
+                None,
+            )
+            if scalebar_trace is not None:
+                x = scalebar_trace.get("x", [])
+                if len(x) >= 2:
+                    start_x = 0.0
+
+                    xmin = np.min(x)
+                    xmax = np.max(x)
+                    start_x = 0
+                    end_x = xmax - xmin
+                    bar_y = float(im.get_extent()[3]) if im is not None else 0.0
+                    ax.plot(
+                        [start_x, end_x],
+                        [bar_y, bar_y],
+                        color="black",
+                        linewidth=1.5,
+                    )
+
+                    bar_center = (start_x + end_x) / 2.0
+                    text_y = bar_y  # - 0.08 * max(1.0, xmax-xmin)
+
+                    annotations = layout.get("annotations", []) or []
+                    if annotations:
+                        annotation = annotations[0]
+                        text = annotation.get("text")
+                        if isinstance(text, str):
+                            ax.text(
+                                bar_center,
+                                text_y,
+                                text,
+                                color="black",
+                                fontsize=10,
+                                ha="center",
+                                va="top",
+                            )
+
         ax.set_axis_off()
         if include_colorbar:
             fig_mpl.colorbar(im, ax=ax, fraction=0.046, pad=0.04)
