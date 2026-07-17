@@ -204,6 +204,7 @@ def get_new_im(
     )
     fig.update_xaxes(visible=False)
     fig.update_yaxes(visible=False)
+    fig.update_layout(dragmode="drawrect")
 
     if scalebar_handler is not None:
         scalebar_handler.add_to_or_update_figure(fig, md)
