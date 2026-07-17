@@ -32,7 +32,8 @@ services:
       - "8000:8000"
     environment:
       # Include development dependencies when working locally
-      - UV_NO_DEV=0
+      UV_NO_DEV: 0
+      SPECTRA_INSPECTOR_DOCKER_FASTAPI_WORKERS: ${SPECTRA_INSPECTOR_DOCKER_FASTAPI_WORKERS:-1}
 
     # Run as root during development so the environment is mutable
     # Alternatively, you could set `UV_PROJECT_ENVIRONMENT` to a path owned by the non-root user

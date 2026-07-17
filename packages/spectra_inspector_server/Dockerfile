@@ -53,4 +53,12 @@ USER nonroot
 # Uses `--host 0.0.0.0` to allow access from outside the container
 # Note in production, you should use `fastapi run` instead
 RUN ls
-CMD ["uv", "run", "fastapi", "run", "--host", "0.0.0.0", "src/spectra_inspector_server/main.py"]
+
+ENV SPECTRA_INSPECTOR_DOCKER_FASTAPI_WORKERS=1
+
+RUN printf '#!/bin/sh\n\
+exec uv run fastapi run --host 0.0.0.0 --workers "$SPECTRA_INSPECTOR_DOCKER_FASTAPI_WORKERS" src/spectra_inspector_server/main.py\n' \
+> /app/start.sh \
+&& chmod +x /app/start.sh
+
+CMD ["/app/start.sh"]
