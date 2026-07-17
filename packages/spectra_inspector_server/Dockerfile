@@ -55,6 +55,6 @@ USER nonroot
 RUN ls
 
 COPY docker-entrypoint.sh /app/docker-entrypoint.sh
-RUN chmod +x /app/docker-entrypoint.sh
+RUN ls -l /app/docker-entrypoint.sh && chmod +x /app/docker-entrypoint.sh
 
 CMD ["/app/docker-entrypoint.sh"]
