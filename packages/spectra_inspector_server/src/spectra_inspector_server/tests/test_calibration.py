@@ -101,7 +101,7 @@ def test_calculate_weights_total_count(
 ) -> None:
     assert weights.total_count == float(intensity.sum())
     assert weights.counts_14_15_kev == 100.0
-    assert weights.DH_assessment == pytest.approx(intensity.sum() / 100.0)
+    assert weights.DH_assessment == pytest.approx(100 / intensity.sum())
 
 
 def test_calculate_weights_contains_all_fields(
