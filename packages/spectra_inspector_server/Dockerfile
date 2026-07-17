@@ -54,11 +54,7 @@ USER nonroot
 # Note in production, you should use `fastapi run` instead
 RUN ls
 
-ENV SPECTRA_INSPECTOR_DOCKER_FASTAPI_WORKERS=1
+COPY docker-entrypoint.sh /app/docker-entrypoint.sh
+RUN chmod +x /app/docker-entrypoint.sh
 
-RUN printf '#!/bin/sh\n\
-exec uv run fastapi run --host 0.0.0.0 --workers "$${SPECTRA_INSPECTOR_DOCKER_FASTAPI_WORKERS}" src/spectra_inspector_server/main.py\n' \
-> /app/start.sh \
-&& chmod +x /app/start.sh
-
-CMD ["/app/start.sh"]
+CMD ["/app/docker-entrypoint.sh"]
