@@ -57,7 +57,7 @@ RUN ls
 ENV SPECTRA_INSPECTOR_DOCKER_FASTAPI_WORKERS=1
 
 RUN printf '#!/bin/sh\n\
-exec uv run fastapi run --host 0.0.0.0 --workers "$SPECTRA_INSPECTOR_DOCKER_FASTAPI_WORKERS" src/spectra_inspector_server/main.py\n' \
+exec uv run fastapi run --host 0.0.0.0 --workers "$${SPECTRA_INSPECTOR_DOCKER_FASTAPI_WORKERS}" src/spectra_inspector_server/main.py\n' \
 > /app/start.sh \
 && chmod +x /app/start.sh
 
