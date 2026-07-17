@@ -44,8 +44,6 @@ ENV PATH="/app/.venv/bin:$PATH"
 # Reset the entrypoint, don't invoke `uv`
 ENTRYPOINT []
 
-# Use the non-root user to run our application
-USER nonroot
 
 # Run the FastAPI application by default
 # Uses `uv run` to sync dependencies on startup, respecting UV_NO_DEV
@@ -56,5 +54,8 @@ RUN ls
 
 COPY docker-entrypoint.sh /app/docker-entrypoint.sh
 RUN ls -l /app/docker-entrypoint.sh && chmod +x /app/docker-entrypoint.sh
+
+# Use the non-root user to run our application
+USER nonroot
 
 CMD ["/app/docker-entrypoint.sh"]
