@@ -110,5 +110,5 @@ def calculate_weights(
         Fe=element_weights["Fe"],
         total_count=total_count,
         counts_14_15_kev=counts_14_15_kev,
-        DH_assessment=total_count / counts_14_15_kev,
+        DH_assessment=counts_14_15_kev / total_count,
     )
