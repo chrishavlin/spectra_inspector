@@ -1,3 +1,4 @@
+from dataclasses import dataclass
 from pathlib import Path
 from typing import TYPE_CHECKING
 
@@ -8,6 +9,13 @@ from spectra_inspector_server.processor.utilities import _map_to_sample_name
 
 if TYPE_CHECKING:
     from spectra_inspector_server._file_tree_handling import EDAXPathHandler
+
+
+@dataclass
+class InspectionProgress:
+    directories_scanned: int = 0
+    datasets_found: int = 0
+    log_every: int = 100
 
 
 class OnDiskDatabase:
@@ -115,13 +123,22 @@ def _inventory_directory(directory: Path) -> tuple[dict[str, list[Path]], list[P
 
 
 def _recursive_inspection(
-    dirname: Path, db: OnDiskDatabase, allow_mixed_basenames=False
+    dirname: Path,
+    db: OnDiskDatabase,
+    allow_mixed_basenames=False,
+    progress: InspectionProgress | None = None,
 ) -> None:
-    msg = f"inspecting input path {dirname}"
-    spectraLogger.debug(msg)
+    if progress is None:
+        progress = InspectionProgress()
+
     if dirname.is_dir():
-        msg = f"inspecting directory {dirname}"
-        spectraLogger.debug(msg)
+        progress.directories_scanned += 1
+        if progress.directories_scanned % progress.log_every == 0:
+            spectraLogger.info(
+                "Inspected %d directories, found %d datasets",
+                progress.directories_scanned,
+                progress.datasets_found,
+            )
 
         files, subdirs = _inventory_directory(dirname)
 
@@ -131,11 +148,18 @@ def _recursive_inspection(
             allow_mixed_basenames=allow_mixed_basenames,
             inventoried_files=files,
         ):
-            db.add_fileset(edax_set.spd.stem, edax_set)
+            if allow_mixed_basenames:
+                basename = str(edax_set.spd)
+            else:
+                basename = edax_set.spd.stem
+            db.add_fileset(basename, edax_set)
+            progress.datasets_found += 1
 
         # go deeper if needed
         for s in subdirs:
-            _recursive_inspection(s, db, allow_mixed_basenames=allow_mixed_basenames)
+            _recursive_inspection(
+                s, db, allow_mixed_basenames=allow_mixed_basenames, progress=progress
+            )
 
 
 def _validate_inventory_files(

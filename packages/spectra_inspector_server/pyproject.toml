@@ -148,6 +148,7 @@ ignore = [
   "PD015",   # pandas Use `df.merge` instead of `pd.merge`
   "RET504",  # unnecessary-assign
   "RUF007",  # Prefer `itertools.pairwise()` over `zip()` when iterating over successive pairs
+  "SIM108",  # i like if, else blocks.
 ]
 # Uncomment if using a _compat.typing backport
 # typing-modules = ["spectra_inspector_server._compat.typing"]
