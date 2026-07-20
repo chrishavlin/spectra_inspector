@@ -14,15 +14,18 @@ class OnDiskDatabase:
     available_maps: dict[str, EDAX_file_set]
     sample_metadata_csv: str
     sample_metadata_fullpath: Path | None = None
+    allow_mixed_basenames: bool
 
     def __init__(
         self,
         ph: "EDAXPathHandler",
         init_db: bool = True,
         sample_metadata_csv: str = "sample_metadata.csv",
+        allow_mixed_basenames: bool = False,
     ):
         self.sample_metadata_csv = sample_metadata_csv
         self.available_maps = {}
+        self.allow_mixed_basenames = allow_mixed_basenames
         if init_db:
             self.inspect(ph)
 
@@ -32,7 +35,9 @@ class OnDiskDatabase:
 
     def inspect(self, ph: "EDAXPathHandler") -> None:
         spectraLogger.info(f"Inspecting {ph.data_root}")
-        _recursive_inspection(ph.data_root, self)
+        _recursive_inspection(
+            ph.data_root, self, allow_mixed_basenames=self.allow_mixed_basenames
+        )
 
         smp = ph.data_root / self.sample_metadata_csv
         if smp.is_file():
@@ -76,10 +81,10 @@ class OnDiskDatabase:
 
 
 _possible_exts = [".spd", ".spc", ".ipr", ".bmp", ".xml"]
-_required_exts = [".spd", ".spc", ".ipr"]
 
 
-def _get_expected_files(spd_file: Path) -> dict[str, Path]:
+def get_expected_files(spd_file: Path) -> dict[str, Path]:
+    # useful for testing
     basename = spd_file.stem
 
     file_set_args = {}
@@ -90,11 +95,23 @@ def _get_expected_files(spd_file: Path) -> dict[str, Path]:
     return file_set_args
 
 
-def _has_all_files(spd_file: Path) -> bool:
-    for expected_file in _get_expected_files(spd_file).values():
-        if not expected_file.is_file() and expected_file.suffix in _required_exts:
-            return False
-    return True
+def _inventory_directory(directory: Path) -> tuple[dict[str, list[Path]], list[Path]]:
+    files: dict[str, list[Path]] = {
+        "spd": [],
+        "spc": [],
+        "ipr": [],
+        "bmp": [],
+        "xml": [],
+    }
+    subdirs: list[Path] = []
+
+    for p in directory.iterdir():
+        if p.is_file() and p.suffix.lower().lstrip(".") in files:
+            files[p.suffix.lower().lstrip(".")].append(p)
+        elif p.is_dir():
+            subdirs.append(p)
+
+    return files, subdirs
 
 
 def _recursive_inspection(
@@ -105,57 +122,72 @@ def _recursive_inspection(
     if dirname.is_dir():
         msg = f"inspecting directory {dirname}"
         spectraLogger.debug(msg)
-        for fh in dirname.iterdir():
-            msg = f"inspecting {fh}"
-            spectraLogger.debug(msg)
-            if fh.is_dir():
-                _recursive_inspection(
-                    fh, db, allow_mixed_basenames=allow_mixed_basenames
-                )
-                for edax_set in _check_files_in_directory(fh):
-                    db.add_fileset(edax_set.spd.stem, edax_set)
-    else:
-        msg = f"{dirname} is not a directory."
-        spectraLogger.debug(msg)
+
+        files, subdirs = _inventory_directory(dirname)
+
+        # check for edax files
+        for edax_set in _check_files_in_directory(
+            dirname,
+            allow_mixed_basenames=allow_mixed_basenames,
+            inventoried_files=files,
+        ):
+            db.add_fileset(edax_set.spd.stem, edax_set)
+
+        # go deeper if needed
+        for s in subdirs:
+            _recursive_inspection(s, db, allow_mixed_basenames=allow_mixed_basenames)
+
+
+def _validate_inventory_files(
+    dirname: Path | str,
+    inventory: dict[str, list[Path]] | None = None,
+):
+    if inventory is None:
+        return _inventory_directory(Path(dirname))[0]
+    return inventory
 
 
 def _check_files_in_directory(
-    dirname: Path, allow_mixed_basenames=False
+    dirname: Path,
+    allow_mixed_basenames=False,
+    inventoried_files: dict[str, list[Path]] | None = None,
 ) -> list[EDAX_file_set]:
 
-    new_edax = []
-    if allow_mixed_basenames:
-        edax_files = find_edax_datasets_mixed_basename(dirname)
-        new_edax += edax_files
+    inventory = _validate_inventory_files(dirname, inventoried_files)
 
-    new_edax += find_edax_datasets_common_basename(dirname)
+    new_edax: list[EDAX_file_set] = []
+
+    if allow_mixed_basenames:
+        new_edax += find_edax_datasets_mixed_basename(
+            dirname,
+            inventoried_files=inventory,
+        )
+
+    new_edax += find_edax_datasets_common_basename(
+        dirname,
+        inventoried_files=inventory,
+    )
+
     return new_edax
 
 
-def find_edax_datasets_common_basename(directory: str | Path) -> list[EDAX_file_set]:
-    """
-    Returns all valid EDAX datasets contained in a directory for files with a
-    common basename.
-
-    Each dataset consists of files sharing the same basename:
-
-        basename.spd   (required)
-        basename.spc   (required)
-        basename.ipr   (required)
-        basename.xml   (optional)
-        basename.bmp   (optional)
-
-    Returns an empty list if no complete datasets are found.
-    """
-    directory = Path(directory)
+def find_edax_datasets_common_basename(
+    directory: str | Path,
+    *,
+    inventoried_files: dict[str, list[Path]] | None = None,
+) -> list[EDAX_file_set]:
 
     groups: dict[str, dict[str, Path]] = {}
 
-    for ext in ("spd", "spc", "ipr", "bmp", "xml"):
-        for p in directory.glob(f"*.{ext}"):
+    inventory = _validate_inventory_files(directory, inventoried_files)
+
+    for ext, paths in inventory.items():
+        for p in paths:
             groups.setdefault(p.stem, {})[ext] = p
 
     datasets: list[EDAX_file_set] = []
+    if not groups:
+        return datasets
 
     for stem in sorted(groups):
         files = groups[stem]
@@ -177,41 +209,29 @@ def find_edax_datasets_common_basename(directory: str | Path) -> list[EDAX_file_
 def find_edax_datasets_mixed_basename(
     directory: str | Path,
     *,
+    inventoried_files: dict[str, list[Path]] | None = None,
     map_prefix: str = "map",
     fov_prefix: str = "fov",
 ) -> list[EDAX_file_set]:
-    """
-    Returns all valid EDAX datasets contained in a directory for mixed basenames.
 
-    Each dataset consists of matching:
-        <map_prefix>*_0.spd
-        <map_prefix>*_0.spc
-        <map_prefix>*_0.xml
-
-    All returned datasets share the first <fov_prefix>*.ipr and
-    <fov_prefix>*.bmp. If no IPR exists, or no complete map triplets exist,
-    an empty list is returned.
-    """
-    directory = Path(directory)
-
-    # Group map files by basename (without extension)
+    inventory = _validate_inventory_files(directory, inventoried_files)
+    datasets: list[EDAX_file_set] = []
     groups: dict[str, dict[str, Path]] = {}
 
     for ext in ("spd", "spc", "xml"):
-        for p in directory.glob(f"{map_prefix}*_0.{ext}"):
-            groups.setdefault(p.stem, {})[ext] = p
+        for p in inventory[ext]:
+            if p.name.startswith(map_prefix) and p.name.endswith(f"_0.{ext}"):
+                groups.setdefault(p.stem, {})[ext] = p
 
-    # First FOV files (deterministic)
-    iprs = sorted(directory.glob(f"{fov_prefix}*.ipr"))
+    if not groups:
+        return datasets
+
+    iprs = sorted(p for p in inventory["ipr"] if p.name.startswith(fov_prefix))
+
     if not iprs:
-        return []
+        return datasets
 
-    bmps = sorted(directory.glob(f"{fov_prefix}*.bmp"))
-
-    ipr = iprs[0]
-    bmp = bmps[0] if bmps else None
-
-    datasets: list[EDAX_file_set] = []
+    bmps = sorted(p for p in inventory["bmp"] if p.name.startswith(fov_prefix))
 
     for stem in sorted(groups):
         files = groups[stem]
@@ -221,8 +241,8 @@ def find_edax_datasets_mixed_basename(
                     spd=files["spd"],
                     spc=files["spc"],
                     xml=files["xml"],
-                    ipr=ipr,
-                    bmp=bmp,
+                    ipr=iprs[0],
+                    bmp=bmps[0] if bmps else None,
                 )
             )
 

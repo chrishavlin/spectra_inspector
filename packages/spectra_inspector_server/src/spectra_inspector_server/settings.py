@@ -18,6 +18,7 @@ class Settings(BaseSettings):
     host_data_root: str = "./"
 
     allow_db_refresh: bool = False
+    db_allow_mixed_basenames: bool = False
 
     log_level: Literal[
         "DEBUG",

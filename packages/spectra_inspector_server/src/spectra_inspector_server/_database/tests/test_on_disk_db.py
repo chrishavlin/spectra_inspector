@@ -4,9 +4,9 @@ from typing import TYPE_CHECKING
 import pytest
 
 from spectra_inspector_server._database.on_disk_db import (
-    _get_expected_files,
     find_edax_datasets_common_basename,
     find_edax_datasets_mixed_basename,
+    get_expected_files,
 )
 from spectra_inspector_server._file_tree_handling import EDAXPathHandler
 from spectra_inspector_server.processor.utilities import _map_to_sample_name
@@ -37,7 +37,7 @@ def on_disk_path(tmp_path: Path) -> tuple[Path, list[str]]:
         spd_base = sample + ".spd"
         spd_file = sub_dir / spd_base
 
-        sample_files: dict[str, Path] = _get_expected_files(spd_file)
+        sample_files: dict[str, Path] = get_expected_files(spd_file)
         for sample_file in sample_files.values():
             # write the .spd, .ipr, etc.
             with open(str(sample_file), "w") as fh:
@@ -47,7 +47,7 @@ def on_disk_path(tmp_path: Path) -> tuple[Path, list[str]]:
     new_samp = "lets-make-another-sample"
     sample_names.append(new_samp)
     spd_file = db_root / "C-1" / annoying_directory / (new_samp + ".spd")
-    observed_sample_files: dict[str, Path] = _get_expected_files(spd_file)
+    observed_sample_files: dict[str, Path] = get_expected_files(spd_file)
     for sample_file in observed_sample_files.values():
         with open(str(sample_file), "w") as fh:
             fh.write(f"writing to {sample_file}")

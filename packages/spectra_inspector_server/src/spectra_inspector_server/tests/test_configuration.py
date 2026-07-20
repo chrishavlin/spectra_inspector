@@ -10,8 +10,9 @@ def test_PathHandler(tmp_path):
     root_dir.mkdir()
     ph = EDAXPathHandler(root_dir)
 
+    # no files on disc, this will be none
     EDAX_files = ph.get_sample_edax_file_names("C2")
-    assert EDAX_files.spc.suffix == ".spc"
+    assert EDAX_files is None
 
 
 def test_path_handler_fixture(edax_path_handler):

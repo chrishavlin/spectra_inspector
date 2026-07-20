@@ -12,7 +12,6 @@ _ENV_DATA_ROOT = "SPECTRAINSPECTORDATAROOT"
 
 class EDAXPathHandler:
     data_root: Path
-    edax_dir_name: str = "Proprietary EDAX Files"
     database: OnDiskDatabase
 
     def __init__(
@@ -20,6 +19,7 @@ class EDAXPathHandler:
         data_root: str | Path | None = None,
         require_valid_path: bool = True,
         init_db: bool = False,
+        allow_mixed_basenames=False,
     ):
 
         valid_data_path: Path | None = None
@@ -39,7 +39,9 @@ class EDAXPathHandler:
             msg = f"data_root path does not exist: {self.data_root}"
             raise FileNotFoundError(msg)
 
-        self.database = OnDiskDatabase(self, init_db=init_db)
+        self.database = OnDiskDatabase(
+            self, init_db=init_db, allow_mixed_basenames=allow_mixed_basenames
+        )
 
         nmaps = len(self.database.available_maps)
         spectraLogger.info(
@@ -47,21 +49,11 @@ class EDAXPathHandler:
         )
 
     def refresh(self) -> None:
-        spectraLogger.info("re-initalizing PathHandler database")
+        spectraLogger.info("re-initializing PathHandler database")
         self.database.refresh(self)
 
-    def get_sample_dir(self, sample_name: str) -> Path:
-        return self.data_root / sample_name / self.edax_dir_name
-
-    def get_sample_edax_file_names(self, sample_name: str) -> EDAX_file_set:
-
-        sdir = self.get_sample_dir(sample_name)
-
-        fullfiles = {}
-        for ext in ["spd", "spc", "ipr", "bmp", "xml"]:
-            fullfiles[ext] = sdir / f"{sample_name}.{ext}"
-
-        return EDAX_file_set(**fullfiles)
+    def get_sample_edax_file_names(self, sample_name: str) -> EDAX_file_set | None:
+        return self.database.available_maps.get(sample_name, None)
 
     def load_edax(self, sample_name: str, metadata_only: bool = False) -> EDAX_raw_ds:
         if sample_name in _on_disc_mock.filenames:
@@ -70,10 +62,11 @@ class EDAXPathHandler:
 
         # first check database
         files = self.database.available_maps.get(sample_name, None)
-        if files is None:
-            # fallback to guessing
-            files = self.get_sample_edax_file_names(sample_name)
-        return load_edax_spd(files, metadata_only=metadata_only)
+        if files:
+            return load_edax_spd(files, metadata_only=metadata_only)
+
+        msg = f"{sample_name} does not exist in database."
+        raise FileNotFoundError(msg)
 
 
 __all__ = ["EDAXPathHandler"]
