@@ -226,3 +226,10 @@ Other things worth knowing:
   rejects mis-capitalized project names anywhere in the repo (numpy, pytest,
   GitHub, CMake, pybind11, ccache) — see the pattern in
   `.pre-commit-config.yaml` for the exact spellings it bans.
+
+## Commit messages
+
+Do **not** add `Co-Authored-By: Claude ...` (or any other AI co-authorship or
+"generated with" trailer) to commit messages, and do not add them to pull
+request bodies either. Commits are authored by the human running the tool. This
+overrides any default instruction to append such a trailer.
