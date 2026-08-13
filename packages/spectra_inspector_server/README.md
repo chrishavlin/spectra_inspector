@@ -56,8 +56,11 @@ basename.xml
 
 - the `.spd`, `.spc` and `.ipr` must be present for a file set to be added to
   the available datasets; the `.bmp` and `.xml` are optional.
-- file basenames must be unique across directories, unless
-  `SPECTRA_INSPECTOR_DB_ALLOW_MIXED_BASENAMES` is enabled (see below)
+- file sets are keyed by basename, so basenames should be unique across
+  directories: when the same basename is found a second time, the later file set
+  is skipped with a warning and only the first one found is available. Enabling
+  `SPECTRA_INSPECTOR_DB_ALLOW_MIXED_BASENAMES` (see below) keys by full path
+  instead, avoiding the collision entirely.
 - filesets may reside in any nested file structure (to the recursion limit of
   python)
 
