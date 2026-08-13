@@ -163,6 +163,18 @@ def test_max_datasets_stops_a_working_directory_scan(browsable_root: Path) -> No
     # session-a holds C-1 directly and C-2 in a subdirectory
     ph.set_working_directory(browsable_root / "session-a")
     assert set(ph.database.available_maps) == {"C-1"}
+    assert ph.database.scan_truncated is True
+
+
+def test_scan_truncated_resets_between_selections(browsable_root: Path) -> None:
+    ph = EDAXPathHandler(data_root=browsable_root, init_db=False, max_datasets=2)
+
+    ph.set_working_directory(browsable_root)
+    assert ph.database.scan_truncated is True
+
+    # session-b holds one dataset, comfortably under the cap
+    ph.set_working_directory(browsable_root / "session-b")
+    assert ph.database.scan_truncated is False
 
 
 def test_max_datasets_stops_the_recursion_into_subdirectories(

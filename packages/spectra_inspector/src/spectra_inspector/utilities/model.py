@@ -137,6 +137,9 @@ class AvailableDatasets:
     # the directory the listing came from, relative to the server's data root.
     # None when the whole data root was scanned.
     directory: str | None = None
+    # true when the server stopped scanning at its SPECTRA_INSPECTOR_MAX_DATASETS
+    # limit, so available_files is the first N of a larger number on disk.
+    truncated: bool = False
 
 
 class raveledImage(BaseModel):

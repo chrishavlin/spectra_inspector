@@ -148,9 +148,16 @@ selects a directory holding far more data than it can usefully display.
 
 The datasets kept are whichever the traversal reaches first (a directory's own
 file sets before its subdirectories, both in sorted order), so the cap truncates
-rather than selects. Nothing on the wire flags that a scan was truncated; the
-server logs it at `INFO`. The setting is ignored entirely when desktop mode is
-off, where the startup scan of the whole data root is still exhaustive.
+rather than selects. The setting is ignored entirely when desktop mode is off,
+where the startup scan of the whole data root is still exhaustive.
+
+A truncated scan is reported as `truncated: true` on the `AvailableDatasets`
+payload (and logged at `INFO`), so a client can tell a partial listing from a
+complete one. The flag describes the most recent scan and is served by
+`/available-datasets` as well, since that endpoint returns whatever working set
+the last scan produced. There is no count of what was skipped: the traversal
+stops at the limit rather than finishing and counting. The frontend's directory
+picker turns the flag into a warning next to the sample dropdown.
 
 ### manual type checking
 
