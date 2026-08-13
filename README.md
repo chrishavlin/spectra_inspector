@@ -58,6 +58,10 @@ setting is read with a `SPECTRA_INSPECTOR_` prefix:
   docker compose.
 - `SPECTRA_INSPECTOR_ALLOW_DB_REFRESH`: set to `true` to allow the local
   database to refresh from disk when the service starts. Defaults to `false`.
+- `SPECTRA_INSPECTOR_DB_ALLOW_MIXED_BASENAMES`: set to `true` to additionally
+  detect datasets whose files do **not** all share a basename, pairing
+  `map*_0.spd`/`.spc`/`.xml` with the first `fov*.ipr`/`.bmp` in the same
+  directory. Defaults to `false`. See the backend README for the caveats.
 - `SPECTRA_INSPECTOR_LOG_LEVEL`: logging verbosity for the backend. Accepted
   values are `DEBUG`, `INFO`, `WARNING`, `ERROR`, and `CRITICAL`; the default is
   `INFO`.
