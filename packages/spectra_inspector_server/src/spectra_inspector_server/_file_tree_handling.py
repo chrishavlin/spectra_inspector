@@ -19,7 +19,7 @@ class EDAXPathHandler:
         data_root: str | Path | None = None,
         require_valid_path: bool = True,
         init_db: bool = False,
-        allow_mixed_basenames=False,
+        allow_mixed_basenames: bool = False,
     ):
 
         valid_data_path: Path | None = None

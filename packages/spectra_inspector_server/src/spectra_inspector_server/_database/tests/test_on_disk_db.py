@@ -139,7 +139,7 @@ def touch(directory: Path, *names: str) -> None:
         (directory / name).touch()
 
 
-def test_mixed_basename_single_dataset(tmp_path: Path):
+def test_mixed_basename_single_dataset(tmp_path: Path) -> None:
     touch(
         tmp_path,
         "fov1.ipr",
@@ -163,7 +163,7 @@ def test_mixed_basename_single_dataset(tmp_path: Path):
     assert ds.bmp.name == "fov1.bmp"
 
 
-def test_mixed_basename_multiple_datasets(tmp_path: Path):
+def test_mixed_basename_multiple_datasets(tmp_path: Path) -> None:
     touch(
         tmp_path,
         "fov1.ipr",
@@ -190,7 +190,7 @@ def test_mixed_basename_multiple_datasets(tmp_path: Path):
         assert d.bmp.name == "fov1.bmp"
 
 
-def test_mixed_basename_missing_ipr_returns_empty(tmp_path: Path):
+def test_mixed_basename_missing_ipr_returns_empty(tmp_path: Path) -> None:
     touch(
         tmp_path,
         "fov1.bmp",
@@ -202,7 +202,7 @@ def test_mixed_basename_missing_ipr_returns_empty(tmp_path: Path):
     assert find_edax_datasets_mixed_basename(tmp_path) == []
 
 
-def test_mixed_basename_incomplete_map_set_ignored(tmp_path: Path):
+def test_mixed_basename_incomplete_map_set_ignored(tmp_path: Path) -> None:
     touch(
         tmp_path,
         "fov1.ipr",
@@ -215,7 +215,7 @@ def test_mixed_basename_incomplete_map_set_ignored(tmp_path: Path):
     assert find_edax_datasets_mixed_basename(tmp_path) == []
 
 
-def test_mixed_basename_complete_and_incomplete_sets(tmp_path: Path):
+def test_mixed_basename_complete_and_incomplete_sets(tmp_path: Path) -> None:
     touch(
         tmp_path,
         "fov1.ipr",
@@ -234,7 +234,7 @@ def test_mixed_basename_complete_and_incomplete_sets(tmp_path: Path):
     assert datasets[0].spd.stem == "map123_0"
 
 
-def test_mixed_basename_first_fov_selected(tmp_path: Path):
+def test_mixed_basename_first_fov_selected(tmp_path: Path) -> None:
     touch(
         tmp_path,
         "fov001.ipr",
@@ -253,7 +253,7 @@ def test_mixed_basename_first_fov_selected(tmp_path: Path):
     assert ds.bmp.name == "fov001.bmp"
 
 
-def test_mixed_basename_missing_bmp_is_allowed(tmp_path: Path):
+def test_mixed_basename_missing_bmp_is_allowed(tmp_path: Path) -> None:
     touch(
         tmp_path,
         "fov1.ipr",
@@ -266,7 +266,7 @@ def test_mixed_basename_missing_bmp_is_allowed(tmp_path: Path):
     assert ds.bmp is None
 
 
-def test_mixed_basename_unrelated_files_ignored(tmp_path: Path):
+def test_mixed_basename_unrelated_files_ignored(tmp_path: Path) -> None:
     touch(
         tmp_path,
         "fov1.ipr",
@@ -283,7 +283,7 @@ def test_mixed_basename_unrelated_files_ignored(tmp_path: Path):
     assert len(datasets) == 1
 
 
-def test_common_basename_single_dataset(tmp_path: Path):
+def test_common_basename_single_dataset(tmp_path: Path) -> None:
     touch(
         tmp_path,
         "sample.spd",
@@ -309,7 +309,7 @@ def test_common_basename_single_dataset(tmp_path: Path):
     assert ds.bmp.name == "sample.bmp"
 
 
-def test_mixed_basename_custom_map_prefix(tmp_path: Path):
+def test_mixed_basename_custom_map_prefix(tmp_path: Path) -> None:
     touch(
         tmp_path,
         "fov1.ipr",
@@ -332,10 +332,12 @@ def test_mixed_basename_custom_map_prefix(tmp_path: Path):
     ds = datasets[0]
     assert ds.spd.name == "scan123_0.spd"
     assert ds.spc.name == "scan123_0.spc"
+
+    assert ds.xml is not None
     assert ds.xml.name == "scan123_0.xml"
 
 
-def test_mixed_basename_custom_fov_prefix(tmp_path: Path):
+def test_mixed_basename_custom_fov_prefix(tmp_path: Path) -> None:
     touch(
         tmp_path,
         "image1.ipr",
@@ -362,7 +364,7 @@ def test_mixed_basename_custom_fov_prefix(tmp_path: Path):
     assert ds.bmp.name == "image1.bmp"
 
 
-def test_mixed_basename_custom_map_and_fov_prefix(tmp_path: Path):
+def test_mixed_basename_custom_map_and_fov_prefix(tmp_path: Path) -> None:
     touch(
         tmp_path,
         "image001.ipr",
@@ -389,14 +391,16 @@ def test_mixed_basename_custom_map_and_fov_prefix(tmp_path: Path):
 
     assert ds.spd.name == "scanABC_0.spd"
     assert ds.spc.name == "scanABC_0.spc"
-    assert ds.xml.name == "scanABC_0.xml"
     assert ds.ipr.name == "image001.ipr"
+
+    assert ds.xml is not None
+    assert ds.xml.name == "scanABC_0.xml"
 
     assert ds.bmp is not None
     assert ds.bmp.name == "image001.bmp"
 
 
-def test_mixed_basename_wrong_map_prefix_returns_empty(tmp_path: Path):
+def test_mixed_basename_wrong_map_prefix_returns_empty(tmp_path: Path) -> None:
     touch(
         tmp_path,
         "fov1.ipr",
@@ -414,7 +418,7 @@ def test_mixed_basename_wrong_map_prefix_returns_empty(tmp_path: Path):
     assert datasets == []
 
 
-def test_mixed_basename_wrong_fov_prefix_returns_empty(tmp_path: Path):
+def test_mixed_basename_wrong_fov_prefix_returns_empty(tmp_path: Path) -> None:
     touch(
         tmp_path,
         "image1.ipr",
@@ -432,7 +436,9 @@ def test_mixed_basename_wrong_fov_prefix_returns_empty(tmp_path: Path):
     assert datasets == []
 
 
-def test_mixed_basename_custom_prefix_selects_first_matching_fov(tmp_path: Path):
+def test_mixed_basename_custom_prefix_selects_first_matching_fov(
+    tmp_path: Path,
+) -> None:
     touch(
         tmp_path,
         "image002.ipr",
@@ -459,7 +465,7 @@ def test_mixed_basename_custom_prefix_selects_first_matching_fov(tmp_path: Path)
     assert ds.bmp.name == "image001.bmp"
 
 
-def test_common_basename_multiple_datasets(tmp_path: Path):
+def test_common_basename_multiple_datasets(tmp_path: Path) -> None:
     touch(
         tmp_path,
         "alpha.spd",
@@ -480,7 +486,7 @@ def test_common_basename_multiple_datasets(tmp_path: Path):
     assert [d.spd.stem for d in datasets] == ["alpha", "beta"]
 
 
-def test_common_basename_missing_ipr_ignored(tmp_path: Path):
+def test_common_basename_missing_ipr_ignored(tmp_path: Path) -> None:
     touch(
         tmp_path,
         "sample.spd",
@@ -492,7 +498,7 @@ def test_common_basename_missing_ipr_ignored(tmp_path: Path):
     assert find_edax_datasets_common_basename(tmp_path) == []
 
 
-def test_common_basename_missing_spd_ignored(tmp_path: Path):
+def test_common_basename_missing_spd_ignored(tmp_path: Path) -> None:
     touch(
         tmp_path,
         "sample.spc",
@@ -504,7 +510,7 @@ def test_common_basename_missing_spd_ignored(tmp_path: Path):
     assert find_edax_datasets_common_basename(tmp_path) == []
 
 
-def test_common_basename_missing_spc_ignored(tmp_path: Path):
+def test_common_basename_missing_spc_ignored(tmp_path: Path) -> None:
     touch(
         tmp_path,
         "sample.spd",
@@ -516,7 +522,7 @@ def test_common_basename_missing_spc_ignored(tmp_path: Path):
     assert find_edax_datasets_common_basename(tmp_path) == []
 
 
-def test_common_basename_xml_optional(tmp_path: Path):
+def test_common_basename_xml_optional(tmp_path: Path) -> None:
     touch(
         tmp_path,
         "sample.spd",
@@ -536,7 +542,7 @@ def test_common_basename_xml_optional(tmp_path: Path):
     assert ds.bmp.name == "sample.bmp"
 
 
-def test_common_basename_bmp_optional(tmp_path: Path):
+def test_common_basename_bmp_optional(tmp_path: Path) -> None:
     touch(
         tmp_path,
         "sample.spd",
@@ -557,7 +563,7 @@ def test_common_basename_bmp_optional(tmp_path: Path):
     assert ds.xml.name == "sample.xml"
 
 
-def test_common_basename_xml_and_bmp_optional(tmp_path: Path):
+def test_common_basename_xml_and_bmp_optional(tmp_path: Path) -> None:
     touch(
         tmp_path,
         "sample.spd",
@@ -574,7 +580,7 @@ def test_common_basename_xml_and_bmp_optional(tmp_path: Path):
     assert ds.bmp is None
 
 
-def test_common_basename_mixed_basenames_not_matched(tmp_path: Path):
+def test_common_basename_mixed_basenames_not_matched(tmp_path: Path) -> None:
     touch(
         tmp_path,
         "sample.spd",
@@ -587,7 +593,7 @@ def test_common_basename_mixed_basenames_not_matched(tmp_path: Path):
     assert find_edax_datasets_common_basename(tmp_path) == []
 
 
-def test_common_basename_complete_and_incomplete_sets(tmp_path: Path):
+def test_common_basename_complete_and_incomplete_sets(tmp_path: Path) -> None:
     touch(
         tmp_path,
         "alpha.spd",
@@ -608,7 +614,7 @@ def test_common_basename_complete_and_incomplete_sets(tmp_path: Path):
     assert datasets[0].spd.stem == "alpha"
 
 
-def test_common_basename_unrelated_files_ignored(tmp_path: Path):
+def test_common_basename_unrelated_files_ignored(tmp_path: Path) -> None:
     touch(
         tmp_path,
         "sample.spd",

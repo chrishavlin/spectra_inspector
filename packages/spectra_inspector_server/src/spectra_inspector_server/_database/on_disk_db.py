@@ -125,7 +125,7 @@ def _inventory_directory(directory: Path) -> tuple[dict[str, list[Path]], list[P
 def _recursive_inspection(
     dirname: Path,
     db: OnDiskDatabase,
-    allow_mixed_basenames=False,
+    allow_mixed_basenames: bool = False,
     progress: InspectionProgress | None = None,
 ) -> None:
     if progress is None:
@@ -165,7 +165,7 @@ def _recursive_inspection(
 def _validate_inventory_files(
     dirname: Path | str,
     inventory: dict[str, list[Path]] | None = None,
-):
+) -> dict[str, list[Path]]:
     if inventory is None:
         return _inventory_directory(Path(dirname))[0]
     return inventory
@@ -173,7 +173,7 @@ def _validate_inventory_files(
 
 def _check_files_in_directory(
     dirname: Path,
-    allow_mixed_basenames=False,
+    allow_mixed_basenames: bool = False,
     inventoried_files: dict[str, list[Path]] | None = None,
 ) -> list[EDAX_file_set]:
 
