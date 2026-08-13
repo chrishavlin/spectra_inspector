@@ -14,6 +14,8 @@ def get_database_session() -> EDAXPathHandler:
     S = get_settings()
     return EDAXPathHandler(
         data_root=S.data_root,
-        init_db=True,
+        # in desktop mode the data root can be huge, so the scan is deferred
+        # until a client picks a working directory via /datasets-in-directory.
+        init_db=not S.desktop_mode,
         allow_mixed_basenames=S.db_allow_mixed_basenames,
     )

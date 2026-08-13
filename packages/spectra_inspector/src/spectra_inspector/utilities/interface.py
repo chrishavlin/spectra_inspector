@@ -4,6 +4,24 @@ from spectra_inspector.settings import Settings
 from spectra_inspector.utilities import model
 
 
+class ServerRequestError(RuntimeError):
+    """raised when the backend answers a request with an error status."""
+
+
+def _raise_for_status(r: requests.Response) -> None:
+    if r.status_code == 200:
+        return
+
+    detail = f"request failed with status {r.status_code}"
+    try:
+        payload = r.json()
+    except ValueError:
+        payload = None
+    if isinstance(payload, dict) and payload.get("detail"):
+        detail = str(payload["detail"])
+    raise ServerRequestError(detail)
+
+
 class SpectraInspectorServerInterface:
     host: str
     port: str
@@ -60,6 +78,29 @@ class SpectraInspectorServerInterface:
 
         r = requests.get(uri, params={"refresh_db": refresh_db})
 
+        return model.AvailableDatasets(**r.json())
+
+    def browse_directory(self, path: str = "") -> model.directoryListing:
+        """List the subdirectories of one directory below the server data root.
+
+        Only available when the server runs in desktop mode.
+        """
+        uri = self._get_endpoint("browse-directory")
+        r = requests.get(uri, params={"path": path})
+        _raise_for_status(r)
+        return model.directoryListing(**r.json())
+
+    def get_datasets_in_directory(
+        self, path: str = "", recursive: bool = True
+    ) -> model.AvailableDatasets:
+        """Scan one directory below the server data root and make it the
+        server's working set.
+
+        Only available when the server runs in desktop mode.
+        """
+        uri = self._get_endpoint("datasets-in-directory")
+        r = requests.get(uri, params={"path": path, "recursive": recursive})
+        _raise_for_status(r)
         return model.AvailableDatasets(**r.json())
 
     def get_image_metadata(self, sample_name: str) -> model.MetadataModel:

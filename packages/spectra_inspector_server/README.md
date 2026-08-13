@@ -61,16 +61,19 @@ basename.xml
 - filesets may reside in any nested file structure (to the recursion limit of
   python)
 
+With `SPECTRA_INSPECTOR_DESKTOP_MODE` enabled the traversal is deferred: the
+client picks one directory below the data root to scan instead (see below).
+
 ### Configuration
 
 Copy `default.env` to `.env` and modify as needed. Every setting is read with a
 `SPECTRA_INSPECTOR_` prefix (`SPECTRA_INSPECTOR_APP_NAME`,
 `SPECTRA_INSPECTOR_DATA_ROOT`, `SPECTRA_INSPECTOR_HOST_DATA_ROOT`,
 `SPECTRA_INSPECTOR_ALLOW_DB_REFRESH`,
-`SPECTRA_INSPECTOR_DB_ALLOW_MIXED_BASENAMES`, `SPECTRA_INSPECTOR_LOG_LEVEL`),
-matching the `spectra_inspector` frontend package. The same names may be set as
-process environment variables instead, with preference given to the values in
-`.env`.
+`SPECTRA_INSPECTOR_DB_ALLOW_MIXED_BASENAMES`, `SPECTRA_INSPECTOR_DESKTOP_MODE`,
+`SPECTRA_INSPECTOR_LOG_LEVEL`), matching the `spectra_inspector` frontend
+package. The same names may be set as process environment variables instead,
+with preference given to the values in `.env`.
 
 Unknown keys in `.env` are rejected rather than ignored, so a stale `.env` fails
 fast: keys under the prefix that don't match a setting raise `extra_forbidden`,
@@ -103,6 +106,34 @@ present. Two consequences worth knowing:
 
 Common-basename detection still runs either way, so turning this on only adds
 datasets.
+
+#### `SPECTRA_INSPECTOR_DESKTOP_MODE`
+
+Defaults to `false`. Set to `true` for desktop deployments where
+`SPECTRA_INSPECTOR_DATA_ROOT` is large enough that the startup scan is too slow
+or that the resulting list of datasets is unusable in a single dropdown.
+
+With it enabled:
+
+- the recursive scan of the data root at startup is skipped, so the server
+  reports no available datasets until a client selects a working directory.
+- `GET /browse-directory?path=<relative>` lists the subdirectories of one
+  directory, along with the number of EDAX file sets found directly in it.
+  Hidden directories (leading `.`) are omitted.
+- `GET /datasets-in-directory?path=<relative>&recursive=<bool>` scans that
+  directory and makes it the working set, replacing whatever the database held
+  before. The response is the same `AvailableDatasets` payload as
+  `/available-datasets`, plus the `directory` that produced it.
+- `/available-datasets?refresh_db=true` re-scans the working directory rather
+  than the whole data root (and does nothing until one is selected), so a
+  refresh stays as cheap as the scan the client already asked for.
+
+Paths on the wire are posix and relative to the data root, with `""` meaning the
+data root itself. Every one is resolved (following symlinks) and checked against
+the data root before use: anything landing outside gets a `403`, as does either
+endpoint when desktop mode is off. Unlike the startup scan, a directory holding
+a duplicate basename is logged and skipped rather than raising, and unreadable
+directories are skipped instead of aborting the scan.
 
 ### manual type checking
 

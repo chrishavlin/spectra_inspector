@@ -23,6 +23,9 @@ class OnDiskDatabase:
     sample_metadata_csv: str
     sample_metadata_fullpath: Path | None = None
     allow_mixed_basenames: bool
+    # the subdirectory of data_root the database currently describes. None means
+    # the whole of data_root (or, in desktop mode, nothing scanned yet).
+    working_directory: Path | None = None
 
     def __init__(
         self,
@@ -37,24 +40,67 @@ class OnDiskDatabase:
         if init_db:
             self.inspect(ph)
 
-    def refresh(self, ph: "EDAXPathHandler") -> None:
+    def _clear(self) -> None:
         self.available_maps = {}
-        self.inspect(ph)
+        self._available_samples = None
+
+    def refresh(self, ph: "EDAXPathHandler") -> None:
+        self._clear()
+        if self.working_directory is not None:
+            self.set_working_directory(ph, self.working_directory)
+        else:
+            self.inspect(ph)
 
     def inspect(self, ph: "EDAXPathHandler") -> None:
         spectraLogger.info(f"Inspecting {ph.data_root}")
         _recursive_inspection(
             ph.data_root, self, allow_mixed_basenames=self.allow_mixed_basenames
         )
+        self._locate_sample_metadata(ph.data_root)
 
-        smp = ph.data_root / self.sample_metadata_csv
-        if smp.is_file():
-            msg = f"Found sample metadata csv at {smp}"
-            spectraLogger.debug(msg)
-            self.sample_metadata_fullpath = smp
-        else:
-            msg = f"Could not find expected sample metadata csv at {smp}"
-            spectraLogger.debug(msg)
+    def set_working_directory(
+        self,
+        ph: "EDAXPathHandler",
+        directory: str | Path,
+        recursive: bool = True,
+    ) -> Path:
+        """Rescan a single directory (optionally recursively), replacing the
+        contents of the database with whatever is found there.
+
+        The caller is responsible for confirming that ``directory`` is inside
+        ``ph.data_root`` -- see ``_file_browser.resolve_within_root``.
+        """
+        target = Path(directory)
+        if not target.is_dir():
+            msg = f"Not a directory: {target}"
+            raise NotADirectoryError(msg)
+
+        self._clear()
+        self.working_directory = target
+        spectraLogger.info(f"Inspecting working directory {target} ({recursive=})")
+        _recursive_inspection(
+            target,
+            self,
+            allow_mixed_basenames=self.allow_mixed_basenames,
+            recursive=recursive,
+            skip_duplicates=True,
+        )
+        # prefer a metadata csv alongside the data, fall back to the one at the
+        # data root.
+        self._locate_sample_metadata(target, ph.data_root)
+        return target
+
+    def _locate_sample_metadata(self, *directories: Path) -> None:
+        self.sample_metadata_fullpath = None
+        for directory in directories:
+            smp = directory / self.sample_metadata_csv
+            if smp.is_file():
+                msg = f"Found sample metadata csv at {smp}"
+                spectraLogger.debug(msg)
+                self.sample_metadata_fullpath = smp
+                return
+        msg = f"Could not find {self.sample_metadata_csv} in {directories}"
+        spectraLogger.debug(msg)
 
     def add_fileset(
         self, basename: str, files: dict[str, Path] | EDAX_file_set
@@ -127,6 +173,8 @@ def _recursive_inspection(
     db: OnDiskDatabase,
     allow_mixed_basenames: bool = False,
     progress: InspectionProgress | None = None,
+    recursive: bool = True,
+    skip_duplicates: bool = False,
 ) -> None:
     if progress is None:
         progress = InspectionProgress()
@@ -140,7 +188,13 @@ def _recursive_inspection(
                 progress.datasets_found,
             )
 
-        files, subdirs = _inventory_directory(dirname)
+        try:
+            files, subdirs = _inventory_directory(dirname)
+        except OSError:
+            # an unreadable directory somewhere in the tree should not abort the
+            # whole scan.
+            spectraLogger.warning("Could not read directory %s, skipping", dirname)
+            return
 
         # check for edax files
         for edax_set in _check_files_in_directory(
@@ -152,14 +206,29 @@ def _recursive_inspection(
                 basename = str(edax_set.spd)
             else:
                 basename = edax_set.spd.stem
+
+            if skip_duplicates and basename in db.available_maps:
+                spectraLogger.warning(
+                    "Skipping %s, a dataset named %s is already registered",
+                    edax_set.spd,
+                    basename,
+                )
+                continue
+
             db.add_fileset(basename, edax_set)
             progress.datasets_found += 1
 
         # go deeper if needed
-        for s in subdirs:
-            _recursive_inspection(
-                s, db, allow_mixed_basenames=allow_mixed_basenames, progress=progress
-            )
+        if recursive:
+            for s in subdirs:
+                _recursive_inspection(
+                    s,
+                    db,
+                    allow_mixed_basenames=allow_mixed_basenames,
+                    progress=progress,
+                    recursive=recursive,
+                    skip_duplicates=skip_duplicates,
+                )
 
 
 def _validate_inventory_files(

@@ -13,6 +13,11 @@ class UserStore:
     selected_dataset: str = "none"
     metadata_json: str = ""
     sample_metadata: sampleMetadata | None = None
+    # desktop mode only: the server-side working directory the user picked
+    # (relative to the server's data root) and the datasets found in it. Both
+    # stay None when the server scans its whole data root at startup.
+    working_directory: str | None = None
+    available_files: list[str] | None = None
 
     def get_metadata(self) -> CombinedMetadata | None:
         if self.metadata_json != "":

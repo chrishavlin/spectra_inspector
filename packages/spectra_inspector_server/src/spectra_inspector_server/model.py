@@ -241,6 +241,28 @@ class EDAX_raw_ds:
 class Info:
     app_name: str
     spectra_inspector_data_root: str
+    desktop_mode: bool = False
+
+
+class directoryEntry(BaseModel):
+    """a single subdirectory of a browsable directory."""
+
+    name: str
+    # posix-style path relative to the configured data root
+    path: str
+
+
+class directoryListing(BaseModel):
+    """the browsable contents of one directory within the data root."""
+
+    # posix-style path relative to the data root, "" for the data root itself
+    path: str
+    name: str
+    # None when this listing is the data root: there is nowhere further up to go
+    parent_path: str | None = None
+    directories: list[directoryEntry] = []
+    # number of EDAX file sets found directly in this directory
+    dataset_count: int = 0
 
 
 @dataclass
@@ -294,6 +316,9 @@ class sampleMetadata:
 class AvailableDatasets:
     available_files: list[str]
     sample_metadata: sampleMetadata | None = None
+    # the directory the listing came from, relative to the data root. None when
+    # the whole data root was scanned.
+    directory: str | None = None
 
 
 class raveledImage(BaseModel):
@@ -320,6 +345,8 @@ __all__ = [
     "Spectrum1d",
     "Spectrum1dDict",
     "Stage",
+    "directoryEntry",
+    "directoryListing",
     "raveledImage",
     "sampleMetadata",
     "sampleMetadataCSVrecord",

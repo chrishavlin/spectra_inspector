@@ -90,6 +90,14 @@ Data source is a filesystem scan, not a real database:
   keyed by **file basename, which must be globally unique** across the tree.
   Rescanning only happens via `/available-datasets?refresh_db=true` and only
   when `SPECTRA_INSPECTOR_ALLOW_DB_REFRESH=true`.
+- `SPECTRA_INSPECTOR_DESKTOP_MODE=true` skips that startup walk entirely
+  (`dependencies.get_database_session` passes `init_db=False`) and enables
+  `/browse-directory` + `/datasets-in-directory`, which let a client walk the
+  tree and scan one directory into the database
+  (`OnDiskDatabase.set_working_directory`, replacing the previous contents).
+  Every client path goes through `_file_browser.resolve_within_root`, which is
+  the only thing confining browsing to the data root — new endpoints taking a
+  path must use it. Both endpoints 403 when desktop mode is off.
 - An optional `sample_metadata.csv` at the data root supplies lat/lon/group
   metadata used by the frontend's sample map. `_map_to_sample_name` derives a
   sample id from a map name by splitting on `"Map"`.
@@ -136,6 +144,28 @@ sidebar and theme switcher; `pages/*.py` self-register via `dash.register_page`.
 `pages/data_selection.py` is `/` (sample picker + map), `pages/inspector.py` is
 `/inspector/<sample_name>` and holds ~all the callback logic. `serve.py` is the
 entry point (`--debug/--host/--port`).
+
+`components/directory_selector.py` is the desktop-mode working-directory picker,
+embedded in both pages (index 0 on data selection, index 1 on the inspector) and
+rendered as an empty div unless `Settings().desktop_mode`. Its callbacks are
+`MATCH`-keyed on that index, which is how "Use this directory" can write the
+options of the `datasetSelectorLayoutIDs` dropdown sharing the same index. Both
+packages carry their own `desktop_mode` setting and both must be enabled.
+
+Two Dash rules bit this component, and neither is enforced in python -- the app
+starts, `/_dash-update-component` answers hand-made requests, and the failure
+only appears once a browser wires the page up:
+
+- every `Output` of a callback must carry `MATCH` on the same keys, so a plain
+  id (`user-mem-store`) cannot share a callback with `MATCH` outputs. That is
+  why committing a directory writes a page-local store and a second callback
+  (`ALL` input, plain output) copies it into the user store.
+  `tests/test_callback_wildcards.py` mirrors the rule over `app._callback_list`.
+- a prop cannot be both written and read back around a loop. Subdirectories are
+  clickable `ListGroupItem`s rather than a dropdown for this reason: clearing a
+  dropdown value from the callback that renders the listing is a cycle.
+
+Verify changes here in an actual browser, not just via callback invocation.
 
 All cross-callback state lives in a single `dcc.Store` with id
 `USER_STORE_DIV_ID` (`"user-mem-store"`), whose dict is the `UserStore`

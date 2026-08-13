@@ -52,6 +52,20 @@ class EDAXPathHandler:
         spectraLogger.info("re-initializing PathHandler database")
         self.database.refresh(self)
 
+    def set_working_directory(
+        self, directory: str | Path, recursive: bool = True
+    ) -> Path:
+        """Restrict the database to a single directory beneath the data root.
+
+        ``directory`` must already have been validated as being within
+        ``self.data_root`` (see ``_file_browser.resolve_within_root``).
+        """
+        return self.database.set_working_directory(self, directory, recursive=recursive)
+
+    @property
+    def working_directory(self) -> Path:
+        return self.database.working_directory or self.data_root
+
     def get_sample_edax_file_names(self, sample_name: str) -> EDAX_file_set | None:
         return self.database.available_maps.get(sample_name, None)
 

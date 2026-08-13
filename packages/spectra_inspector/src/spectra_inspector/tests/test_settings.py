@@ -7,6 +7,7 @@ def test_defaults():
     s = Settings()
     assert s.app_name
     assert s.server_port == 8000
+    assert s.desktop_mode is False
 
 
 def test_prefixed_env_file(tmp_path, monkeypatch):
@@ -17,6 +18,7 @@ def test_prefixed_env_file(tmp_path, monkeypatch):
         f"{ENV_PREFIX}MAX_TMP_DIRS = 7\n"
         f"{ENV_PREFIX}SERVER_HOST = 'not-localhost'\n"
         f"{ENV_PREFIX}SERVER_PORT = 9001\n"
+        f"{ENV_PREFIX}DESKTOP_MODE = true\n"
     )
     monkeypatch.chdir(tmp_path)
 
@@ -26,6 +28,7 @@ def test_prefixed_env_file(tmp_path, monkeypatch):
     assert s.max_tmp_dirs == 7
     assert s.server_host == "not-localhost"
     assert s.server_port == 9001
+    assert s.desktop_mode is True
 
 
 def test_unprefixed_env_file_raises(tmp_path, monkeypatch):
