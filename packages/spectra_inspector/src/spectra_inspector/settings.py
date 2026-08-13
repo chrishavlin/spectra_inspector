@@ -21,6 +21,13 @@ class Settings(BaseSettings):
     server_host: str = "localhost"  # host.docker.internal
     server_port: int = 8000
 
+    # desktop_mode exposes the working-directory picker on the data selection
+    # and inspector pages. It requires the server to run with
+    # SPECTRA_INSPECTOR_DESKTOP_MODE=true as well: the picker drives the
+    # server's /browse-directory and /datasets-in-directory endpoints, which
+    # are disabled otherwise.
+    desktop_mode: bool = False
+
     model_config = SettingsConfigDict(env_file=ENV_FILE, env_prefix=ENV_PREFIX)
 
     @model_validator(mode="before")

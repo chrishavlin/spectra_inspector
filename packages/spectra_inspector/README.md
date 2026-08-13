@@ -23,6 +23,12 @@ package reads is prefixed with `SPECTRA_INSPECTOR_`, matching the
   same machine.
 - `SPECTRA_INSPECTOR_SERVER_PORT`=port to access `spectra_inspector_server` api
   on
+- `SPECTRA_INSPECTOR_DESKTOP_MODE`=false. Set to `true` to show the
+  working-directory picker on the data selection and inspector pages: it browses
+  the server's data root and loads the datasets of the directory you pick into
+  the sample dropdown. Requires `SPECTRA_INSPECTOR_DESKTOP_MODE=true` in the
+  `spectra_inspector_server` `.env` as well — the endpoints it calls return
+  `403` otherwise.
 
 Unknown keys in `.env` are rejected rather than ignored, so a stale `.env` fails
 fast: keys under the prefix that don't match a setting raise `extra_forbidden`,

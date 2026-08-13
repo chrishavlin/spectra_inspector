@@ -18,6 +18,7 @@ def test_prefixed_env_file(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> N
         f"{ENV_PREFIX}DATA_ROOT='/some/data/root'\n"
         f"{ENV_PREFIX}HOST_DATA_ROOT='/some/host/data/root'\n"
         f"{ENV_PREFIX}ALLOW_DB_REFRESH=true\n"
+        f"{ENV_PREFIX}DESKTOP_MODE=true\n"
         f"{ENV_PREFIX}LOG_LEVEL='debug'\n"
     )
     monkeypatch.chdir(tmp_path)
@@ -27,6 +28,7 @@ def test_prefixed_env_file(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> N
     assert s.data_root == "/some/data/root"
     assert s.host_data_root == "/some/host/data/root"
     assert s.allow_db_refresh is True
+    assert s.desktop_mode is True
     assert s.log_level == "DEBUG"  # normalized by the field validator
 
 

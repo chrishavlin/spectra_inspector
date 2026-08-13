@@ -3,11 +3,18 @@ from asyncio.tasks import Task
 from concurrent.futures import ProcessPoolExecutor
 from contextlib import asynccontextmanager
 from dataclasses import dataclass
+from pathlib import Path
 from typing import Annotated, Literal
 from uuid import uuid4
 
 from fastapi import Depends, FastAPI, HTTPException, Request
 
+from spectra_inspector_server._file_browser import (
+    PathOutsideRootError,
+    list_directory,
+    relative_to_root,
+    resolve_within_root,
+)
 from spectra_inspector_server._file_tree_handling import EDAXPathHandler
 from spectra_inspector_server._logging import spectraLogger
 from spectra_inspector_server._testing import pytest_running
@@ -20,6 +27,7 @@ from spectra_inspector_server.model import (
     MetadataModel,
     Spectrum1d,
     Spectrum1dDict,
+    directoryListing,
     raveledImage,
     sampleMetadata,
 )
@@ -107,6 +115,28 @@ async def info(settings: Annotated[Settings, Depends(get_settings)]) -> Info:
     return Info(
         app_name=settings.app_name,
         spectra_inspector_data_root=settings.data_root,
+        desktop_mode=settings.desktop_mode,
+    )
+
+
+def _available_datasets_response(ph: EDAXPathHandler) -> AvailableDatasets:
+    filekeys = [str(nm) for nm in ph.database.available_maps]
+
+    available_samples = ph.database.available_samples
+    all_meta: sampleMetadata | None = None
+    if ph.database.sample_metadata_mapper:
+        all_meta = ph.database.sample_metadata_mapper.get_all(
+            available_samples=available_samples
+        )
+
+    directory: str | None = None
+    if ph.database.working_directory is not None:
+        directory = relative_to_root(ph.data_root, ph.database.working_directory)
+
+    return AvailableDatasets(
+        available_files=filekeys,
+        sample_metadata=all_meta,
+        directory=directory,
     )
 
 
@@ -120,24 +150,92 @@ async def available_datasets(
     ph = ph_from_app_state(request)
 
     if refresh_db:
-        if settings.allow_db_refresh:
+        if settings.desktop_mode and ph.database.working_directory is None:
+            # refreshing before a working directory is picked would mean the
+            # full scan of the data root that desktop mode exists to avoid.
+            spectraLogger.info("Refresh skipped, no working directory selected.")
+        elif settings.allow_db_refresh or settings.desktop_mode:
+            # in desktop mode a refresh only re-scans the working directory, so
+            # it costs no more than the scan the client already asked for.
             ph.refresh()
         else:
             spectraLogger.info("Refresh attempt denied.")
 
-    filekeys = [str(nm) for nm in ph.database.available_maps]
+    return _available_datasets_response(ph)
 
-    available_samples = ph.database.available_samples
-    all_meta: sampleMetadata | None = None
-    if ph.database.sample_metadata_mapper:
-        all_meta = ph.database.sample_metadata_mapper.get_all(
-            available_samples=available_samples
+
+def _require_desktop_mode(settings: Settings) -> None:
+    if not settings.desktop_mode:
+        msg = (
+            "directory browsing requires the server to run with "
+            "SPECTRA_INSPECTOR_DESKTOP_MODE=true"
         )
+        raise HTTPException(403, detail=msg)
 
-    return AvailableDatasets(
-        available_files=filekeys,
-        sample_metadata=all_meta,
-    )
+
+def _resolve_browse_path(ph: EDAXPathHandler, path: str) -> Path:
+    try:
+        return resolve_within_root(ph.data_root, path)
+    except PathOutsideRootError as err:
+        raise HTTPException(403, detail=str(err)) from err
+
+
+@app.get("/browse-directory")
+async def browse_directory(
+    request: Request,
+    settings: Annotated[Settings, Depends(get_settings)],
+    path: str = "",
+) -> directoryListing:
+    """List the subdirectories of one directory beneath the data root."""
+
+    _require_desktop_mode(settings)
+    ph = ph_from_app_state(request)
+
+    # validate before listing so that an out-of-root path is a 403 rather than
+    # whatever the filesystem happens to say about it.
+    _resolve_browse_path(ph, path)
+
+    try:
+        return list_directory(
+            ph.data_root,
+            path,
+            allow_mixed_basenames=settings.db_allow_mixed_basenames,
+        )
+    except NotADirectoryError as err:
+        raise HTTPException(404, detail=str(err)) from err
+    except OSError as err:
+        msg = f"could not read '{path}'"
+        raise HTTPException(403, detail=msg) from err
+
+
+@app.get("/datasets-in-directory")
+async def datasets_in_directory(
+    request: Request,
+    settings: Annotated[Settings, Depends(get_settings)],
+    path: str = "",
+    recursive: bool = True,
+) -> AvailableDatasets:
+    """Scan one directory beneath the data root and make it the working set.
+
+    Whatever the database held before is replaced, so subsequent data endpoints
+    only see the datasets in the selected directory.
+    """
+
+    _require_desktop_mode(settings)
+    ph = ph_from_app_state(request)
+
+    target = _resolve_browse_path(ph, path)
+
+    try:
+        ph.set_working_directory(target, recursive=recursive)
+    except NotADirectoryError as err:
+        msg = f"'{path}' is not a directory"
+        raise HTTPException(404, detail=msg) from err
+    except OSError as err:
+        msg = f"could not read '{path}'"
+        raise HTTPException(403, detail=msg) from err
+
+    return _available_datasets_response(ph)
 
 
 @app.get("/image-metadata")

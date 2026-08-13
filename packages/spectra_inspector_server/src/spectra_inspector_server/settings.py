@@ -18,6 +18,13 @@ class Settings(BaseSettings):
     host_data_root: str = "./"
 
     allow_db_refresh: bool = False
+    db_allow_mixed_basenames: bool = False
+
+    # desktop_mode skips the (potentially very slow) recursive scan of data_root
+    # at startup and instead enables the /browse-directory and
+    # /datasets-in-directory endpoints so that a client can pick a working
+    # directory to scan. Browsing is always confined to data_root.
+    desktop_mode: bool = False
 
     log_level: Literal[
         "DEBUG",

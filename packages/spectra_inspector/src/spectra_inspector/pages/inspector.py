@@ -25,6 +25,7 @@ from spectra_inspector.components import (
     data_export_panel,
     dataset_selector,
     datasetSelectorLayoutIDs,
+    directory_selector,
     get_new_im,
 )
 from spectra_inspector.components.dataset_selector import format_selections
@@ -171,6 +172,8 @@ def layout(sample_name: str | None = None, **kwargs):  # noqa: ARG001
     _data_selector, _ = dataset_selector(
         sisi, component_index=1, sample_id=sample_name, dropdown_label="Sample: "
     )
+
+    _layout_rows.append(directory_selector(component_index=1))
 
     image_control_card = dbc.Card(
         dbc.CardBody(

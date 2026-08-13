@@ -5,6 +5,8 @@ from dash import Input, Output, State, callback, ctx, html, no_update
 from spectra_inspector.components import (
     dataset_selector,
     datasetSelectorLayoutIDs,
+    directory_selector,
+    directorySelectorLayoutIDs,
     sample_map,
 )
 from spectra_inspector.components.dataset_selector import format_selections
@@ -13,6 +15,7 @@ from spectra_inspector.logging import spectraLogger
 from spectra_inspector.user_store_model import USER_STORE_DIV_ID, updateDataStore
 from spectra_inspector.utilities.coerce import spaces_to_placeholder
 from spectra_inspector.utilities.interface import SpectraInspectorServerInterface
+from spectra_inspector.utilities.model import AvailableDatasets
 
 dash.register_page(__name__, path="/", order=0)
 
@@ -20,6 +23,7 @@ _basemapIDs = sample_map.sampleMapLayoutIDs()
 
 
 selectorIDs = datasetSelectorLayoutIDs(index=0)
+dirSelectorIDs = directorySelectorLayoutIDs(index=0)
 
 
 def layout(**kwargs) -> html.Div:  # noqa: ARG001
@@ -32,6 +36,8 @@ def layout(**kwargs) -> html.Div:  # noqa: ARG001
     left_panel = dbc.Card(
         dbc.CardBody(
             [
+                directory_selector(component_index=0),
+                html.Br(),
                 _data_selector,
                 html.Br(),
                 html.Div(
@@ -137,6 +143,37 @@ def update_selected_dataset(
     )
 
     return nl, md, new_user_data, output_options, input_value
+
+
+@callback(
+    Output({"type": _basemapIDs.samplemap, "index": 0}, "figure", allow_duplicate=True),
+    Input(dirSelectorIDs.get_id_with_index("committedstore"), "data"),
+    State({"type": _basemapIDs.dropdown, "index": 0}, "value"),
+    prevent_initial_call=True,
+)
+def rebuild_map_for_working_directory(committed: dict | None, map_style: str | None):
+    """The sample map only carries the samples of the loaded datasets, so
+    picking a new working directory means rebuilding it from scratch.
+
+    The samples come straight off the committed store rather than the user
+    store, which is written by a separate callback firing off the same input --
+    reading it here would be a race.
+    """
+
+    if not committed:
+        return no_update
+
+    available = AvailableDatasets(
+        available_files=committed.get("available_files") or [],
+        sample_metadata=committed.get("sample_metadata"),
+    )
+
+    style = sample_map._map_styles.get(map_style or "Satellite")
+    try:
+        return sample_map.get_map(style, available_data=available)
+    except (RuntimeError, KeyError, ValueError):
+        spectraLogger.exception("Failed to rebuild the sample map")
+        return no_update
 
 
 @callback(
