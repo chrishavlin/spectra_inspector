@@ -211,3 +211,10 @@ __marimo__/
 
 
 .DS_Store
+
+
+# claude related
+.claude/worktrees/
+.claude/*.local.*
+.claude/secrets.json
+.claude/history/
