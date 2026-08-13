@@ -98,7 +98,7 @@ async def lifespan(
 
 # configure logger once at startup.
 settings = Settings()
-spectraLogger.setLevel(settings.spectra_inspector_log_level.upper())
+spectraLogger.setLevel(settings.log_level.upper())
 app = FastAPI(lifespan=lifespan)
 
 
@@ -106,7 +106,7 @@ app = FastAPI(lifespan=lifespan)
 async def info(settings: Annotated[Settings, Depends(get_settings)]) -> Info:
     return Info(
         app_name=settings.app_name,
-        spectra_inspector_data_root=settings.spectra_inspector_data_root,
+        spectra_inspector_data_root=settings.data_root,
     )
 
 
@@ -120,7 +120,7 @@ async def available_datasets(
     ph = ph_from_app_state(request)
 
     if refresh_db:
-        if settings.spectra_inspector_allow_db_refresh:
+        if settings.allow_db_refresh:
             ph.refresh()
         else:
             spectraLogger.info("Refresh attempt denied.")

@@ -12,4 +12,4 @@ def get_settings() -> Settings:
 @lru_cache
 def get_database_session() -> EDAXPathHandler:
     S = get_settings()
-    return EDAXPathHandler(data_root=S.spectra_inspector_data_root, init_db=True)
+    return EDAXPathHandler(data_root=S.data_root, init_db=True)

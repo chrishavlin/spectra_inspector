@@ -64,14 +64,19 @@ a `.env` containing names that don't match the model's fields raises
 with pydantic validation errors, check `packages/spectra_inspector/.env` against
 `spectra_inspector/settings.py` — CI passes because no `.env` exists there.
 
-Both packages read `SPECTRA_INSPECTOR_*` names, but by different mechanisms: the
-frontend sets `env_prefix="SPECTRA_INSPECTOR_"` on unprefixed fields, while the
-server bakes the prefix into most field names and leaves `app_name` unprefixed
-(so it is `APP_NAME` in the server's `.env`, `SPECTRA_INSPECTOR_APP_NAME` in the
-frontend's). The frontend's prefix arrived with issue #89; because pydantic
-ignores rather than rejects env names outside the prefix, a
-`Settings._reject_unprefixed_env_file_keys` validator re-reads `.env` and errors
-on the pre-#89 spellings instead of silently falling back to the defaults.
+Both packages' `Settings` set `env_prefix="SPECTRA_INSPECTOR_"` over unprefixed
+field names, so every key in either `.env` carries that prefix (`data_root` <-
+`SPECTRA_INSPECTOR_DATA_ROOT`). Because pydantic _ignores_ rather than rejects
+env names outside the prefix, each package also duplicates a
+`Settings._reject_unprefixed_env_file_keys` validator that re-reads `.env` and
+errors on unprefixed spellings instead of silently falling back to the defaults.
+Both arrived with issue #89 — before it the frontend's names were unprefixed
+entirely and the server baked the prefix into its field names.
+
+Note the server's `Info` response model still spells its field
+`spectra_inspector_data_root`; that is the wire format (mirrored in the
+frontend's `utilities/model.py`) and is deliberately decoupled from
+`Settings.data_root`.
 
 ## Backend architecture
 
