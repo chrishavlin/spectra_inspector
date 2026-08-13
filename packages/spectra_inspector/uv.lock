@@ -1325,6 +1325,7 @@ dependencies = [
     { name = "plotly" },
     { name = "pydantic" },
     { name = "pydantic-settings" },
+    { name = "python-dotenv" },
     { name = "rosettasciio" },
     { name = "unyt" },
 ]
@@ -1355,6 +1356,7 @@ requires-dist = [
     { name = "plotly", specifier = ">=6.6.0" },
     { name = "pydantic", specifier = ">=2.12.5" },
     { name = "pydantic-settings", specifier = ">=2.13.1" },
+    { name = "python-dotenv", specifier = ">=1.2.2" },
     { name = "rosettasciio", specifier = ">=0.13.0" },
     { name = "unyt", specifier = ">=3.1.0" },
 ]

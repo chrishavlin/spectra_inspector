@@ -17,19 +17,23 @@ cp packages/spectra_inspector/defaults.env packages/spectra_inspector/.env
 ```
 
 Then edit `packages/spectra_inspector/.env` and set the frontend values you
-need. The frontend settings module reads the following configuration values
+need. Every frontend setting is read with a `SPECTRA_INSPECTOR_` prefix
 (case-insensitive from the environment):
 
-- `APP_NAME`: display name used by the app. Defaults to `Spectra Inspector`.
-- `WRITE_DIR` (also accepted as `SPECTRA_INSPECTOR_WRITE_DIR` by the settings
-  code): writable directory for temporary download files. Defaults to the
-  current working directory.
-- `MAX_TMP_DIRS`: maximum number of temporary directories to keep before cleanup
-  begins. Defaults to `100`.
-- `SERVER_HOST`: host name or address of the FastAPI backend used by the
-  frontend. Defaults to `localhost`.
-- `SERVER_PORT`: port number of the FastAPI backend used by the frontend.
-  Defaults to `8000`.
+- `SPECTRA_INSPECTOR_APP_NAME`: display name used by the app. Defaults to
+  `Spectra Inspector`.
+- `SPECTRA_INSPECTOR_WRITE_DIR`: writable directory for temporary download
+  files. Defaults to the current working directory.
+- `SPECTRA_INSPECTOR_MAX_TMP_DIRS`: maximum number of temporary directories to
+  keep before cleanup begins. Defaults to `100`.
+- `SPECTRA_INSPECTOR_SERVER_HOST`: host name or address of the FastAPI backend
+  used by the frontend. Defaults to `localhost`.
+- `SPECTRA_INSPECTOR_SERVER_PORT`: port number of the FastAPI backend used by
+  the frontend. Defaults to `8000`.
+
+These names gained the `SPECTRA_INSPECTOR_` prefix in a later release; an
+existing `.env` still using the unprefixed spellings (`WRITE_DIR`,
+`SERVER_HOST`, ...) raises a startup error naming the keys to rename.
 
 ### Backend package
 
@@ -40,11 +44,11 @@ cp packages/spectra_inspector_server/defaults.env packages/spectra_inspector_ser
 ```
 
 Then edit `packages/spectra_inspector_server/.env` and set the data paths and
-runtime options for your environment. The backend settings module reads these
-values:
+runtime options for your environment. As with the frontend, every backend
+setting is read with a `SPECTRA_INSPECTOR_` prefix:
 
-- `APP_NAME`: display name used by the backend service. Defaults to
-  `Spectra Inspector Server`.
+- `SPECTRA_INSPECTOR_APP_NAME`: display name used by the backend service.
+  Defaults to `Spectra Inspector Server`.
 - `SPECTRA_INSPECTOR_DATA_ROOT`: root directory that the backend scans
   recursively for EDAX datasets. Defaults to `./`. When running in docker, this
   is the **container** directory name (which gets binded to
@@ -57,6 +61,10 @@ values:
 - `SPECTRA_INSPECTOR_LOG_LEVEL`: logging verbosity for the backend. Accepted
   values are `DEBUG`, `INFO`, `WARNING`, `ERROR`, and `CRITICAL`; the default is
   `INFO`.
+
+`APP_NAME` gained the `SPECTRA_INSPECTOR_` prefix along with the frontend keys;
+the other backend names are unchanged. An existing `.env` still using an
+unprefixed spelling raises a startup error naming the key to rename.
 
 ### Configuration for local deployment
 

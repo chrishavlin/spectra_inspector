@@ -60,12 +60,23 @@ have no effect — always pass `src` explicitly.
 Each package reads its own `.env` (pydantic-settings, `env_file=".env"`,
 untracked; templates are `defaults.env`). Settings models forbid extra keys, so
 a `.env` containing names that don't match the model's fields raises
-`extra_forbidden` and **fails tests and app startup**. In particular the
-frontend's fields are unprefixed (`APP_NAME`, `WRITE_DIR`, `MAX_TMP_DIRS`,
-`SERVER_HOST`, `SERVER_PORT`) while the server's are mostly
-`SPECTRA_INSPECTOR_*`-prefixed. If frontend tests fail with pydantic validation
-errors, check `packages/spectra_inspector/.env` against
+`extra_forbidden` and **fails tests and app startup**. If frontend tests fail
+with pydantic validation errors, check `packages/spectra_inspector/.env` against
 `spectra_inspector/settings.py` — CI passes because no `.env` exists there.
+
+Both packages' `Settings` set `env_prefix="SPECTRA_INSPECTOR_"` over unprefixed
+field names, so every key in either `.env` carries that prefix (`data_root` <-
+`SPECTRA_INSPECTOR_DATA_ROOT`). Because pydantic _ignores_ rather than rejects
+env names outside the prefix, each package also duplicates a
+`Settings._reject_unprefixed_env_file_keys` validator that re-reads `.env` and
+errors on unprefixed spellings instead of silently falling back to the defaults.
+Both arrived with issue #89 — before it the frontend's names were unprefixed
+entirely and the server baked the prefix into its field names.
+
+Note the server's `Info` response model still spells its field
+`spectra_inspector_data_root`; that is the wire format (mirrored in the
+frontend's `utilities/model.py`) and is deliberately decoupled from
+`Settings.data_root`.
 
 ## Backend architecture
 
@@ -158,9 +169,10 @@ Other things worth knowing:
 - Figures are Plotly `px.imshow` with `dragmode="drawrect"`; user rectangles
   come back through `relayoutData` and become index ranges sent to the backend.
 - Export: `utilities/summary_writer.py` writes into a uuid subdirectory under
-  `WRITE_DIR` and prunes oldest dirs past `MAX_TMP_DIRS`; `plotly_to_matplotlib`
-  in `coerce.py` re-renders figures for PDF output, and `utilities/msa_io.py`
-  handles EMSA `.msa`/`.csv` round-tripping.
+  `SPECTRA_INSPECTOR_WRITE_DIR` and prunes oldest dirs past
+  `SPECTRA_INSPECTOR_MAX_TMP_DIRS`; `plotly_to_matplotlib` in `coerce.py`
+  re-renders figures for PDF output, and `utilities/msa_io.py` handles EMSA
+  `.msa`/`.csv` round-tripping.
 - `utilities/element_energy_ranges.py` (3 elements, drives the slider presets)
   is separate from and narrower than the server's
   `calibration.element_energy_ranges_keV` (9 elements).

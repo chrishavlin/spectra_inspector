@@ -62,15 +62,23 @@ basename.xml
 
 ### Configuration
 
-Copy `default.env` to `.env` and modify as needed. Some defaults may be set by
-environment variables as well, with preference given to the values in `.env`.
+Copy `default.env` to `.env` and modify as needed. Every setting is read with a
+`SPECTRA_INSPECTOR_` prefix (`SPECTRA_INSPECTOR_APP_NAME`,
+`SPECTRA_INSPECTOR_DATA_ROOT`, `SPECTRA_INSPECTOR_HOST_DATA_ROOT`,
+`SPECTRA_INSPECTOR_ALLOW_DB_REFRESH`, `SPECTRA_INSPECTOR_LOG_LEVEL`), matching
+the `spectra_inspector` frontend package. The same names may be set as process
+environment variables instead, with preference given to the values in `.env`.
+
+Unknown keys in `.env` are rejected rather than ignored, so a stale `.env` fails
+fast: keys under the prefix that don't match a setting raise `extra_forbidden`,
+and unprefixed spellings (`APP_NAME`, ...) raise an error listing their new
+names.
 
 #### `SPECTRA_INSPECTOR_DATA_ROOT`
 
 When using a local filesystem repository, the top-level directory of the
-directory to search recursively for EDAX file sets. When not set in `.env`, the
-default value will be detected from a standard environment variable of the same
-name and if not found, will default to `./`.
+directory to search recursively for EDAX file sets. When set in neither `.env`
+nor the environment, defaults to `./`.
 
 ### manual type checking
 

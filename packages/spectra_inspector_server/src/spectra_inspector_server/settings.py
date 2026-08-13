@@ -1,22 +1,25 @@
-import os
-from typing import Literal
+from pathlib import Path
+from typing import Any, Literal
 
-from pydantic import field_validator
+from dotenv import dotenv_values
+from pydantic import field_validator, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
+
+ENV_FILE = ".env"
+ENV_PREFIX = "SPECTRA_INSPECTOR_"
 
 
 class Settings(BaseSettings):
+    # every field is read from the environment (or from ENV_FILE) with the
+    # ENV_PREFIX prefix, e.g. data_root <- SPECTRA_INSPECTOR_DATA_ROOT, matching
+    # the spectra_inspector frontend package.
     app_name: str = "Spectra Inspector Server"
-    spectra_inspector_data_root: str = os.environ.get(
-        "SPECTRA_INSPECTOR_DATA_ROOT", "./"
-    )
-    spectra_inspector_host_data_root: str = os.environ.get(
-        "SPECTRA_INSPECTOR_HOST_DATA_ROOT", "./"
-    )
+    data_root: str = "./"
+    host_data_root: str = "./"
 
-    spectra_inspector_allow_db_refresh: bool = False
+    allow_db_refresh: bool = False
 
-    spectra_inspector_log_level: Literal[
+    log_level: Literal[
         "DEBUG",
         "INFO",
         "WARNING",
@@ -24,9 +27,31 @@ class Settings(BaseSettings):
         "CRITICAL",
     ] = "INFO"
 
-    @field_validator("spectra_inspector_log_level", mode="before")
+    model_config = SettingsConfigDict(env_file=ENV_FILE, env_prefix=ENV_PREFIX)
+
+    @field_validator("log_level", mode="before")
     @classmethod
     def normalize_log_level(cls, v: str) -> str:
         return v.upper()
 
-    model_config = SettingsConfigDict(env_file=".env")
+    @model_validator(mode="before")
+    @classmethod
+    def _reject_unprefixed_env_file_keys(cls, values: Any) -> Any:
+        # unprefixed keys are silently ignored by pydantic-settings, which would
+        # leave a pre-prefix .env quietly falling back to the defaults above, so
+        # point at them explicitly instead.
+        env_file = Path(ENV_FILE)
+        if env_file.is_file():
+            unprefixed = sorted(
+                key
+                for key in dotenv_values(env_file)
+                if key.lower() in cls.model_fields
+            )
+            if unprefixed:
+                renames = ", ".join(f"{key} -> {ENV_PREFIX}{key}" for key in unprefixed)
+                msg = (
+                    f"{env_file} sets server options without the {ENV_PREFIX} "
+                    f"prefix, which are no longer read. Rename them: {renames}"
+                )
+                raise ValueError(msg)
+        return values
