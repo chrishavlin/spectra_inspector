@@ -18,4 +18,6 @@ def get_database_session() -> EDAXPathHandler:
         # until a client picks a working directory via /datasets-in-directory.
         init_db=not S.desktop_mode,
         allow_mixed_basenames=S.db_allow_mixed_basenames,
+        # the cap only applies to the client-driven scans of desktop mode.
+        max_datasets=S.max_datasets if S.desktop_mode else None,
     )

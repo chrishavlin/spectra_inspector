@@ -2,7 +2,7 @@ from pathlib import Path
 from typing import Any, Literal
 
 from dotenv import dotenv_values
-from pydantic import field_validator, model_validator
+from pydantic import PositiveInt, field_validator, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 ENV_FILE = ".env"
@@ -25,6 +25,11 @@ class Settings(BaseSettings):
     # /datasets-in-directory endpoints so that a client can pick a working
     # directory to scan. Browsing is always confined to data_root.
     desktop_mode: bool = False
+
+    # in desktop mode, stop a directory scan once this many datasets have been
+    # found rather than walking the whole subtree. None means no limit. Ignored
+    # when desktop_mode is false.
+    max_datasets: PositiveInt | None = None
 
     log_level: Literal[
         "DEBUG",

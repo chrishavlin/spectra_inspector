@@ -157,6 +157,45 @@ def test_refresh_rescans_working_directory(browsable_root: Path) -> None:
     assert ph.working_directory == browsable_root / "session-b"
 
 
+def test_max_datasets_stops_a_working_directory_scan(browsable_root: Path) -> None:
+    ph = EDAXPathHandler(data_root=browsable_root, init_db=False, max_datasets=1)
+
+    # session-a holds C-1 directly and C-2 in a subdirectory
+    ph.set_working_directory(browsable_root / "session-a")
+    assert set(ph.database.available_maps) == {"C-1"}
+
+
+def test_max_datasets_stops_the_recursion_into_subdirectories(
+    browsable_root: Path,
+) -> None:
+    ph = EDAXPathHandler(data_root=browsable_root, init_db=False, max_datasets=2)
+
+    ph.set_working_directory(browsable_root)
+    assert set(ph.database.available_maps) == {"C-1", "C-2"}
+
+
+def test_max_datasets_above_the_dataset_count_is_a_noop(browsable_root: Path) -> None:
+    ph = EDAXPathHandler(data_root=browsable_root, init_db=False, max_datasets=100)
+
+    ph.set_working_directory(browsable_root)
+    assert set(ph.database.available_maps) == {"C-1", "C-2", "C-3"}
+
+
+def test_max_datasets_survives_a_refresh(browsable_root: Path) -> None:
+    ph = EDAXPathHandler(data_root=browsable_root, init_db=False, max_datasets=2)
+    ph.set_working_directory(browsable_root)
+
+    ph.refresh()
+    assert set(ph.database.available_maps) == {"C-1", "C-2"}
+
+
+def test_max_datasets_applies_to_a_startup_scan(browsable_root: Path) -> None:
+    # the setting is only wired up in desktop mode (see dependencies.py), but
+    # the database honors it wherever it is set.
+    ph = EDAXPathHandler(data_root=browsable_root, init_db=True, max_datasets=1)
+    assert set(ph.database.available_maps) == {"C-1"}
+
+
 def test_working_directory_defaults_to_data_root(browsable_root: Path) -> None:
     ph = EDAXPathHandler(data_root=browsable_root, init_db=True)
     assert ph.working_directory == browsable_root

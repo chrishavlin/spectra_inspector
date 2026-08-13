@@ -16,6 +16,16 @@ class InspectionProgress:
     directories_scanned: int = 0
     datasets_found: int = 0
     log_every: int = 100
+    # stop the traversal once this many datasets have been found. None means
+    # walk the whole tree.
+    max_datasets: int | None = None
+
+    # a method rather than a property so that mypy does not narrow it to False
+    # for the rest of a scope after the first check.
+    def limit_reached(self) -> bool:
+        return (
+            self.max_datasets is not None and self.datasets_found >= self.max_datasets
+        )
 
 
 class OnDiskDatabase:
@@ -23,6 +33,8 @@ class OnDiskDatabase:
     sample_metadata_csv: str
     sample_metadata_fullpath: Path | None = None
     allow_mixed_basenames: bool
+    # cap on the number of datasets a scan will register. None means no limit.
+    max_datasets: int | None
     # the subdirectory of data_root the database currently describes. None means
     # the whole of data_root (or, in desktop mode, nothing scanned yet).
     working_directory: Path | None = None
@@ -33,10 +45,12 @@ class OnDiskDatabase:
         init_db: bool = True,
         sample_metadata_csv: str = "sample_metadata.csv",
         allow_mixed_basenames: bool = False,
+        max_datasets: int | None = None,
     ):
         self.sample_metadata_csv = sample_metadata_csv
         self.available_maps = {}
         self.allow_mixed_basenames = allow_mixed_basenames
+        self.max_datasets = max_datasets
         if init_db:
             self.inspect(ph)
 
@@ -54,7 +68,10 @@ class OnDiskDatabase:
     def inspect(self, ph: "EDAXPathHandler") -> None:
         spectraLogger.info(f"Inspecting {ph.data_root}")
         _recursive_inspection(
-            ph.data_root, self, allow_mixed_basenames=self.allow_mixed_basenames
+            ph.data_root,
+            self,
+            allow_mixed_basenames=self.allow_mixed_basenames,
+            max_datasets=self.max_datasets,
         )
         self._locate_sample_metadata(ph.data_root)
 
@@ -83,6 +100,7 @@ class OnDiskDatabase:
             self,
             allow_mixed_basenames=self.allow_mixed_basenames,
             recursive=recursive,
+            max_datasets=self.max_datasets,
         )
         # prefer a metadata csv alongside the data, fall back to the one at the
         # data root.
@@ -188,9 +206,13 @@ def _recursive_inspection(
     allow_mixed_basenames: bool = False,
     progress: InspectionProgress | None = None,
     recursive: bool = True,
+    max_datasets: int | None = None,
 ) -> None:
     if progress is None:
-        progress = InspectionProgress()
+        progress = InspectionProgress(max_datasets=max_datasets)
+
+    if progress.limit_reached():
+        return
 
     if dirname.is_dir():
         progress.directories_scanned += 1
@@ -223,9 +245,21 @@ def _recursive_inspection(
             if db.add_fileset(basename, edax_set):
                 progress.datasets_found += 1
 
+            if progress.limit_reached():
+                spectraLogger.info(
+                    "Reached the maximum of %d datasets, stopping the scan of %s",
+                    progress.max_datasets,
+                    dirname,
+                )
+                return
+
         # go deeper if needed
         if recursive:
-            for s in subdirs:
+            # sorted so that a max_datasets cap truncates the same way on every
+            # scan rather than following iterdir's filesystem order.
+            for s in sorted(subdirs):
+                if progress.limit_reached():
+                    return
                 _recursive_inspection(
                     s,
                     db,
