@@ -168,3 +168,31 @@ Terminal 2:
 cd packages/spectra_inspector
 uv run python serve.py
 ```
+
+### Start both in the background (Windows)
+
+`start_uv_local.bat` starts both processes from a single Command Prompt. Each
+one runs in its own minimized console window, so they keep running after the
+window you launched them from is closed, and each writes its output to a log
+file under `logs\` in the repository root:
+
+```bat
+start_uv_local.bat
+```
+
+The backend starts with 4 uvicorn workers; pass a different count as the only
+argument:
+
+```bat
+start_uv_local.bat 8
+```
+
+Stop both services with:
+
+```bat
+stop_uv_local.bat
+```
+
+The processes survive a remote desktop disconnect but not a log off; for a
+service that outlives the login session, register the commands as a Windows
+service or a scheduled task instead.
