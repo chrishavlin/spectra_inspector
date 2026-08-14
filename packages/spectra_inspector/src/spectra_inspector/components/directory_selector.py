@@ -23,6 +23,7 @@ from spectra_inspector.settings import Settings
 from spectra_inspector.user_store_model import (
     USER_STORE_DIV_ID,
     UserStore,
+    sample_metadata_for_store,
     updateDataStore,
 )
 from spectra_inspector.utilities.interface import (
@@ -504,7 +505,7 @@ def use_directory(n_clicks: int, browse_data: dict | None, recursive: bool):
             "path": path,
             "recursive": bool(recursive),
             "available_files": available_files,
-            "sample_metadata": available.sample_metadata,
+            "sample_metadata": sample_metadata_for_store(available.sample_metadata),
             "truncated": available.truncated,
         },
     )

@@ -15,12 +15,27 @@ repository root" is stale).
 - `packages/spectra_inspector/` — Dash/Plotly frontend (Python >=3.13) that
   talks to the backend over HTTP only.
 
-The frontend does **not** depend on the server package. It re-declares the
-server's pydantic/dataclass response models in
-`spectra_inspector/utilities/model.py`. **Changing a response model on the
-server requires the matching edit in the frontend copy** — nothing enforces
-this, and drift already exists (e.g. `EDAX_file_set` optional fields,
-`sampleMetadataCSVrecord` nullability).
+The frontend does **not** depend on the server package. Its copy of the server's
+response models, `spectra_inspector/utilities/model.py`, is **generated** from
+the server's OpenAPI schema and checked in — do not hand-edit it. After changing
+anything the server returns:
+
+```sh
+cd packages/spectra_inspector_server
+uv run --group codegen python ../../scripts/generate_frontend_models.py
+```
+
+The `model-codegen` CI job regenerates and diffs, so a forgotten regeneration
+fails there rather than as a pydantic `ValidationError` in the browser.
+
+Two things the schema cannot round-trip, both handled by the generator script:
+`axes_by_index` is `dict[str, EDAX_axis]` on the client (JSON object keys are
+strings — use `utilities/scaling.get_axis`), and a model whose name matches a
+field of the same name is emitted suffixed (`Signal_1`) with an alias back to
+the server's spelling appended at the end of the file. Everything is a pydantic
+`BaseModel`, including the types the server declares as dataclasses, so values
+headed for a `dcc.Store` need `.model_dump()` first (see
+`user_store_model.sample_metadata_for_store`).
 
 ## Commands
 
@@ -118,9 +133,10 @@ by `ops_id` in `await_op_result` (2-minute timeout → HTTP 404). `/info`,
 
 So adding a heavy endpoint means: add a method to
 `processor/operations.py::OperationEDAXStateHandler`, add response models to
-`model.py`, enqueue a `queueOpsItem` naming that method, and mirror the client
-call in the frontend's `utilities/interface.py`. Large reductions chunk over
-axis 0 (`_DEFAULT_CHUNKSIZE = 128`) to avoid materializing the full cube.
+`model.py`, enqueue a `queueOpsItem` naming that method, regenerate the frontend
+models (above), and mirror the client call in the frontend's
+`utilities/interface.py`. Large reductions chunk over axis 0
+(`_DEFAULT_CHUNKSIZE = 128`) to avoid materializing the full cube.
 
 Images cross the wire as `raveledImage` (flat list + shape), reshaped
 client-side.

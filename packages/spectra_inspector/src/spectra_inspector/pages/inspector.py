@@ -37,6 +37,7 @@ from spectra_inspector.logging import spectraLogger
 from spectra_inspector.user_store_model import (
     USER_STORE_DIV_ID,
     UserStore,
+    sample_metadata_for_store,
     updateDataStore,
 )
 from spectra_inspector.utilities.coerce import (
@@ -978,7 +979,9 @@ def update_selected_dataset(
             sample_metadata = available.sample_metadata
         if sample_metadata is not None:
             new_user_data = updateDataStore(
-                new_user_data, "sample_metadata", sample_metadata
+                new_user_data,
+                "sample_metadata",
+                sample_metadata_for_store(sample_metadata),
             )
 
     # reset state

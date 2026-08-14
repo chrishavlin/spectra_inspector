@@ -1,0 +1,52 @@
+name: frontend model codegen
+
+# The frontend's utilities/model.py is generated from the server's OpenAPI
+# schema. Regenerating it here and diffing turns a server-side model change that
+# was not propagated into a failing check rather than a runtime ValidationError
+# in the browser.
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    paths:
+      - packages/spectra_inspector_server/src/**/*.py
+      - packages/spectra_inspector_server/pyproject.toml
+      - packages/spectra_inspector_server/uv.lock
+      - packages/spectra_inspector/src/spectra_inspector/utilities/model.py
+      - scripts/generate_frontend_models.py
+      - .github/workflows/model-codegen.yml
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: false
+
+env:
+  FORCE_COLOR: 3
+
+jobs:
+  check:
+    name: Check the generated frontend models are up to date
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: ./packages/spectra_inspector_server
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v7
+
+      - name: uv sync
+        run: uv sync --group codegen
+
+      - name: regenerate the frontend models
+        run: uv run python ../../scripts/generate_frontend_models.py
+
+      # regenerating first and diffing (rather than the script's --check mode)
+      # puts the missing edit in the job log.
+      - name: fail if the checked-in models differ
+        run: >
+          git diff --exit-code --
+          :/packages/spectra_inspector/src/spectra_inspector/utilities/model.py

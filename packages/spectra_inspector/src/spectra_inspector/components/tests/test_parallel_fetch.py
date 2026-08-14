@@ -25,8 +25,9 @@ RANGES = [(0.0, 1.0), (1.0, 2.0), (2.0, 3.0)]
 
 @pytest.fixture
 def md():
-    # only axes_by_index[2] (the channel axis) is read on this path, so build
-    # that and skip validating the metadata tree these tests never touch
+    # only the channel axis (index 2) is read on this path, so build that and
+    # skip validating the metadata tree these tests never touch. The key is a
+    # string because axes_by_index crosses the wire as a JSON object.
     channel_axis = EDAX_axis(
         size=1024,
         index_in_array=2,
@@ -36,7 +37,7 @@ def md():
         units="keV",
         navigate=False,
     )
-    return CombinedMetadata.model_construct(axes_by_index={2: channel_axis})
+    return CombinedMetadata.model_construct(axes_by_index={"2": channel_axis})
 
 
 class _RecordingInterface:

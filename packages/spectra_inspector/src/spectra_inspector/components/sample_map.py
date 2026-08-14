@@ -114,7 +114,8 @@ def get_map(
         hd_cols = ["group_name", "lat", "lon", "elevation"]
 
     else:
-        df = pd.DataFrame(available_data.sample_metadata["records"])
+        records = available_data.sample_metadata.records or []
+        df = pd.DataFrame([record.model_dump() for record in records])
         df["marker_size"] = 10
 
         def _attach_better_latlon(row):

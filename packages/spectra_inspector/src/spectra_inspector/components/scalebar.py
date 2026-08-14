@@ -6,6 +6,7 @@ from plotly.graph_objects import Figure
 from unyt import unyt_quantity
 
 from spectra_inspector.utilities.model import CombinedMetadata, EDAX_axis
+from spectra_inspector.utilities.scaling import get_axis
 
 
 def get_pixel_scalebar(ax: EDAX_axis, scalebar_length: unyt_quantity) -> int:
@@ -57,7 +58,7 @@ class scalebarHandler:
             width_ = override_width
         else:
             width_ = self.unyt_width
-        scalebar_wid_pixels = get_pixel_scalebar(md.axes_by_index[0], width_)
+        scalebar_wid_pixels = get_pixel_scalebar(get_axis(md, 0), width_)
 
         new_trace = {
             "mode": "lines",
@@ -81,7 +82,7 @@ class scalebarHandler:
 
         widths = {"x": 0.0, "y": 0.0}
         scalebar_pos = {"x": 0.0, "y": 0.0}
-        ax_to_id = {md.axes_by_index[iax].name: iax for iax in range(3)}
+        ax_to_id = {ax.name: iax for iax, ax in md.axes_by_index.items()}
         for ax in ["x", "y"]:
             rng = conditionally_get_axis_range(fig, ax)
             if rng is None:
@@ -98,7 +99,7 @@ class scalebarHandler:
             xlog = np.log10(xwidth)
             override_width = unyt_quantity(10 ** np.floor(xlog), self.units)
 
-        scalebar_wid_pixels = get_pixel_scalebar(md.axes_by_index[0], override_width)
+        scalebar_wid_pixels = get_pixel_scalebar(get_axis(md, 0), override_width)
         text_x_loc = scalebar_pos["x"] + scalebar_wid_pixels / 2
 
         new_trace = self.get_trace(
