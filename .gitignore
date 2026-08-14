@@ -218,3 +218,6 @@ __marimo__/
 .claude/*.local.*
 .claude/secrets.json
 .claude/history/
+
+# logs from .bat startup
+logs/*
