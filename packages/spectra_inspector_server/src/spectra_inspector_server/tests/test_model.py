@@ -24,6 +24,23 @@ def test_spectrum1d() -> None:
     s1d.tolist()
 
 
+def test_spectrum1d_weights_unavailable() -> None:
+    # a spectrum that does not reach the 14-15 keV window cannot be weighted:
+    # the weights come back as None instead of raising (issue #92).
+    energy = np.arange(4).astype(float)
+    s1d = Spectrum1d(
+        energy=energy,
+        intensity=np.linspace(0, 10, energy.size).astype(int),
+        energy_min=0,
+        energy_max=energy.max(),
+    )
+
+    assert s1d.get_weights() is None
+
+    s1d_dict = dataclasses.asdict(s1d.todict(include_weights=True))
+    assert s1d_dict["weights"] is None
+
+
 def test_sampleMetadataCSVrecord() -> None:
     rec: dict[str, str | float] = {
         "sample_id": "test id",

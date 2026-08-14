@@ -7,6 +7,7 @@ import numpy as np
 import numpy.typing as npt
 from pydantic import BaseModel
 
+from spectra_inspector_server._logging import spectraLogger
 from spectra_inspector_server.calibration import CalibrationWeights, calculate_weights
 from spectra_inspector_server.processor.utilities import _get_nested_dict_element
 
@@ -60,7 +61,9 @@ class Spectrum1d:
             extra["original_metadata"] = self.original_metadata
 
         if include_weights:
-            extra["weights"] = self.get_weights().todict()
+            weights = self.get_weights()
+            if weights is not None:
+                extra["weights"] = weights.todict()
 
         return Spectrum1dDict(
             energy=self.energy.tolist(),
@@ -74,8 +77,24 @@ class Spectrum1d:
         dE = (self.energy_max - self.energy_min) / len(self.energy)
         return np.astype(self.energy_min + self.energy * dE, np.float64)
 
-    def get_weights(self) -> CalibrationWeights:
-        return calculate_weights(self.intensity, self.energy_keV())
+    def get_weights(self) -> CalibrationWeights | None:
+        """Calibration weights for this spectrum, or None if they cannot be found.
+
+        A spectrum that does not span the energy ranges the weights are defined
+        over (or that has no counts at all) cannot be weighted -- that is not an
+        error, so log it and hand back None rather than failing the request.
+        """
+        try:
+            return calculate_weights(self.intensity, self.energy_keV())
+        except (ValueError, ZeroDivisionError):
+            spectraLogger.warning(
+                "Could not calculate calibration weights for spectrum spanning "
+                "[%s, %s] keV, returning None.",
+                self.energy_min,
+                self.energy_max,
+                exc_info=True,
+            )
+            return None
 
 
 class GeneralMetadata(BaseModel):
