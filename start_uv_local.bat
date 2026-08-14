@@ -24,6 +24,11 @@ if "%WORKERS%"=="" set "WORKERS=4"
 set "SERVER_TITLE=spectra-inspector-server"
 set "FRONTEND_TITLE=spectra-inspector-frontend"
 
+rem When its output is redirected to a file, python encodes it with the legacy
+rem Windows code page (cp1252) rather than utf-8, and the emoji in the fastapi
+rem CLI banner raise UnicodeEncodeError. Both services inherit this.
+set "PYTHONIOENCODING=utf-8"
+
 where uv >nul 2>&1
 if errorlevel 1 (
     echo uv was not found on PATH. See https://docs.astral.sh/uv/ to install it.
