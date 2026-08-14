@@ -18,9 +18,6 @@ class UserStore:
     # stay None when the server scans its whole data root at startup.
     working_directory: str | None = None
     available_files: list[str] | None = None
-    # true when the server stopped that scan at its dataset limit, so
-    # available_files is the first N of a larger number on disk. Kept here so a
-    # picker mounting on the other page can repeat the warning.
     truncated: bool = False
 
     def get_metadata(self) -> CombinedMetadata | None:
