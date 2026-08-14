@@ -21,9 +21,6 @@ class Settings(BaseSettings):
     server_host: str = "localhost"  # host.docker.internal
     server_port: int = 8000
 
-    # number of uvicorn workers that the fastapi spectra_inspector_server
-    # starts with (only used by the docker deployment)
-    n_fastapi_workers: int = 1
     # how many image panels may be fetched at once when a page loads. The
     # fetches are what make the initial load slow, and a server running with
     # several workers answers them in parallel. Set to 1 to go back to fetching
