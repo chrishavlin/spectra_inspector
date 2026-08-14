@@ -163,10 +163,15 @@ def directory_selector(
 
     return html.Div(
         [
+            # None rather than a path: it means "not hydrated yet", and
+            # `hydrate_browse_position` fills it in on mount from the user
+            # store. Both pages embed a picker of their own and dash rebuilds a
+            # page's layout on every navigation, so a hardcoded path here is
+            # what used to reset the picker to the data root on a page switch.
             dcc.Store(
                 id=IDS.get_id_with_index("browsestore"),
                 storage_type="memory",
-                data={"path": ""},
+                data=None,
             ),
             dcc.Store(
                 id=IDS.get_id_with_index("committedstore"),
@@ -287,6 +292,26 @@ def navigate_directory(
 
 
 @callback(
+    Output({"type": _IDS.browsestore, "index": MATCH}, "data", allow_duplicate=True),
+    Input({"type": _IDS.div, "index": MATCH}, "id"),
+    State(USER_STORE_DIV_ID, "data"),
+    prevent_initial_call="initial_duplicate",
+)
+def hydrate_browse_position(_div_id: dict, user_data: dict | None):
+    """Open a freshly mounted picker on the directory already in use.
+
+    The trigger is the wrapping div's own (static) id, which is just a way of
+    getting a MATCH-keyed callback to fire once per mount. Writing the browse
+    store from here needs `allow_duplicate` because `navigate_directory` writes
+    it too, and `prevent_initial_call="initial_duplicate"` is the one spelling
+    that permits that *and* still fires on mount -- a bare `allow_duplicate`
+    requires `prevent_initial_call=True`, which is exactly what must not happen.
+    """
+
+    return {"path": (user_data or {}).get("working_directory") or ""}
+
+
+@callback(
     Output({"type": _IDS.path, "index": MATCH}, "children"),
     Output({"type": _IDS.entries, "index": MATCH}, "children"),
     Output({"type": _IDS.up, "index": MATCH}, "disabled"),
@@ -296,7 +321,13 @@ def navigate_directory(
 def show_directory_listing(browse_data: dict | None):
     """Fetch the listing for the current browse position and render it."""
 
-    path = (browse_data or {}).get("path", "")
+    if browse_data is None:
+        # mounted but not hydrated yet; `hydrate_browse_position` fires this
+        # again with the real position a moment later. Fetching the data root
+        # here would just be a round trip whose result is about to be replaced.
+        return no_update, no_update, no_update, no_update
+
+    path = browse_data.get("path", "")
     at_root = parent_path(path) is None
     component_index = _matched_index()
 
@@ -327,9 +358,6 @@ def show_directory_listing(browse_data: dict | None):
     Output(
         {"type": _datasetIDS.dropdown, "index": MATCH}, "options", allow_duplicate=True
     ),
-    Output(
-        {"type": _datasetIDS.dropdown, "index": MATCH}, "value", allow_duplicate=True
-    ),
     Output({"type": _IDS.status, "index": MATCH}, "children", allow_duplicate=True),
     Output({"type": _IDS.committedstore, "index": MATCH}, "data"),
     Input({"type": _IDS.use, "index": MATCH}, "n_clicks"),
@@ -345,10 +373,14 @@ def use_directory(n_clicks: int, browse_data: dict | None, recursive: bool):
     than straight into the user store: every output here has to carry the same
     MATCH keys, and the user store is a plain id. `store_working_directory`
     picks it up from there.
+
+    This sets the dropdown's options but deliberately leaves its *value* alone;
+    `store_working_directory` clears that, and the note there explains why the
+    order matters.
     """
 
     if not n_clicks:
-        return no_update, no_update, no_update, no_update
+        return no_update, no_update, no_update
 
     path = (browse_data or {}).get("path", "")
     sisi = SpectraInspectorServerInterface()
@@ -357,7 +389,7 @@ def use_directory(n_clicks: int, browse_data: dict | None, recursive: bool):
         available = sisi.get_datasets_in_directory(path, recursive=bool(recursive))
     except ServerRequestError as err:
         spectraLogger.warning(f"Could not scan '{path}': {err}")
-        return no_update, no_update, html.Div(str(err)), no_update
+        return no_update, html.Div(str(err)), no_update
 
     available_files = available.available_files
     spectraLogger.info(f"'{path}' provided {len(available_files)} datasets")
@@ -367,7 +399,6 @@ def use_directory(n_clicks: int, browse_data: dict | None, recursive: bool):
 
     return (
         format_selections(["none", *available_files]),
-        None,
         html.Div(status),
         {
             "path": path,
@@ -379,6 +410,7 @@ def use_directory(n_clicks: int, browse_data: dict | None, recursive: bool):
 
 @callback(
     Output(USER_STORE_DIV_ID, "data", allow_duplicate=True),
+    Output({"type": _datasetIDS.dropdown, "index": ALL}, "value", allow_duplicate=True),
     Input({"type": _IDS.committedstore, "index": ALL}, "data"),
     State(USER_STORE_DIV_ID, "data"),
     prevent_initial_call=True,
@@ -386,15 +418,26 @@ def use_directory(n_clicks: int, browse_data: dict | None, recursive: bool):
 def store_working_directory(
     committed: list[dict | None], current_user_data: dict | None
 ):
-    """Carry a committed directory into the shared user store.
+    """Carry a committed directory into the shared user store, and clear the
+    sample dropdown, whose previous selection is no longer loaded.
 
     Split out of `use_directory` because the user store has a plain id, which
-    cannot share a callback with MATCH outputs.
+    cannot share a callback with MATCH outputs. ALL, unlike MATCH, *is* allowed
+    alongside a plain output, which is what lets the dropdown be cleared here.
+
+    Clearing it here rather than in `use_directory` is what keeps the write
+    below from being thrown away. `pages/data_selection.update_selected_dataset`
+    also writes the whole user store, triggered by that same dropdown value, and
+    it rebuilds the dict from a `State` snapshot. Fired as a sibling of this
+    callback it would snapshot the store before this write lands and clobber it
+    (`working_directory` came back None every time); chained after it, it reads
+    the store this callback just wrote.
     """
 
     payload = _triggered_commit(committed)
+    n_dropdowns = len(ctx.outputs_list[1]) if len(ctx.outputs_list) > 1 else 0
     if not payload:
-        return no_update
+        return no_update, [no_update] * n_dropdowns
 
     new_user_data = updateDataStore(
         current_user_data or {}, "working_directory", payload.get("path", "")
@@ -407,7 +450,8 @@ def store_working_directory(
     )
     # the previous selection came from a directory that is no longer loaded
     new_user_data = updateDataStore(new_user_data, "selected_dataset", "none")
-    return updateDataStore(new_user_data, "metadata_json", "")
+    new_user_data = updateDataStore(new_user_data, "metadata_json", "")
+    return new_user_data, [None] * n_dropdowns
 
 
 def _triggered_commit(committed: list[dict | None]) -> dict | None:
