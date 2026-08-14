@@ -1,9 +1,11 @@
+import zipfile
 from unittest.mock import patch
 
 import numpy as np
 import pandas as pd
 import pytest
 
+from spectra_inspector.components.data_export_panel import get_element_weights
 from spectra_inspector.settings import Settings
 from spectra_inspector.utilities import model as m
 from spectra_inspector.utilities.matplotib_importer import mpl_pyplot as plt
@@ -84,6 +86,33 @@ def test_write_static_figures_writes_matplotlib_figure(writer):
     out_file = writer.full_file("bitmap.png")
     assert out_file.exists()
     assert out_file.stat().st_size > 0
+
+
+class TestElementWeightsExport:
+    def test_zip_includes_element_weights(self, writer, metadata):
+        metadata["attrs"]["weights"] = {"Na": 0.5, "total_count": 100.0}
+
+        wts = get_element_weights(metadata)
+        assert wts is not None
+        writer.write_element_weights(wts)
+
+        with zipfile.ZipFile(writer.get_zip()) as zf:
+            names = zf.namelist()
+
+        assert str(writer.element_weights_name) in names
+
+    def test_zip_without_element_weights(self, writer, metadata):
+        # the server sends a null weights for a spectrum it cannot calibrate
+        # (issue #92): the export skips the weights file rather than failing.
+        assert get_element_weights(metadata) is None
+
+        writer.write_MSA(metadata, file_type=".csv")
+
+        with zipfile.ZipFile(writer.get_zip()) as zf:
+            names = zf.namelist()
+
+        assert "spectrum.csv" in names
+        assert str(writer.element_weights_name) not in names
 
 
 class TestWriteMSA:

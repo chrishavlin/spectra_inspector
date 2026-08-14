@@ -630,11 +630,11 @@ def export_summary(
             active_spectrum_metadata, file_type=".msa", file_format=msafileformat
         )
         _ = s.write_MSA(active_spectrum_metadata, file_type=".csv")
-        if (
-            "attrs" in active_spectrum_metadata
-            and "weights" in active_spectrum_metadata["attrs"]
-        ):
-            wts = active_spectrum_metadata["attrs"]["weights"]
+        wts = data_export_panel.get_element_weights(active_spectrum_metadata)
+        if wts is None:
+            # nothing to export: the weights file is simply left out of the zip
+            spectraLogger.info("no element weights available, skipping their export")
+        else:
             _ = s.write_element_weights(wts)
 
         return dcc.send_file(s.get_zip())

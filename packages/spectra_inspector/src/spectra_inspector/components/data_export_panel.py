@@ -3,6 +3,8 @@ from dash import Input, Output, State, callback, dcc, html
 
 from spectra_inspector.components.layout_ids import indexedLayoutIDMapper
 
+WEIGHTS_UNAVAILABLE_MSG = "Weights unavailable for this map"
+
 
 class dataExportPanelIDS(indexedLayoutIDMapper):
     prop_names: tuple[str, ...] = (
@@ -189,15 +191,23 @@ def toggle_column_format(filetype, style):
     return style
 
 
+def get_element_weights(active_spectrum_metadata: dict) -> dict | None:
+    """The element weights of a spectrum, None when the server had none to give.
+
+    The server sends a null weights for any spectrum it cannot calibrate, so
+    every consumer has to handle their absence.
+    """
+    return active_spectrum_metadata.get("attrs", {}).get("weights") or None
+
+
 def get_formatted_element_weights(active_spectrum_metadata: dict):
 
     if "attrs" not in active_spectrum_metadata:
         return html.Div()
 
-    if "weights" not in active_spectrum_metadata["attrs"]:
-        return html.Div()
-
-    wts = active_spectrum_metadata["attrs"]["weights"]
+    wts = get_element_weights(active_spectrum_metadata)
+    if wts is None:
+        return html.Div(WEIGHTS_UNAVAILABLE_MSG)
 
     # Format floats and isolate string data pairs
     formatted_data = {
