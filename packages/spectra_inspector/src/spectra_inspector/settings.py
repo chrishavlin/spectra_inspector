@@ -24,6 +24,11 @@ class Settings(BaseSettings):
     # number of uvicorn workers that the fastapi spectra_inspector_server
     # starts with (only used by the docker deployment)
     n_fastapi_workers: int = 1
+    # how many image panels may be fetched at once when a page loads. The
+    # fetches are what make the initial load slow, and a server running with
+    # several workers answers them in parallel. Set to 1 to go back to fetching
+    # them one after another.
+    max_parallel_image_fetches: int = 4
 
     # desktop_mode exposes the working-directory picker on the data selection
     # and inspector pages. It requires the server to run with

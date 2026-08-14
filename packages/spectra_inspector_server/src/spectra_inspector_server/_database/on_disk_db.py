@@ -97,20 +97,39 @@ class OnDiskDatabase:
             msg = f"Not a directory: {target}"
             raise NotADirectoryError(msg)
 
-        self._clear()
-        self.working_directory = target
         spectraLogger.info(f"Inspecting working directory {target} ({recursive=})")
+
+        # Scan into a scratch database and publish the result in one go rather
+        # than clearing this one and refilling it. Requests are served
+        # concurrently and share this object -- in desktop mode behind several
+        # workers they also trigger the rescan themselves -- so a reader must
+        # never catch a half-built working set, which reads as "no datasets
+        # here" and is not distinguishable from an empty directory.
+        scratch = OnDiskDatabase(
+            ph,
+            init_db=False,
+            sample_metadata_csv=self.sample_metadata_csv,
+            allow_mixed_basenames=self.allow_mixed_basenames,
+            max_datasets=self.max_datasets,
+        )
         progress = _recursive_inspection(
             target,
-            self,
+            scratch,
             allow_mixed_basenames=self.allow_mixed_basenames,
             recursive=recursive,
             max_datasets=self.max_datasets,
         )
-        self.scan_truncated = progress.limit_reached()
+        scratch.scan_truncated = progress.limit_reached()
         # prefer a metadata csv alongside the data, fall back to the one at the
         # data root.
-        self._locate_sample_metadata(target, ph.data_root)
+        scratch._locate_sample_metadata(target, ph.data_root)
+        scratch.available_samples  # noqa: B018  (populate before publishing)
+
+        self.available_maps = scratch.available_maps
+        self._available_samples = scratch._available_samples
+        self.sample_metadata_fullpath = scratch.sample_metadata_fullpath
+        self.scan_truncated = scratch.scan_truncated
+        self.working_directory = target
         return target
 
     def _locate_sample_metadata(self, *directories: Path) -> None:

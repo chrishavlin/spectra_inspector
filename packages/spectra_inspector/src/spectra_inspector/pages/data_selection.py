@@ -12,7 +12,11 @@ from spectra_inspector.components import (
 from spectra_inspector.components.dataset_selector import format_selections
 from spectra_inspector.components.nested_accordian import nested_accordian
 from spectra_inspector.logging import spectraLogger
-from spectra_inspector.user_store_model import USER_STORE_DIV_ID, updateDataStore
+from spectra_inspector.user_store_model import (
+    USER_STORE_DIV_ID,
+    UserStore,
+    updateDataStore,
+)
 from spectra_inspector.utilities.coerce import spaces_to_placeholder
 from spectra_inspector.utilities.interface import SpectraInspectorServerInterface
 from spectra_inspector.utilities.model import AvailableDatasets
@@ -92,6 +96,7 @@ def update_selected_dataset(
     sisi = SpectraInspectorServerInterface()
 
     trigger = ctx.triggered_id
+    dir_sync = UserStore(**current_user_data).directory_sync()
 
     is_refresh = trigger == selectorIDs.get_id_with_index("refresh") and n_clicks > 0
     is_dropdown = trigger == selectorIDs.get_id_with_index("dropdown")
@@ -100,7 +105,9 @@ def update_selected_dataset(
     new_user_data = updateDataStore(current_user_data, "selected_dataset", input_value)
     output_options = current_options
     if new_user_data.get("sample_metadata", None) is None or is_refresh:
-        available = sisi.get_available_datasets(refresh_db=True)
+        available = sisi.get_available_datasets(
+            refresh_db=True, directory_sync=dir_sync
+        )
         if is_refresh:
             all_files = ["none", *available.available_files]
             output_options = format_selections(all_files)
@@ -115,7 +122,7 @@ def update_selected_dataset(
 
     meta_json_str: str = "{}"
     if has_input:
-        meta = sisi.get_combined_image_metadata(input_value)
+        meta = sisi.get_combined_image_metadata(input_value, directory_sync=dir_sync)
         meta_json_str = meta.model_dump_json()
         meta_dict = meta.model_dump()
 

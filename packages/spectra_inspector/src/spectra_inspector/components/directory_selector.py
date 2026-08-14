@@ -502,6 +502,7 @@ def use_directory(n_clicks: int, browse_data: dict | None, recursive: bool):
         loaded_status(len(available_files), label, truncated=available.truncated),
         {
             "path": path,
+            "recursive": bool(recursive),
             "available_files": available_files,
             "sample_metadata": available.sample_metadata,
             "truncated": available.truncated,
@@ -542,6 +543,11 @@ def store_working_directory(
 
     new_user_data = updateDataStore(
         current_user_data or {}, "working_directory", payload.get("path", "")
+    )
+    new_user_data = updateDataStore(
+        new_user_data,
+        "working_directory_recursive",
+        bool(payload.get("recursive", True)),
     )
     new_user_data = updateDataStore(
         new_user_data, "available_files", payload.get("available_files") or []

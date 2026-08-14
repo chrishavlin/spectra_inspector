@@ -274,6 +274,126 @@ def test_datasets_in_missing_directory(desktop_client: TestClient) -> None:
     assert response.status_code == 404
 
 
+def test_working_directory_param_syncs_a_worker_that_missed_the_selection(
+    desktop_client: TestClient,
+) -> None:
+    """Behind several uvicorn workers only one of them served
+    /datasets-in-directory. This client stands in for one of the others: it has
+    never scanned anything, and the directory carried on the request is what
+    lets it catch up."""
+
+    cold = AvailableDatasets(**desktop_client.get("/available-datasets").json())
+    assert cold.available_files == []
+
+    response = desktop_client.get(
+        "/available-datasets", params={"working_directory": "session-a"}
+    )
+    assert response.status_code == 200
+
+    datasets = AvailableDatasets(**response.json())
+    assert set(datasets.available_files) == {"C-1", "C-2"}
+    assert datasets.directory == "session-a"
+
+
+def test_working_directory_param_honours_the_recursive_flag(
+    desktop_client: TestClient,
+) -> None:
+    response = desktop_client.get(
+        "/available-datasets",
+        params={
+            "working_directory": "session-a",
+            "working_directory_recursive": False,
+        },
+    )
+    assert set(AvailableDatasets(**response.json()).available_files) == {"C-1"}
+
+
+def test_empty_working_directory_means_the_data_root(
+    desktop_client: TestClient,
+) -> None:
+    # "" is a real selection, so it must sync rather than be read as "unset"
+    desktop_client.get("/datasets-in-directory", params={"path": "session-b"})
+
+    response = desktop_client.get(
+        "/available-datasets", params={"working_directory": ""}
+    )
+    datasets = AvailableDatasets(**response.json())
+    assert set(datasets.available_files) == {"C-1", "C-2", "C-3"}
+    assert datasets.directory == ""
+
+
+def test_no_working_directory_param_leaves_the_selection_alone(
+    desktop_client: TestClient,
+) -> None:
+    desktop_client.get("/datasets-in-directory", params={"path": "session-b"})
+
+    datasets = AvailableDatasets(**desktop_client.get("/available-datasets").json())
+    assert set(datasets.available_files) == {"C-3"}
+    assert datasets.directory == "session-b"
+
+
+def test_matching_working_directory_does_not_rescan(
+    desktop_client: TestClient,
+) -> None:
+    desktop_client.get("/datasets-in-directory", params={"path": "session-a"})
+    ph = desktop_client.app.state.ph  # type:ignore[attr-defined]
+    before = ph.database.available_maps
+
+    desktop_client.get("/available-datasets", params={"working_directory": "session-a"})
+
+    # same directory, so the database object is left untouched rather than
+    # rebuilt on every single request
+    assert ph.database.available_maps is before
+
+
+def test_working_directory_is_ignored_outside_desktop_mode(
+    server_client: TestClient,
+) -> None:
+    # a full-scan server shares one database across workers already, and must
+    # not let a client narrow it
+    response = server_client.get(
+        "/available-datasets", params={"working_directory": "session-a"}
+    )
+    assert response.status_code == 200
+    assert set(AvailableDatasets(**response.json()).available_files) == {
+        "C-1",
+        "C-2",
+        "C-3",
+    }
+
+
+@pytest.mark.parametrize("path", ["..", "/etc"])
+def test_working_directory_outside_data_root_is_forbidden(
+    desktop_client: TestClient, path: str
+) -> None:
+    response = desktop_client.get(
+        "/available-datasets", params={"working_directory": path}
+    )
+    assert response.status_code == 403
+
+
+def test_working_directory_syncs_the_data_endpoints_too(
+    desktop_client: TestClient,
+) -> None:
+    """The dataset list is not the only thing gated on the per-worker database;
+    every data endpoint checks the sample name against it."""
+
+    ph = desktop_client.app.state.ph  # type:ignore[attr-defined]
+    assert _valid_sample_name("C-3", ph) is False
+
+    # ask for a name that is not there either way, so the sync is all that
+    # happens -- these fixtures' EDAX files are stubs that cannot be loaded
+    response = desktop_client.get(
+        "/image-metadata",
+        params={"sample_name": "not-a-sample", "working_directory": "session-b"},
+    )
+    assert response.status_code == 404
+
+    # the directory still landed, so the samples in it are now addressable
+    assert _valid_sample_name("C-3", ph) is True
+    assert ph.database.working_directory.name == "session-b"
+
+
 def test_selected_datasets_become_valid_sample_names(
     desktop_client: TestClient,
 ) -> None:

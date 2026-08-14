@@ -5,7 +5,9 @@ from spectra_inspector.utilities.interface import SpectraInspectorServerInterfac
 
 
 def test_dataset_selector_no_connection():
-    sisi = SpectraInspectorServerInterface()
+    # pin the port to one nothing can be listening on, so the test does not
+    # depend on whether a real backend happens to be running locally
+    sisi = SpectraInspectorServerInterface(port=1)
     assert sisi.connected is False
     ds_div, _ = dataset_selector(sisi)
     assert isinstance(ds_div, html.Div)
