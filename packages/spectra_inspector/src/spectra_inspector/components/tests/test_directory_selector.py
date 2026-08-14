@@ -11,6 +11,7 @@ from spectra_inspector.components.directory_selector import (
     directory_selector,
     directorySelectorLayoutIDs,
     entry_id,
+    hydrate_browse_position,
     navigate_directory,
     parent_path,
     path_label,
@@ -59,6 +60,39 @@ def test_directory_selector_builds_controls():
     assert div.id == {"type": "directory-selector-div", "index": 1}
     # the two stores plus the card of controls
     assert len(div.children) == 3
+
+
+def test_browse_store_starts_unhydrated():
+    # None is the "not hydrated yet" sentinel `show_directory_listing` waits on;
+    # a hardcoded path here is what used to reset the picker on a page switch
+    div = directory_selector(component_index=0, enabled=True)
+    browse_store = div.children[0]
+    assert browse_store.id == {"type": "directory-selector-browsestore", "index": 0}
+    assert browse_store.data is None
+
+
+@pytest.mark.parametrize(
+    ("user_data", "expected"),
+    [
+        ({"working_directory": "session-a"}, "session-a"),
+        # nothing committed yet, or committed at the data root
+        ({"working_directory": None}, ""),
+        ({"working_directory": ""}, ""),
+        ({}, ""),
+        (None, ""),
+    ],
+)
+def test_hydrate_browse_position(user_data, expected):
+    div_id = {"type": "directory-selector-div", "index": 1}
+    assert hydrate_browse_position(div_id, user_data) == {"path": expected}
+
+
+def test_show_directory_listing_waits_for_hydration(mocker):
+    sisi = _mock_interface(mocker, browse_directory=mocker.MagicMock())
+    _set_outputs_for_index(0)
+
+    assert all(out is no_update for out in show_directory_listing(None))
+    sisi.browse_directory.assert_not_called()
 
 
 @pytest.mark.parametrize(
@@ -245,12 +279,11 @@ def test_use_directory_populates_the_sample_dropdown(mocker):
         mocker, get_datasets_in_directory=mocker.MagicMock(return_value=available)
     )
 
-    options, value, status, committed = use_directory(1, {"path": "session-a"}, True)
+    options, status, committed = use_directory(1, {"path": "session-a"}, True)
 
     sisi.get_datasets_in_directory.assert_called_once_with("session-a", recursive=True)
 
     assert [o["value"] for o in options] == ["none", "C-1", "C-2"]
-    assert value is None
     assert "Loaded 2 datasets" in status.children
     assert committed == {
         "path": "session-a",
@@ -265,7 +298,7 @@ def test_use_directory_passes_the_recursive_flag(mocker):
         mocker, get_datasets_in_directory=mocker.MagicMock(return_value=available)
     )
 
-    _, _, status, _ = use_directory(1, {"path": "session-a"}, False)
+    _, status, _ = use_directory(1, {"path": "session-a"}, False)
 
     sisi.get_datasets_in_directory.assert_called_once_with("session-a", recursive=False)
     assert "Loaded 1 dataset " in status.children
@@ -282,10 +315,9 @@ def test_use_directory_reports_server_errors(mocker):
     err = ServerRequestError("'nope' is not a directory")
     _mock_interface(mocker, get_datasets_in_directory=mocker.MagicMock(side_effect=err))
 
-    options, value, status, committed = use_directory(1, {"path": "nope"}, True)
+    options, status, committed = use_directory(1, {"path": "nope"}, True)
 
     assert options is no_update
-    assert value is no_update
     assert committed is no_update
     assert "not a directory" in status.children
 
@@ -297,7 +329,7 @@ _COMMIT = {
 }
 
 
-def _set_inputs_list(ids: list[dict]) -> None:
+def _set_inputs_list(ids: list[dict], n_dropdowns: int = 1) -> None:
     context_value.set(
         AttributeDict(
             triggered_inputs=[
@@ -305,6 +337,16 @@ def _set_inputs_list(ids: list[dict]) -> None:
             ],
             args_grouping=[],
             inputs_list=[[{"id": cid, "property": "data"} for cid in ids]],
+            outputs_list=[
+                {"id": "user-mem-store", "property": "data"},
+                [
+                    {
+                        "id": {"type": "data-selector-dropdown", "index": i},
+                        "property": "value",
+                    }
+                    for i in range(n_dropdowns)
+                ],
+            ],
         )
     )
 
@@ -312,7 +354,7 @@ def _set_inputs_list(ids: list[dict]) -> None:
 def test_store_working_directory():
     _set_inputs_list([{"type": "directory-selector-committedstore", "index": 0}])
 
-    user_data = store_working_directory(
+    user_data, dropdown_values = store_working_directory(
         [_COMMIT],
         {"selected_dataset": "stale-sample", "metadata_json": "{...}"},
     )
@@ -323,12 +365,30 @@ def test_store_working_directory():
     # the previous selection came from a directory that is no longer loaded
     assert user_data["selected_dataset"] == "none"
     assert user_data["metadata_json"] == ""
+    # clearing the dropdown here, rather than in use_directory, is what chains
+    # pages.data_selection.update_selected_dataset after this write instead of
+    # racing it -- fired as a sibling it clobbered working_directory
+    assert dropdown_values == [None]
+
+
+def test_store_working_directory_clears_every_dropdown_on_the_page():
+    # the output is an ALL pattern, so the return has to be sized to match
+    _set_inputs_list(
+        [{"type": "directory-selector-committedstore", "index": 0}], n_dropdowns=2
+    )
+
+    _, dropdown_values = store_working_directory([_COMMIT], {})
+
+    assert dropdown_values == [None, None]
 
 
 def test_store_working_directory_ignores_an_empty_commit():
     _set_inputs_list([{"type": "directory-selector-committedstore", "index": 0}])
-    assert store_working_directory([{}], {}) is no_update
-    assert store_working_directory([], {}) is no_update
+
+    for committed in ([{}], []):
+        user_data, dropdown_values = store_working_directory(committed, {})
+        assert user_data is no_update
+        assert dropdown_values == [no_update]
 
 
 def test_store_working_directory_picks_the_triggering_selector():
@@ -340,7 +400,7 @@ def test_store_working_directory_picks_the_triggering_selector():
     _set_inputs_list(ids)
 
     other = {"path": "session-b", "available_files": ["C-3"], "sample_metadata": None}
-    user_data = store_working_directory([other, _COMMIT], {})
+    user_data, _ = store_working_directory([other, _COMMIT], {})
 
     assert user_data["working_directory"] == "session-a"
     assert user_data["available_files"] == ["C-1", "C-2"]
