@@ -31,6 +31,10 @@ class Settings(BaseSettings):
     # when desktop_mode is false.
     max_datasets: PositiveInt | None = None
 
+    # number of uvicorn workers that `fastapi run` starts with (only used by the
+    # docker deployment, where the Dockerfile CMD expands it at container start)
+    n_fastapi_workers: PositiveInt = 1
+
     log_level: Literal[
         "DEBUG",
         "INFO",

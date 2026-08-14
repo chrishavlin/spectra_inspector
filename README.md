@@ -30,10 +30,6 @@ need. Every frontend setting is read with a `SPECTRA_INSPECTOR_` prefix
   used by the frontend. Defaults to `localhost`.
 - `SPECTRA_INSPECTOR_SERVER_PORT`: port number of the FastAPI backend used by
   the frontend. Defaults to `8000`.
-- `SPECTRA_INSPECTOR_N_FASTAPI_WORKERS`: number of uvicorn workers that the
-  FastAPI backend starts with. Defaults to `1`. Only used by the docker
-  deployment, where docker compose passes the value through to the backend
-  container.
 - `SPECTRA_INSPECTOR_DESKTOP_MODE`: set to `true` to show the working-directory
   picker on the data selection and inspector pages. Defaults to `false`. The
   backend must be started with `SPECTRA_INSPECTOR_DESKTOP_MODE=true` as well;
@@ -74,6 +70,10 @@ setting is read with a `SPECTRA_INSPECTOR_` prefix:
   `SPECTRA_INSPECTOR_DATA_ROOT` at startup and instead let the frontend pick a
   working directory to scan. Defaults to `false`. See
   [Configuration for local deployment](#configuration-for-local-deployment).
+- `SPECTRA_INSPECTOR_N_FASTAPI_WORKERS`: number of uvicorn workers that the
+  FastAPI backend starts with. Defaults to `1`. Only used by the docker
+  deployment, where docker compose passes the value through to the backend
+  container.
 - `SPECTRA_INSPECTOR_LOG_LEVEL`: logging verbosity for the backend. Accepted
   values are `DEBUG`, `INFO`, `WARNING`, `ERROR`, and `CRITICAL`; the default is
   `INFO`.

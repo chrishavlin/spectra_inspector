@@ -74,9 +74,10 @@ Copy `default.env` to `.env` and modify as needed. Every setting is read with a
 `SPECTRA_INSPECTOR_DATA_ROOT`, `SPECTRA_INSPECTOR_HOST_DATA_ROOT`,
 `SPECTRA_INSPECTOR_ALLOW_DB_REFRESH`,
 `SPECTRA_INSPECTOR_DB_ALLOW_MIXED_BASENAMES`, `SPECTRA_INSPECTOR_DESKTOP_MODE`,
-`SPECTRA_INSPECTOR_MAX_DATASETS`, `SPECTRA_INSPECTOR_LOG_LEVEL`), matching the
-`spectra_inspector` frontend package. The same names may be set as process
-environment variables instead, with preference given to the values in `.env`.
+`SPECTRA_INSPECTOR_MAX_DATASETS`, `SPECTRA_INSPECTOR_N_FASTAPI_WORKERS`,
+`SPECTRA_INSPECTOR_LOG_LEVEL`), matching the `spectra_inspector` frontend
+package. The same names may be set as process environment variables instead,
+with preference given to the values in `.env`.
 
 Unknown keys in `.env` are rejected rather than ignored, so a stale `.env` fails
 fast: keys under the prefix that don't match a setting raise `extra_forbidden`,
@@ -181,6 +182,10 @@ Env vars:
   path. If running outside of docker, this should point to the host data path.
 - `SPECTRA_INSPECTOR_HOST_DATA_ROOT`: path to data on host machine, used by
   docker compose to bind mount a directory. Only used by docker.
+- `SPECTRA_INSPECTOR_N_FASTAPI_WORKERS`: number of uvicorn workers that
+  `fastapi run` starts with, defaults to `1`. Only used by docker: docker
+  compose passes it through to the container, where the `Dockerfile` `CMD`
+  expands it at start up.
 
 So an example `.env` for deployment might look like:
 
