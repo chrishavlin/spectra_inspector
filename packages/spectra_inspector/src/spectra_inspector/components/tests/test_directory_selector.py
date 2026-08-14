@@ -42,6 +42,15 @@ def _clear_context():
     context_value.set(AttributeDict(triggered_inputs=[]))
 
 
+@pytest.fixture(autouse=True)
+def _desktop_mode_off(mocker):
+    # `data_root_label` reads Settings(), so these would otherwise depend on
+    # whether the developer's .env happens to switch desktop mode on -- CI has
+    # no .env and passes either way. The tests that want it on re-patch over
+    # this with `_mock_settings`.
+    _mock_settings(mocker, False)
+
+
 def test_directory_selector_layout_ids():
     ids = directorySelectorLayoutIDs(index=0)
     for prop in ids.prop_names:
@@ -92,7 +101,7 @@ def test_show_directory_listing_waits_for_hydration(mocker):
     sisi = _mock_interface(mocker, browse_directory=mocker.MagicMock())
     _set_outputs_for_index(0)
 
-    assert all(out is no_update for out in show_directory_listing(None))
+    assert all(out is no_update for out in show_directory_listing(None, None))
     sisi.browse_directory.assert_not_called()
 
 
@@ -255,7 +264,9 @@ def test_show_directory_listing(mocker):
     _mock_interface(mocker, browse_directory=mocker.MagicMock(return_value=_LISTING))
     _set_outputs_for_index(0)
 
-    label, entries, up_disabled, status = show_directory_listing({"path": "session-a"})
+    label, entries, up_disabled, status = show_directory_listing(
+        {"path": "session-a"}, None
+    )
 
     assert label == "<data root>/session-a"
     assert [e.id["name"] for e in entries] == ["session-a/nested"]
@@ -276,7 +287,7 @@ def test_show_directory_listing_shows_the_real_root_in_desktop_mode(mocker):
     )
     _set_outputs_for_index(0)
 
-    label, _, _, _ = show_directory_listing({"path": "session-a"})
+    label, _, _, _ = show_directory_listing({"path": "session-a"}, None)
 
     assert label == "/data/edax/session-a"
 
@@ -287,7 +298,7 @@ def test_show_directory_listing_uses_the_matched_index(mocker):
     _mock_interface(mocker, browse_directory=mocker.MagicMock(return_value=_LISTING))
     _set_outputs_for_index(1)
 
-    _, entries, _, _ = show_directory_listing({"path": "session-a"})
+    _, entries, _, _ = show_directory_listing({"path": "session-a"}, None)
 
     assert [e.id["index"] for e in entries] == [1]
 
@@ -297,14 +308,15 @@ def test_show_directory_listing_with_no_subdirectories(mocker):
     _mock_interface(mocker, browse_directory=mocker.MagicMock(return_value=leaf))
     _set_outputs_for_index(0)
 
-    _, entries, up_disabled, status = show_directory_listing({"path": "a"})
+    _, entries, up_disabled, status = show_directory_listing({"path": "a"}, None)
 
     # a placeholder row, and crucially nothing carrying a clickable id
     assert len(entries) == 1
     assert entries[0].disabled is True
     assert not hasattr(entries[0], "name")
     assert up_disabled is False
-    assert "3 datasets in this directory" in status.children
+    # nothing to search, so no pointer at the button that would search it
+    assert status.children == "3 datasets in this directory."
 
 
 def test_show_directory_listing_at_the_data_root(mocker):
@@ -312,7 +324,7 @@ def test_show_directory_listing_at_the_data_root(mocker):
     _mock_interface(mocker, browse_directory=mocker.MagicMock(return_value=root))
     _set_outputs_for_index(0)
 
-    label, entries, up_disabled, status = show_directory_listing({"path": ""})
+    label, entries, up_disabled, status = show_directory_listing({"path": ""}, None)
 
     assert label == "<data root>"
     assert len(entries) == 1
@@ -321,12 +333,78 @@ def test_show_directory_listing_at_the_data_root(mocker):
     assert "0 datasets in this directory" in status.children
 
 
+_COMMITTED_STORE = {
+    "working_directory": "session-a",
+    "available_files": ["C-1", "C-2"],
+}
+
+
+def test_show_directory_listing_restores_the_committed_count(mocker):
+    # a fresh mount on the other page has no memory of the message
+    # `use_directory` wrote, but the user store still knows what was loaded
+    _mock_interface(mocker, browse_directory=mocker.MagicMock(return_value=_LISTING))
+    _set_outputs_for_index(1)
+
+    _, _, _, status = show_directory_listing({"path": "session-a"}, _COMMITTED_STORE)
+
+    assert status.children == "Loaded 2 datasets from <data root>/session-a."
+
+
+def test_show_directory_listing_counts_directories_that_are_not_in_use(mocker):
+    # browsing away from the committed directory goes back to the plain count
+    _mock_interface(mocker, browse_directory=mocker.MagicMock(return_value=_LISTING))
+    _set_outputs_for_index(0)
+
+    store = {**_COMMITTED_STORE, "working_directory": "session-b"}
+    _, _, _, status = show_directory_listing({"path": "session-a"}, store)
+
+    assert "1 dataset in this directory" in status.children
+
+
+def test_show_directory_listing_ignores_a_store_with_nothing_committed(mocker):
+    root = directoryListing(path="", name="root", parent_path=None, dataset_count=0)
+    _mock_interface(mocker, browse_directory=mocker.MagicMock(return_value=root))
+    _set_outputs_for_index(0)
+
+    # working_directory defaults to None, which reads as "" -- the data root --
+    # so it must be the missing available_files that rules a commit out
+    _, _, _, status = show_directory_listing({"path": ""}, {"selected_dataset": "none"})
+
+    assert "0 datasets in this directory" in status.children
+
+
+def test_show_directory_listing_restores_a_truncated_scan(mocker):
+    # the warning has to come back with the count, or a page switch quietly
+    # turns "showing the first N" into "loaded N"
+    _mock_interface(mocker, browse_directory=mocker.MagicMock(return_value=_LISTING))
+    _set_outputs_for_index(1)
+
+    store = {**_COMMITTED_STORE, "truncated": True}
+    _, _, _, status = show_directory_listing({"path": "session-a"}, store)
+
+    text = " ".join(child.children for child in status.children)
+    assert "first 2 datasets" in text
+    assert "Pick a subdirectory" in text
+    assert "text-warning" in status.className
+
+
+def test_show_directory_listing_restores_a_commit_at_the_data_root(mocker):
+    root = directoryListing(path="", name="root", parent_path=None, dataset_count=0)
+    _mock_interface(mocker, browse_directory=mocker.MagicMock(return_value=root))
+    _set_outputs_for_index(0)
+
+    store = {"working_directory": "", "available_files": ["C-1"]}
+    _, _, _, status = show_directory_listing({"path": ""}, store)
+
+    assert status.children == "Loaded 1 dataset from <data root>."
+
+
 def test_show_directory_listing_reports_server_errors(mocker):
     err = ServerRequestError("directory browsing requires DESKTOP_MODE")
     _mock_interface(mocker, browse_directory=mocker.MagicMock(side_effect=err))
     _set_outputs_for_index(0)
 
-    label, entries, up_disabled, status = show_directory_listing({"path": "a"})
+    label, entries, up_disabled, status = show_directory_listing({"path": "a"}, None)
 
     assert label == "<data root>/a"
     assert entries == []
@@ -341,7 +419,7 @@ def test_show_directory_listing_without_a_backend(mocker):
 
     _set_outputs_for_index(0)
 
-    _, entries, _, status = show_directory_listing({"path": ""})
+    _, entries, _, status = show_directory_listing({"path": ""}, None)
 
     assert entries == []
     assert "Could not connect" in status.children
@@ -367,6 +445,7 @@ def test_use_directory_populates_the_sample_dropdown(mocker):
         "path": "session-a",
         "available_files": ["C-1", "C-2"],
         "sample_metadata": {"records": [], "map_samples": {}},
+        "truncated": False,
     }
 
 
