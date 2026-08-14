@@ -87,9 +87,11 @@ Data source is a filesystem scan, not a real database:
   `OnDiskDatabase` (`_database/on_disk_db.py`).
 - `OnDiskDatabase` recursively walks `SPECTRA_INSPECTOR_DATA_ROOT` for `.spd`
   files that have sibling `.spc`/`.ipr` (required) plus optional `.bmp`/`.xml`,
-  keyed by **file basename, which must be globally unique** across the tree.
-  Rescanning only happens via `/available-datasets?refresh_db=true` and only
-  when `SPECTRA_INSPECTOR_ALLOW_DB_REFRESH=true`.
+  keyed by **file basename**; a basename seen a second time anywhere in the tree
+  is skipped with a warning (`OnDiskDatabase.add_fileset` returns False), so the
+  first one found wins rather than the scan erroring out. Rescanning only
+  happens via `/available-datasets?refresh_db=true` and only when
+  `SPECTRA_INSPECTOR_ALLOW_DB_REFRESH=true`.
 - `SPECTRA_INSPECTOR_DESKTOP_MODE=true` skips that startup walk entirely
   (`dependencies.get_database_session` passes `init_db=False`) and enables
   `/browse-directory` + `/datasets-in-directory`, which let a client walk the

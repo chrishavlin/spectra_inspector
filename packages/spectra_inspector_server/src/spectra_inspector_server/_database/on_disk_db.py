@@ -83,7 +83,6 @@ class OnDiskDatabase:
             self,
             allow_mixed_basenames=self.allow_mixed_basenames,
             recursive=recursive,
-            skip_duplicates=True,
         )
         # prefer a metadata csv alongside the data, fall back to the one at the
         # data root.
@@ -104,17 +103,32 @@ class OnDiskDatabase:
 
     def add_fileset(
         self, basename: str, files: dict[str, Path] | EDAX_file_set
-    ) -> None:
-        if basename in self.available_maps:
-            msg = f"Duplicate map name! {basename} exists already."
-            raise KeyError(msg)
+    ) -> bool:
+        """Register a fileset under ``basename``.
 
+        Returns True when the fileset was added, False when ``basename`` is
+        already registered (in which case the new fileset is skipped and a
+        warning is emitted).
+        """
         if not isinstance(files, EDAX_file_set):
             new_set = EDAX_file_set(**files)
         else:
             new_set = files
+
+        existing = self.available_maps.get(basename)
+        if existing is not None:
+            spectraLogger.warning(
+                "Duplicate map name! Skipping %s, the name %s is already "
+                "registered for %s.",
+                new_set.spd,
+                basename,
+                existing.spd,
+            )
+            return False
+
         spectraLogger.debug(f"adding {basename} to available_maps")
         self.available_maps[basename] = new_set
+        return True
 
     @property
     def sample_metadata_mapper(self) -> SampleMetadataMapper | None:
@@ -174,7 +188,6 @@ def _recursive_inspection(
     allow_mixed_basenames: bool = False,
     progress: InspectionProgress | None = None,
     recursive: bool = True,
-    skip_duplicates: bool = False,
 ) -> None:
     if progress is None:
         progress = InspectionProgress()
@@ -207,16 +220,8 @@ def _recursive_inspection(
             else:
                 basename = edax_set.spd.stem
 
-            if skip_duplicates and basename in db.available_maps:
-                spectraLogger.warning(
-                    "Skipping %s, a dataset named %s is already registered",
-                    edax_set.spd,
-                    basename,
-                )
-                continue
-
-            db.add_fileset(basename, edax_set)
-            progress.datasets_found += 1
+            if db.add_fileset(basename, edax_set):
+                progress.datasets_found += 1
 
         # go deeper if needed
         if recursive:
@@ -227,7 +232,6 @@ def _recursive_inspection(
                     allow_mixed_basenames=allow_mixed_basenames,
                     progress=progress,
                     recursive=recursive,
-                    skip_duplicates=skip_duplicates,
                 )
 
 
