@@ -1,3 +1,5 @@
+from concurrent.futures import ThreadPoolExecutor
+
 import dash_bootstrap_components as dbc
 import numpy as np
 import numpy.typing as npt
@@ -11,9 +13,11 @@ from spectra_inspector.components.energy_range_slider import (
 from spectra_inspector.components.layout_ids import indexedLayoutIDMapper
 from spectra_inspector.components.scalebar import scalebarHandler
 from spectra_inspector.logging import spectraLogger
+from spectra_inspector.settings import Settings
 from spectra_inspector.user_store_model import UserStore
 from spectra_inspector.utilities.coerce import get_sequential_colorscales
 from spectra_inspector.utilities.interface import SpectraInspectorServerInterface
+from spectra_inspector.utilities.model import CombinedMetadata
 from spectra_inspector.utilities.scaling import get_closest_index
 
 _colorscales = get_sequential_colorscales()
@@ -164,6 +168,61 @@ def bitmap_image_layout(
     return _primary_graph_div, imIDs
 
 
+def fetch_im_data(
+    user_store: UserStore,
+    slider_range: tuple[float, float],
+    md: CombinedMetadata,
+) -> npt.NDArray:
+    """Fetch one summed image over the slider's energy range.
+
+    Split out of get_new_im so several panels can be fetched at once -- this is
+    the only blocking call in building a figure, and it dominates everything
+    else by three orders of magnitude.
+    """
+    indx0 = get_closest_index(md.axes_by_index[2], slider_range[0])
+    indx1 = get_closest_index(md.axes_by_index[2], slider_range[1])
+
+    msg = f"fetching image data: {user_store.selected_dataset}, {indx0}, {indx1}"
+    spectraLogger.info(msg)
+    sisi = SpectraInspectorServerInterface()
+    im = sisi.image_data_summed(
+        user_store.selected_dataset,
+        (indx0, indx1),
+        directory_sync=user_store.directory_sync(),
+    )
+    return np.array(im.image).reshape(im.shape)
+
+
+def fetch_im_data_parallel(
+    user_store: UserStore,
+    slider_ranges: list[tuple[float, float]],
+    md: CombinedMetadata,
+) -> list[npt.NDArray]:
+    """Fetch several panels' image data concurrently, in slider_ranges order.
+
+    requests releases the GIL while waiting on the socket, so threads are
+    enough here: the work is all on the backend, which serves the requests in
+    parallel when it runs with more than one worker.
+
+    Concurrent requests necessarily land on different workers, so in desktop
+    mode each one carries the working directory out of the user store (see
+    UserStore.directory_sync) and any worker that missed the original
+    selection rescans before answering.
+    """
+    max_parallel = Settings().max_parallel_image_fetches
+    if len(slider_ranges) == 1 or max_parallel <= 1:
+        return [fetch_im_data(user_store, rng, md) for rng in slider_ranges]
+
+    workers = min(len(slider_ranges), max_parallel)
+    with ThreadPoolExecutor(max_workers=workers) as executor:
+        return list(
+            executor.map(
+                lambda rng: fetch_im_data(user_store, rng, md),
+                slider_ranges,
+            )
+        )
+
+
 def get_new_im(
     user_store: UserStore,
     slider_range: tuple[float, float],
@@ -172,20 +231,15 @@ def get_new_im(
     scalebar_handler: scalebarHandler | None = None,
     zmin: float | None = None,
     zmax: float | None = None,
+    md: CombinedMetadata | None = None,
 ):
 
-    sisi = SpectraInspectorServerInterface()
-    md = user_store.conditionally_fetch_metadata()
+    if md is None:
+        md = user_store.conditionally_fetch_metadata()
     assert md is not None
 
     if im_data is None:
-        indx0 = get_closest_index(md.axes_by_index[2], slider_range[0])
-        indx1 = get_closest_index(md.axes_by_index[2], slider_range[1])
-
-        msg = f"fetching image data: {user_store.selected_dataset}, {indx0}, {indx1}"
-        spectraLogger.info(msg)
-        im = sisi.image_data_summed(user_store.selected_dataset, (indx0, indx1))
-        im_data = np.array(im.image).reshape(im.shape)
+        im_data = fetch_im_data(user_store, slider_range, md)
 
     fig = px.imshow(
         im_data,

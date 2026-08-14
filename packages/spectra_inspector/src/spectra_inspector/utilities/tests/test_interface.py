@@ -30,7 +30,7 @@ def test_available_datasets(mocker):
     mock_response = mocker.Mock()
     mock_response.status_code = 200
     mock_response.json.return_value = {"available_files": ["f1", "f2", "f3"]}
-    mocker.patch("requests.get", return_value=mock_response)
+    mocker.patch("requests.Session.get", return_value=mock_response)
 
     sisi = SpectraInspectorServerInterface()
     assert sisi.connected
@@ -46,7 +46,7 @@ def test_get_image_spectrum(mocker):
     expected_response = Spectrum1dDict(list(range(10)), list(range(10)), 0, 1)
 
     mock_response.json.return_value = asdict(expected_response)
-    mocker.patch("requests.get", return_value=mock_response)
+    mocker.patch("requests.Session.get", return_value=mock_response)
 
     sisi = SpectraInspectorServerInterface()
     assert sisi.connected
@@ -63,7 +63,7 @@ def _mock_get(mocker, payload: dict, status_code: int = 200):
     mock_response = mocker.Mock()
     mock_response.status_code = status_code
     mock_response.json.return_value = payload
-    return mocker.patch("requests.get", return_value=mock_response)
+    return mocker.patch("requests.Session.get", return_value=mock_response)
 
 
 def test_browse_directory(mocker):
@@ -126,7 +126,7 @@ def test_server_error_without_a_detail_payload(mocker):
     mock_response = mocker.Mock()
     mock_response.status_code = 500
     mock_response.json.side_effect = ValueError("not json")
-    mocker.patch("requests.get", return_value=mock_response)
+    mocker.patch("requests.Session.get", return_value=mock_response)
 
     sisi = SpectraInspectorServerInterface()
     with pytest.raises(ServerRequestError, match="status 500"):

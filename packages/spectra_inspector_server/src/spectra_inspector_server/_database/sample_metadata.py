@@ -55,6 +55,13 @@ class SampleMetadataMapper:
 
         df = self.df
         if available_samples is not None:
+            if not available_samples:
+                # nothing to join against, and an empty frame has no sample_id
+                # column for the merge below to key on. Reachable in desktop
+                # mode whenever a metadata csv has been located but no datasets
+                # have been scanned yet.
+                return sampleMetadata(map_samples=available_samples)
+
             recs = [
                 {"map_id": m, "sample_id": sid} for m, sid in available_samples.items()
             ]

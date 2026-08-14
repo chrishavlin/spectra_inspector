@@ -1,4 +1,5 @@
 import asyncio
+import threading
 from asyncio.tasks import Task
 from concurrent.futures import ProcessPoolExecutor
 from contextlib import asynccontextmanager
@@ -45,6 +46,70 @@ def _valid_sample_name(sample_name: str, ph: EDAXPathHandler) -> bool:
         return sample_name in _on_disc_mock.filenames
 
     return False
+
+
+_working_directory_lock = threading.Lock()
+
+
+def _synced_path_handler(
+    request: Request,
+    settings: Annotated[Settings, Depends(get_settings)],
+    working_directory: str | None = None,
+    working_directory_recursive: bool = True,
+) -> EDAXPathHandler:
+    """The path handler, rescanned first if the client names a directory this
+    worker does not already hold.
+
+    Desktop mode keeps the working directory in a per-process, in-memory
+    database, so behind more than one uvicorn worker only the worker that
+    served ``/datasets-in-directory`` knows which directory was picked; the
+    others answer "not a valid sample" or an empty dataset list. The frontend's
+    user store holds the authoritative value, so every request may carry it and
+    any worker can catch up on demand.
+
+    Desktop mode serves a single user, which is what makes rescanning on a
+    client's say-so safe: there is no other session whose working set this
+    would pull out from under them.
+
+    ``working_directory`` is relative to the data root, and "" legitimately
+    means the data root itself -- only ``None`` (the frontend has no directory
+    committed yet) skips the sync.
+    """
+
+    ph = ph_from_app_state(request)
+
+    if working_directory is None or not settings.desktop_mode:
+        return ph
+
+    target = _resolve_browse_path(ph, working_directory)
+    if ph.database.working_directory == target:
+        return ph
+
+    # the frontend fans several requests out at once, and they all carry the
+    # same directory; without this the first batch after a switch would each
+    # rescan it. Whoever gets here second re-checks and finds the work done.
+    with _working_directory_lock:
+        if ph.database.working_directory == target:
+            return ph
+
+        msg = (
+            f"syncing working directory to {target} "
+            f"(was {ph.database.working_directory})"
+        )
+        spectraLogger.info(msg)
+        try:
+            ph.set_working_directory(target, recursive=working_directory_recursive)
+        except NotADirectoryError as err:
+            detail = f"'{working_directory}' is not a directory"
+            raise HTTPException(404, detail=detail) from err
+        except OSError as err:
+            detail = f"could not read '{working_directory}'"
+            raise HTTPException(403, detail=detail) from err
+
+    return ph
+
+
+SyncedPathHandler = Annotated[EDAXPathHandler, Depends(_synced_path_handler)]
 
 
 _results: dict[str, OptionalOpsReturnType] = {}
@@ -143,12 +208,10 @@ def _available_datasets_response(ph: EDAXPathHandler) -> AvailableDatasets:
 
 @app.get("/available-datasets")
 async def available_datasets(
-    request: Request,
+    ph: SyncedPathHandler,
     settings: Annotated[Settings, Depends(get_settings)],
     refresh_db: bool = False,
 ) -> AvailableDatasets:
-
-    ph = ph_from_app_state(request)
 
     if refresh_db:
         if settings.desktop_mode and ph.database.working_directory is None:
@@ -240,9 +303,7 @@ async def datasets_in_directory(
 
 
 @app.get("/image-metadata")
-async def image_metadata(sample_name: str, request: Request) -> MetadataModel:
-
-    ph = ph_from_app_state(request)
+async def image_metadata(sample_name: str, ph: SyncedPathHandler) -> MetadataModel:
 
     if not _valid_sample_name(sample_name, ph):
         msg = f"{sample_name} is not a valid sample"
@@ -272,10 +333,8 @@ async def await_op_result(item: queueOpsItem) -> OptionalOpsReturnType:
 
 @app.get("/image-metadata-combined")
 async def image_metadata_combined(
-    sample_name: str, request: Request
+    sample_name: str, ph: SyncedPathHandler
 ) -> CombinedMetadata:
-
-    ph = ph_from_app_state(request)
 
     if not _valid_sample_name(sample_name, ph):
         msg = f"{sample_name} is not a valid sample"
@@ -289,6 +348,7 @@ async def image_metadata_combined(
 async def image_spectrum(
     sample_name: str,
     request: Request,
+    ph: SyncedPathHandler,
     channel_0: int | None = None,
     channel_1: int | None = None,
     index0_0: int | None | Literal["none"] = None,
@@ -298,7 +358,6 @@ async def image_spectrum(
     include_weights: bool = True,
 ) -> Spectrum1dDict:
 
-    ph = ph_from_app_state(request)
     if not _valid_sample_name(sample_name, ph):
         msg = f"{sample_name} is not a valid sample"
         raise HTTPException(404, detail=msg)
@@ -354,13 +413,12 @@ async def image_data(
     sample_name: str,
     channel_index: int,
     request: Request,
+    ph: SyncedPathHandler,
     index0_0: int | None | Literal["none"] = None,
     index0_1: int | None | Literal["none"] = None,
     index1_0: int | None | Literal["none"] = None,
     index1_1: int | None | Literal["none"] = None,
 ) -> raveledImage:
-
-    ph = ph_from_app_state(request)
 
     if not _valid_sample_name(sample_name, ph):
         msg = f"{sample_name} is not a valid sample"
@@ -414,13 +472,13 @@ async def image_data_summed(
     channel_0: int,
     channel_1: int,
     request: Request,
+    ph: SyncedPathHandler,
     index0_0: int | None | Literal["none"] = None,
     index0_1: int | None | Literal["none"] = None,
     index1_0: int | None | Literal["none"] = None,
     index1_1: int | None | Literal["none"] = None,
 ) -> raveledImage:
 
-    ph = ph_from_app_state(request)
     if not _valid_sample_name(sample_name, ph):
         msg = f"{sample_name} is not a valid sample"
         raise HTTPException(404, detail=msg)

@@ -1,5 +1,6 @@
 from typing import Any
 
+import requests
 from dash import html
 from dash.dcc import Dropdown
 from dash_bootstrap_components import Button, Col, Row
@@ -47,9 +48,16 @@ def dataset_selector(
     datasets = None
 
     dataset_selector_IDS = datasetSelectorLayoutIDs(index=component_index)
-    if sisi.connected:
-        datasets = sisi.get_available_datasets()
 
+    # ask for the datasets directly rather than probing /info first: a failed
+    # connection shows up here just as well, and it saves a round trip on every
+    # page render.
+    try:
+        datasets = sisi.get_available_datasets()
+    except requests.exceptions.RequestException:
+        datasets = None
+
+    if datasets is not None:
         all_data = _available + datasets.available_files
         _menu_items = format_selections(all_data)
         _data_selector = html.Div(

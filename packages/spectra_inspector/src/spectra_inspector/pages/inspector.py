@@ -3,6 +3,7 @@ from typing import TYPE_CHECKING, Literal
 import dash
 import dash_bootstrap_components as dbc
 import numpy as np
+import numpy.typing as npt
 import pandas as pd
 import plotly.graph_objects as go
 from dash import (
@@ -26,6 +27,7 @@ from spectra_inspector.components import (
     dataset_selector,
     datasetSelectorLayoutIDs,
     directory_selector,
+    fetch_im_data_parallel,
     get_new_im,
 )
 from spectra_inspector.components.dataset_selector import format_selections
@@ -73,6 +75,7 @@ def get_spectrum(
     channel_range: tuple[int, int] | None = None,
     index0_range: tuple[int, int] | None = None,
     index1_range: tuple[int, int] | None = None,
+    directory_sync: dict | None = None,
 ) -> pd.DataFrame:
 
     sisi = SpectraInspectorServerInterface()
@@ -81,6 +84,7 @@ def get_spectrum(
         channel_range=channel_range,
         index0_range=index0_range,
         index1_range=index1_range,
+        directory_sync=directory_sync,
     )
 
     min_e = spectrum.energy_min
@@ -275,20 +279,28 @@ def layout(sample_name: str | None = None, **kwargs):  # noqa: ARG001
     Output(_IDS.full_spectrum_store, "data", allow_duplicate=True),
     Input(_IDS.sample_name, "children"),
     Input(_IDS.full_spectrum_store, "data"),
+    State(USER_STORE_DIV_ID, "data"),
     running=[
         (Output("spectrum-loading", "display"), "show", "hide"),
         (Output(_IDS.add_image, "disabled"), True, False),
     ],
     prevent_initial_call=True,
 )
-def initialize_full_spectrum_data(sample_name: str | None, spectrum_store: dict | None):
+def initialize_full_spectrum_data(
+    sample_name: str | None,
+    spectrum_store: dict | None,
+    user_store_dict: dict | None,
+):
 
     has_data = isinstance(spectrum_store, dict) and "intensity" in spectrum_store
 
     if _valid_sample_name(sample_name) and not has_data:
         spectraLogger.info("fetching and storing full spectrum data")
         assert isinstance(sample_name, str)
-        df = get_spectrum(sample_name)
+        df = get_spectrum(
+            sample_name,
+            directory_sync=UserStore(**(user_store_dict or {})).directory_sync(),
+        )
         new_store_data = {}
         new_store_data["intensity"] = df.intensity.tolist()
         new_store_data["energy"] = df.energy.tolist()
@@ -322,6 +334,7 @@ def update_element_weights(
     State(_IDS.sample_name, "children"),
     State(_IDS.spectrum_container, "figure"),
     State(_IDS.active_spectrum_metadata, "data"),
+    State(USER_STORE_DIV_ID, "data"),
     running=[
         (Output("spectrum-loading", "display"), "show", "hide"),
         (Output(_IDS.add_image, "disabled"), True, False),
@@ -334,6 +347,7 @@ def update_spectrum(
     sample_name: str | None,
     current_figure,
     active_spectrum_metadata: dict | None,
+    user_store_dict: dict | None,
 ):
 
     spectraLogger.info(f"update_spectrum trigger: {ctx.triggered_id}")
@@ -384,6 +398,7 @@ def update_spectrum(
                 sample_name,
                 index0_range=(index0_range[0], index0_range[1]),
                 index1_range=(index1_range[0], index1_range[1]),
+                directory_sync=UserStore(**(user_store_dict or {})).directory_sync(),
             )
             name = "spatial subset"
             active_spectrum_metadata["intensity"] = df.intensity.tolist()
@@ -773,21 +788,43 @@ def update_graph_figure(
             new_graph_dicts.append({"type": _imageIDS.graph, "index": triggered_index})
 
         if len(new_graph_dicts) > 0:
-            for graph_dict in new_graph_dicts:
-                processed_graph_store["graph_ids"].append(graph_dict)
-                im_array = None
-                if len(processed_graph_store["graph_ids"]) > 1 and initialized:
-                    # we had at least 1 already, data from one to initialize
-                    fig = fig_list[0]
-                    im_array = plotly_im_trace_to_array(fig["data"][0])
+            # fetch metadata once for the whole batch rather than once per
+            # panel inside get_new_im
+            md = user_store.conditionally_fetch_metadata()
+            assert md is not None
 
-                list_pos = div_index_to_list_index[graph_dict["index"]]
+            list_positions = [
+                div_index_to_list_index[gd["index"]] for gd in new_graph_dicts
+            ]
+
+            # On the first pass every panel needs its own image, and those
+            # fetches are the slow part -- run them concurrently. Afterwards a
+            # new panel is seeded from the existing figure and fetches nothing.
+            im_arrays: list[npt.NDArray | None]
+            if initialized:
+                seed = plotly_im_trace_to_array(fig_list[0]["data"][0])
+                im_arrays = [seed] * len(new_graph_dicts)
+            else:
+                im_arrays = list(
+                    fetch_im_data_parallel(
+                        user_store,
+                        [slider_range_list[pos] for pos in list_positions],
+                        md,
+                    )
+                )
+
+            for graph_dict, list_pos, im_array in zip(
+                new_graph_dicts, list_positions, im_arrays, strict=True
+            ):
+                processed_graph_store["graph_ids"].append(graph_dict)
+
                 new_fig = get_new_im(
                     user_store,
                     slider_range_list[list_pos],
                     colormap,
                     im_data=im_array,
                     scalebar_handler=scalebar_handler,
+                    md=md,
                 )
                 fig_list[list_pos] = new_fig
 
@@ -854,6 +891,9 @@ def _recopy_all_figs(fig_list, user_store, slider_range_list, colormap_choices):
     """
     refreshes all figures without fetching data again.
     """
+    # image data is reused from the existing figures, so the only backend call
+    # left here is the metadata one -- fetch it once instead of per figure.
+    md = user_store.conditionally_fetch_metadata()
     new_list = []
     for igraph in range(len(fig_list)):
         im_array = plotly_im_trace_to_array(fig_list[igraph]["data"][0])
@@ -863,6 +903,7 @@ def _recopy_all_figs(fig_list, user_store, slider_range_list, colormap_choices):
             colormap_choices[igraph],
             im_data=im_array,
             scalebar_handler=scalebar_handler,
+            md=md,
         )
         new_list.append(new_fig)
     return new_list
@@ -893,6 +934,7 @@ def update_selected_dataset(
 ):
     sisi = SpectraInspectorServerInterface()
     trigger = ctx.triggered_id
+    dir_sync = UserStore(**current_user_data).directory_sync()
 
     data_store_selected = current_user_data.get("selected_dataset")
     if input_value is None or (input_value == "none" and data_store_selected):
@@ -906,7 +948,9 @@ def update_selected_dataset(
 
     available: None | AvailableDatasets = None
     if is_refresh:
-        available = sisi.get_available_datasets(refresh_db=True)
+        available = sisi.get_available_datasets(
+            refresh_db=True, directory_sync=dir_sync
+        )
         all_files = ["none", *available.available_files]
         output_options = format_selections(all_files)
         if input_value not in output_options:
@@ -919,7 +963,7 @@ def update_selected_dataset(
     meta_json_str: str = "{}"
     new_user_data = current_user_data.copy()
     if has_input:
-        meta = sisi.get_combined_image_metadata(input_value)
+        meta = sisi.get_combined_image_metadata(input_value, directory_sync=dir_sync)
         meta_json_str = meta.model_dump_json()
     new_user_data = updateDataStore(current_user_data, "metadata_json", meta_json_str)
 
@@ -927,7 +971,9 @@ def update_selected_dataset(
 
     if new_user_data.get("sample_metadata", None) is None:
         if available is None:
-            sample_metadata = sisi.get_available_datasets().sample_metadata
+            sample_metadata = sisi.get_available_datasets(
+                directory_sync=dir_sync
+            ).sample_metadata
         else:
             sample_metadata = available.sample_metadata
         if sample_metadata is not None:

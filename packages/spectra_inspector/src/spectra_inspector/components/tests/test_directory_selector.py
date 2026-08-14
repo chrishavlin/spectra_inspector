@@ -443,6 +443,7 @@ def test_use_directory_populates_the_sample_dropdown(mocker):
     assert "Loaded 2 datasets" in status.children
     assert committed == {
         "path": "session-a",
+        "recursive": True,
         "available_files": ["C-1", "C-2"],
         "sample_metadata": {"records": [], "map_samples": {}},
         "truncated": False,
