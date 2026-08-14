@@ -33,6 +33,8 @@ services:
     environment:
       # Include development dependencies when working locally
       - UV_NO_DEV=0
+      # Number of uvicorn workers `fastapi run` starts with
+      - SPECTRA_INSPECTOR_N_FASTAPI_WORKERS=${SPECTRA_INSPECTOR_N_FASTAPI_WORKERS:-1}
 
     # Run as root during development so the environment is mutable
     # Alternatively, you could set `UV_PROJECT_ENVIRONMENT` to a path owned by the non-root user

@@ -21,6 +21,10 @@ class Settings(BaseSettings):
     server_host: str = "localhost"  # host.docker.internal
     server_port: int = 8000
 
+    # number of uvicorn workers that the fastapi spectra_inspector_server
+    # starts with (only used by the docker deployment)
+    n_fastapi_workers: int = 1
+
     # desktop_mode exposes the working-directory picker on the data selection
     # and inspector pages. It requires the server to run with
     # SPECTRA_INSPECTOR_DESKTOP_MODE=true as well: the picker drives the
