@@ -180,6 +180,9 @@ file under `logs\` in the repository root:
 start_uv_local.bat
 ```
 
+The frontend is started with `--debug 0`, so the Dash reloader and the Werkzeug
+debugger are off; start it by hand as above when you want them.
+
 The backend starts with 4 uvicorn workers; pass a different count as the only
 argument:
 

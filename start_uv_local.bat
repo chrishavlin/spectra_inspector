@@ -29,6 +29,10 @@ rem Windows code page (cp1252) rather than utf-8, and the emoji in the fastapi
 rem CLI banner raise UnicodeEncodeError. Both services inherit this.
 set "PYTHONIOENCODING=utf-8"
 
+rem Task Scheduler and service hosts do not always hand a task the same PATH as
+rem an interactive prompt, so make sure a per-user uv install is reachable.
+if exist "%USERPROFILE%\.local\bin\uv.exe" set "PATH=%USERPROFILE%\.local\bin;%PATH%"
+
 where uv >nul 2>&1
 if errorlevel 1 (
     echo uv was not found on PATH. See https://docs.astral.sh/uv/ to install it.
@@ -54,8 +58,11 @@ start "%SERVER_TITLE%" /min /d "%SERVER_DIR%" cmd /c uv run fastapi run --worker
 rem Give the backend a head start so the first frontend page load finds it.
 timeout /t 5 /nobreak >nul 2>nul
 
+rem serve.py defaults to --debug 1, which turns on the dash reloader (a second
+rem python process watching for edits) and the werkzeug debugger. Neither
+rem belongs in a background or start-at-boot deployment.
 echo Starting the frontend, logging to %LOG_DIR%\frontend.log
-start "%FRONTEND_TITLE%" /min /d "%FRONTEND_DIR%" cmd /c uv run python serve.py ^> "%LOG_DIR%\frontend.log" 2^>^&1
+start "%FRONTEND_TITLE%" /min /d "%FRONTEND_DIR%" cmd /c uv run python serve.py --debug 0 ^> "%LOG_DIR%\frontend.log" 2^>^&1
 
 echo.
 echo Frontend: http://127.0.0.1:8050
