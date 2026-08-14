@@ -20,7 +20,11 @@ from spectra_inspector.components.dataset_selector import (
 from spectra_inspector.components.layout_ids import indexedLayoutIDMapper
 from spectra_inspector.logging import spectraLogger
 from spectra_inspector.settings import Settings
-from spectra_inspector.user_store_model import USER_STORE_DIV_ID, updateDataStore
+from spectra_inspector.user_store_model import (
+    USER_STORE_DIV_ID,
+    UserStore,
+    updateDataStore,
+)
 from spectra_inspector.utilities.interface import (
     ServerRequestError,
     SpectraInspectorServerInterface,
@@ -89,11 +93,35 @@ def desktop_mode_enabled() -> bool:
     return Settings().desktop_mode
 
 
-def path_label(path: str | None) -> str:
-    """Human readable form of a path relative to the server data root."""
-    if not path:
+def data_root_label(sisi: SpectraInspectorServerInterface | None = None) -> str:
+    """What to call the top of the browsable tree.
+
+    A desktop deployment points at a data root the user chose themselves, so
+    spelling it out is more useful than a placeholder -- and it is the only way
+    to tell which root a relative path is relative to. Elsewhere the data root
+    is a server-side detail, so the placeholder stands in for it.
+    """
+    if not desktop_mode_enabled():
         return DATA_ROOT_LABEL
-    return f"{DATA_ROOT_LABEL}/{path}"
+
+    if sisi is None:
+        sisi = SpectraInspectorServerInterface()
+
+    try:
+        info = sisi.get_info()
+    except ServerRequestError as err:
+        spectraLogger.warning(f"Could not fetch the server data root: {err}")
+        return DATA_ROOT_LABEL
+
+    return info.spectra_inspector_data_root or DATA_ROOT_LABEL
+
+
+def path_label(path: str | None, root: str | None = None) -> str:
+    """Human readable form of a path relative to the server data root."""
+    root_label = root or DATA_ROOT_LABEL
+    if not path:
+        return root_label
+    return f"{root_label.rstrip('/')}/{path}"
 
 
 def parent_path(path: str | None) -> str | None:
@@ -183,7 +211,7 @@ def directory_selector(
                     [
                         html.Div("Working directory: ", className="fw-bold"),
                         html.Div(
-                            path_label(""),
+                            path_label("", root=data_root_label()),
                             id=IDS.get_id_with_index("path"),
                             style={"wordBreak": "break-all"},
                         ),
@@ -311,15 +339,86 @@ def hydrate_browse_position(_div_id: dict, user_data: dict | None):
     return {"path": (user_data or {}).get("working_directory") or ""}
 
 
+def loaded_status(n_datasets: int, label: str, truncated: bool = False) -> html.Div:
+    """The message shown for a directory that has been scanned into the server.
+
+    A truncated scan is called out explicitly: the server stopped at its
+    SPECTRA_INSPECTOR_MAX_DATASETS limit, so the dropdown holds the first N of
+    an unknown larger number and the missing ones are only reachable by picking
+    a narrower directory.
+    """
+
+    plural = "" if n_datasets == 1 else "s"
+
+    if not truncated:
+        return html.Div(f"Loaded {n_datasets} dataset{plural} from {label}.")
+
+    return html.Div(
+        [
+            html.Div(
+                f"Showing the first {n_datasets} dataset{plural} in {label}.",
+                className="fw-bold",
+            ),
+            html.Div(
+                "The server stopped scanning at its dataset limit, so this "
+                "directory holds more than are listed. Pick a subdirectory to "
+                "reach the rest.",
+            ),
+        ],
+        className="text-warning",
+    )
+
+
+def browse_status(n_datasets: int, has_subdirectories: bool) -> str:
+    """What a directory that is only being browsed reports.
+
+    The count is of this directory alone, which read as though it covered the
+    whole subtree, so point at the button that does search the subtree -- but
+    only where there is a subtree to search.
+    """
+    plural = "" if n_datasets == 1 else "s"
+    status = f"{n_datasets} dataset{plural} in this directory."
+    if has_subdirectories:
+        status += ' Click "Use this directory" to search the subdirectories.'
+    return status
+
+
+def committed_status(path: str, user_data: dict | None, root: str) -> html.Div | None:
+    """The "loaded" message for `path`, or None if it is not the directory in
+    use.
+
+    Rebuilt from the user store rather than remembered per mount: the status
+    div is page-local, so the message `use_directory` wrote on one page is gone
+    by the time the other page's picker mounts, the same way the browse
+    position is. The store holds the working directory and what was found in
+    it, which is everything the message needs.
+    """
+
+    store = UserStore(**(user_data or {}))
+    if store.available_files is None or (store.working_directory or "") != path:
+        return None
+    return loaded_status(
+        len(store.available_files),
+        path_label(path, root=root),
+        truncated=store.truncated,
+    )
+
+
 @callback(
     Output({"type": _IDS.path, "index": MATCH}, "children"),
     Output({"type": _IDS.entries, "index": MATCH}, "children"),
     Output({"type": _IDS.up, "index": MATCH}, "disabled"),
     Output({"type": _IDS.status, "index": MATCH}, "children"),
     Input({"type": _IDS.browsestore, "index": MATCH}, "data"),
+    State(USER_STORE_DIV_ID, "data"),
 )
-def show_directory_listing(browse_data: dict | None):
-    """Fetch the listing for the current browse position and render it."""
+def show_directory_listing(browse_data: dict | None, user_data: dict | None):
+    """Fetch the listing for the current browse position and render it.
+
+    The user store is a State rather than an Input: it is read to restore the
+    status message on a fresh mount, and re-fetching the listing every time
+    something else writes the store would be a round trip for nothing.
+    """
 
     if browse_data is None:
         # mounted but not hydrated yet; `hydrate_browse_position` fires this
@@ -336,52 +435,23 @@ def show_directory_listing(browse_data: dict | None):
         msg = "Could not connect to spectra_inspector_server backend."
         return path_label(path), [], at_root, html.Div(msg)
 
+    root = data_root_label(sisi)
+
     try:
         listing = sisi.browse_directory(path)
     except ServerRequestError as err:
         spectraLogger.warning(f"Could not browse '{path}': {err}")
-        return path_label(path), [], at_root, html.Div(str(err))
+        return path_label(path, root=root), [], at_root, html.Div(str(err))
 
-    n_sets = listing.dataset_count
-    plural = "" if n_sets == 1 else "s"
-    status = f"{n_sets} dataset{plural} directly in this directory."
-
-    return (
-        path_label(listing.path),
-        _subdir_items(listing, component_index),
-        listing.parent_path is None,
-        html.Div(status),
+    status = committed_status(listing.path, user_data, root) or html.Div(
+        browse_status(listing.dataset_count, bool(listing.directories))
     )
 
-
-def _scan_status(path: str, available) -> html.Div:
-    """The message shown after committing a directory.
-
-    A truncated scan is called out explicitly: the server stopped at its
-    SPECTRA_INSPECTOR_MAX_DATASETS limit, so the dropdown holds the first N of
-    an unknown larger number and the missing ones are only reachable by picking
-    a narrower directory.
-    """
-
-    n_files = len(available.available_files)
-    plural = "" if n_files == 1 else "s"
-
-    if not available.truncated:
-        return html.Div(f"Loaded {n_files} dataset{plural} from {path_label(path)}.")
-
-    return html.Div(
-        [
-            html.Div(
-                f"Showing the first {n_files} dataset{plural} in {path_label(path)}.",
-                className="fw-bold",
-            ),
-            html.Div(
-                "The server stopped scanning at its dataset limit, so this "
-                "directory holds more than are listed. Pick a subdirectory to "
-                "reach the rest.",
-            ),
-        ],
-        className="text-warning",
+    return (
+        path_label(listing.path, root=root),
+        _subdir_items(listing, component_index),
+        listing.parent_path is None,
+        status,
     )
 
 
@@ -425,13 +495,16 @@ def use_directory(n_clicks: int, browse_data: dict | None, recursive: bool):
     available_files = available.available_files
     spectraLogger.info(f"'{path}' provided {len(available_files)} datasets")
 
+    label = path_label(path, root=data_root_label(sisi))
+
     return (
         format_selections(["none", *available_files]),
-        _scan_status(path, available),
+        loaded_status(len(available_files), label, truncated=available.truncated),
         {
             "path": path,
             "available_files": available_files,
             "sample_metadata": available.sample_metadata,
+            "truncated": available.truncated,
         },
     )
 
@@ -475,6 +548,9 @@ def store_working_directory(
     )
     new_user_data = updateDataStore(
         new_user_data, "sample_metadata", payload.get("sample_metadata")
+    )
+    new_user_data = updateDataStore(
+        new_user_data, "truncated", bool(payload.get("truncated"))
     )
     # the previous selection came from a directory that is no longer loaded
     new_user_data = updateDataStore(new_user_data, "selected_dataset", "none")

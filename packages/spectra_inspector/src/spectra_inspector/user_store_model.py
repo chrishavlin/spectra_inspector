@@ -18,6 +18,7 @@ class UserStore:
     # stay None when the server scans its whole data root at startup.
     working_directory: str | None = None
     available_files: list[str] | None = None
+    truncated: bool = False
 
     def get_metadata(self) -> CombinedMetadata | None:
         if self.metadata_json != "":
