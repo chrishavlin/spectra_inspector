@@ -89,11 +89,35 @@ def desktop_mode_enabled() -> bool:
     return Settings().desktop_mode
 
 
-def path_label(path: str | None) -> str:
-    """Human readable form of a path relative to the server data root."""
-    if not path:
+def data_root_label(sisi: SpectraInspectorServerInterface | None = None) -> str:
+    """What to call the top of the browsable tree.
+
+    A desktop deployment points at a data root the user chose themselves, so
+    spelling it out is more useful than a placeholder -- and it is the only way
+    to tell which root a relative path is relative to. Elsewhere the data root
+    is a server-side detail, so the placeholder stands in for it.
+    """
+    if not desktop_mode_enabled():
         return DATA_ROOT_LABEL
-    return f"{DATA_ROOT_LABEL}/{path}"
+
+    if sisi is None:
+        sisi = SpectraInspectorServerInterface()
+
+    try:
+        info = sisi.get_info()
+    except ServerRequestError as err:
+        spectraLogger.warning(f"Could not fetch the server data root: {err}")
+        return DATA_ROOT_LABEL
+
+    return info.spectra_inspector_data_root or DATA_ROOT_LABEL
+
+
+def path_label(path: str | None, root: str | None = None) -> str:
+    """Human readable form of a path relative to the server data root."""
+    root_label = root or DATA_ROOT_LABEL
+    if not path:
+        return root_label
+    return f"{root_label.rstrip('/')}/{path}"
 
 
 def parent_path(path: str | None) -> str | None:
@@ -183,7 +207,7 @@ def directory_selector(
                     [
                         html.Div("Working directory: ", className="fw-bold"),
                         html.Div(
-                            path_label(""),
+                            path_label("", root=data_root_label()),
                             id=IDS.get_id_with_index("path"),
                             style={"wordBreak": "break-all"},
                         ),
@@ -336,25 +360,30 @@ def show_directory_listing(browse_data: dict | None):
         msg = "Could not connect to spectra_inspector_server backend."
         return path_label(path), [], at_root, html.Div(msg)
 
+    root = data_root_label(sisi)
+
     try:
         listing = sisi.browse_directory(path)
     except ServerRequestError as err:
         spectraLogger.warning(f"Could not browse '{path}': {err}")
-        return path_label(path), [], at_root, html.Div(str(err))
+        return path_label(path, root=root), [], at_root, html.Div(str(err))
 
     n_sets = listing.dataset_count
     plural = "" if n_sets == 1 else "s"
-    status = f"{n_sets} dataset{plural} directly in this directory."
+    status = (
+        f"{n_sets} dataset{plural} in this directory. "
+        'Click "Use this directory" to search the subdirectories.'
+    )
 
     return (
-        path_label(listing.path),
+        path_label(listing.path, root=root),
         _subdir_items(listing, component_index),
         listing.parent_path is None,
         html.Div(status),
     )
 
 
-def _scan_status(path: str, available) -> html.Div:
+def _scan_status(path: str, available, root: str) -> html.Div:
     """The message shown after committing a directory.
 
     A truncated scan is called out explicitly: the server stopped at its
@@ -365,14 +394,15 @@ def _scan_status(path: str, available) -> html.Div:
 
     n_files = len(available.available_files)
     plural = "" if n_files == 1 else "s"
+    label = path_label(path, root=root)
 
     if not available.truncated:
-        return html.Div(f"Loaded {n_files} dataset{plural} from {path_label(path)}.")
+        return html.Div(f"Loaded {n_files} dataset{plural} from {label}.")
 
     return html.Div(
         [
             html.Div(
-                f"Showing the first {n_files} dataset{plural} in {path_label(path)}.",
+                f"Showing the first {n_files} dataset{plural} in {label}.",
                 className="fw-bold",
             ),
             html.Div(
@@ -427,7 +457,7 @@ def use_directory(n_clicks: int, browse_data: dict | None, recursive: bool):
 
     return (
         format_selections(["none", *available_files]),
-        _scan_status(path, available),
+        _scan_status(path, available, data_root_label(sisi)),
         {
             "path": path,
             "available_files": available_files,

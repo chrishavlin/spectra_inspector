@@ -8,6 +8,7 @@ from dash._utils import AttributeDict
 # the components package re-exports the directory_selector *function* under the
 # module's own name, so these have to come off the module path directly.
 from spectra_inspector.components.directory_selector import (
+    data_root_label,
     directory_selector,
     directorySelectorLayoutIDs,
     entry_id,
@@ -109,6 +110,66 @@ def test_path_label(path, expected):
 
 
 @pytest.mark.parametrize(
+    ("root", "path", "expected"),
+    [
+        ("/data/edax", "", "/data/edax"),
+        ("/data/edax", "a/b", "/data/edax/a/b"),
+        # a root spelled with a trailing separator must not double it up
+        ("/data/edax/", "a", "/data/edax/a"),
+        ("/", "a", "/a"),
+        # falls back to the placeholder when there is no root to show
+        ("", "a", "<data root>/a"),
+    ],
+)
+def test_path_label_with_a_root(root, path, expected):
+    assert path_label(path, root=root) == expected
+
+
+def _mock_settings(mocker, desktop_mode: bool) -> None:
+    mocker.patch(
+        "spectra_inspector.components.directory_selector.desktop_mode_enabled",
+        mocker.MagicMock(return_value=desktop_mode),
+    )
+
+
+def test_data_root_label_outside_desktop_mode(mocker):
+    # the data root is a server-side detail that a hosted client should not show
+    _mock_settings(mocker, False)
+    sisi = mocker.MagicMock()
+
+    assert data_root_label(sisi) == "<data root>"
+    sisi.get_info.assert_not_called()
+
+
+def test_data_root_label_in_desktop_mode(mocker):
+    _mock_settings(mocker, True)
+    info = mocker.MagicMock(spectra_inspector_data_root="/data/edax")
+    sisi = mocker.MagicMock(get_info=mocker.MagicMock(return_value=info))
+
+    assert data_root_label(sisi) == "/data/edax"
+
+
+@pytest.mark.parametrize(
+    "get_info",
+    [
+        pytest.param(ServerRequestError("no backend"), id="request-failed"),
+        pytest.param("", id="empty-root"),
+    ],
+)
+def test_data_root_label_falls_back_to_the_placeholder(mocker, get_info):
+    _mock_settings(mocker, True)
+    if isinstance(get_info, ServerRequestError):
+        mocked = mocker.MagicMock(side_effect=get_info)
+    else:
+        mocked = mocker.MagicMock(
+            return_value=mocker.MagicMock(spectra_inspector_data_root=get_info)
+        )
+    sisi = mocker.MagicMock(get_info=mocked)
+
+    assert data_root_label(sisi) == "<data root>"
+
+
+@pytest.mark.parametrize(
     ("path", "expected"),
     [(None, None), ("", None), ("a", ""), ("a/b", "a"), ("a/b/c", "a/b")],
 )
@@ -200,7 +261,24 @@ def test_show_directory_listing(mocker):
     assert [e.id["name"] for e in entries] == ["session-a/nested"]
     assert [e.children for e in entries] == ["nested"]
     assert up_disabled is False
-    assert "1 dataset directly" in status.children
+    assert "1 dataset in this directory" in status.children
+    # the hint that "use this directory" is what reaches the subdirectories
+    assert "subdirectories" in status.children
+
+
+def test_show_directory_listing_shows_the_real_root_in_desktop_mode(mocker):
+    _mock_settings(mocker, True)
+    info = mocker.MagicMock(spectra_inspector_data_root="/data/edax")
+    _mock_interface(
+        mocker,
+        browse_directory=mocker.MagicMock(return_value=_LISTING),
+        get_info=mocker.MagicMock(return_value=info),
+    )
+    _set_outputs_for_index(0)
+
+    label, _, _, _ = show_directory_listing({"path": "session-a"})
+
+    assert label == "/data/edax/session-a"
 
 
 def test_show_directory_listing_uses_the_matched_index(mocker):
@@ -226,7 +304,7 @@ def test_show_directory_listing_with_no_subdirectories(mocker):
     assert entries[0].disabled is True
     assert not hasattr(entries[0], "name")
     assert up_disabled is False
-    assert "3 datasets directly" in status.children
+    assert "3 datasets in this directory" in status.children
 
 
 def test_show_directory_listing_at_the_data_root(mocker):
@@ -240,7 +318,7 @@ def test_show_directory_listing_at_the_data_root(mocker):
     assert len(entries) == 1
     assert entries[0].disabled is True
     assert up_disabled is True
-    assert "0 datasets directly" in status.children
+    assert "0 datasets in this directory" in status.children
 
 
 def test_show_directory_listing_reports_server_errors(mocker):
@@ -290,6 +368,22 @@ def test_use_directory_populates_the_sample_dropdown(mocker):
         "available_files": ["C-1", "C-2"],
         "sample_metadata": {"records": [], "map_samples": {}},
     }
+
+
+def test_use_directory_reports_the_real_root_in_desktop_mode(mocker):
+    _mock_settings(mocker, True)
+    info = mocker.MagicMock(spectra_inspector_data_root="/data/edax")
+    _mock_interface(
+        mocker,
+        get_datasets_in_directory=mocker.MagicMock(
+            return_value=AvailableDatasets(available_files=["C-1"])
+        ),
+        get_info=mocker.MagicMock(return_value=info),
+    )
+
+    _, status, _ = use_directory(1, {"path": "session-a"}, True)
+
+    assert "from /data/edax/session-a." in status.children
 
 
 def test_use_directory_passes_the_recursive_flag(mocker):

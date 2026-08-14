@@ -68,7 +68,12 @@ class SpectraInspectorServerInterface:
 
     def get_info(self) -> model.Info:
         uri = self._get_endpoint("info")
-        r = requests.get(uri)
+        try:
+            r = requests.get(uri)
+        except requests.exceptions.ConnectionError as err:
+            msg = f"could not reach the backend at {self.uri}"
+            raise ServerRequestError(msg) from err
+        _raise_for_status(r)
         return model.Info(**r.json())
 
     def get_available_datasets(
