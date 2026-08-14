@@ -354,6 +354,37 @@ def show_directory_listing(browse_data: dict | None):
     )
 
 
+def _scan_status(path: str, available) -> html.Div:
+    """The message shown after committing a directory.
+
+    A truncated scan is called out explicitly: the server stopped at its
+    SPECTRA_INSPECTOR_MAX_DATASETS limit, so the dropdown holds the first N of
+    an unknown larger number and the missing ones are only reachable by picking
+    a narrower directory.
+    """
+
+    n_files = len(available.available_files)
+    plural = "" if n_files == 1 else "s"
+
+    if not available.truncated:
+        return html.Div(f"Loaded {n_files} dataset{plural} from {path_label(path)}.")
+
+    return html.Div(
+        [
+            html.Div(
+                f"Showing the first {n_files} dataset{plural} in {path_label(path)}.",
+                className="fw-bold",
+            ),
+            html.Div(
+                "The server stopped scanning at its dataset limit, so this "
+                "directory holds more than are listed. Pick a subdirectory to "
+                "reach the rest.",
+            ),
+        ],
+        className="text-warning",
+    )
+
+
 @callback(
     Output(
         {"type": _datasetIDS.dropdown, "index": MATCH}, "options", allow_duplicate=True
@@ -394,12 +425,9 @@ def use_directory(n_clicks: int, browse_data: dict | None, recursive: bool):
     available_files = available.available_files
     spectraLogger.info(f"'{path}' provided {len(available_files)} datasets")
 
-    plural = "" if len(available_files) == 1 else "s"
-    status = f"Loaded {len(available_files)} dataset{plural} from {path_label(path)}."
-
     return (
         format_selections(["none", *available_files]),
-        html.Div(status),
+        _scan_status(path, available),
         {
             "path": path,
             "available_files": available_files,

@@ -304,6 +304,42 @@ def test_use_directory_passes_the_recursive_flag(mocker):
     assert "Loaded 1 dataset " in status.children
 
 
+def test_use_directory_warns_about_a_truncated_scan(mocker):
+    # the server stopped at SPECTRA_INSPECTOR_MAX_DATASETS, so the dropdown is
+    # holding the first N of a larger number on disk
+    available = AvailableDatasets(
+        available_files=["C-1", "C-2"],
+        directory="session-a",
+        truncated=True,
+    )
+    _mock_interface(
+        mocker, get_datasets_in_directory=mocker.MagicMock(return_value=available)
+    )
+
+    options, status, _ = use_directory(1, {"path": "session-a"}, True)
+
+    # the datasets that did come back are still usable
+    assert [o["value"] for o in options] == ["none", "C-1", "C-2"]
+
+    text = " ".join(child.children for child in status.children)
+    assert "first 2 datasets" in text
+    assert "Pick a subdirectory" in text
+    assert "text-warning" in status.className
+
+
+def test_use_directory_does_not_warn_on_a_complete_scan(mocker):
+    available = AvailableDatasets(available_files=["C-1"], truncated=False)
+    _mock_interface(
+        mocker, get_datasets_in_directory=mocker.MagicMock(return_value=available)
+    )
+
+    _, status, _ = use_directory(1, {"path": "session-a"}, True)
+
+    assert status.children == "Loaded 1 dataset from <data root>/session-a."
+    # unset props are absent on a Dash component rather than None
+    assert not hasattr(status, "className")
+
+
 def test_use_directory_without_a_click_does_nothing(mocker):
     sisi = _mock_interface(mocker, get_datasets_in_directory=mocker.MagicMock())
 

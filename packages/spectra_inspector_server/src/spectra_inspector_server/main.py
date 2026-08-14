@@ -137,6 +137,7 @@ def _available_datasets_response(ph: EDAXPathHandler) -> AvailableDatasets:
         available_files=filekeys,
         sample_metadata=all_meta,
         directory=directory,
+        truncated=ph.database.scan_truncated,
     )
 
 

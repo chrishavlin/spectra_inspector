@@ -74,9 +74,9 @@ Copy `default.env` to `.env` and modify as needed. Every setting is read with a
 `SPECTRA_INSPECTOR_DATA_ROOT`, `SPECTRA_INSPECTOR_HOST_DATA_ROOT`,
 `SPECTRA_INSPECTOR_ALLOW_DB_REFRESH`,
 `SPECTRA_INSPECTOR_DB_ALLOW_MIXED_BASENAMES`, `SPECTRA_INSPECTOR_DESKTOP_MODE`,
-`SPECTRA_INSPECTOR_LOG_LEVEL`), matching the `spectra_inspector` frontend
-package. The same names may be set as process environment variables instead,
-with preference given to the values in `.env`.
+`SPECTRA_INSPECTOR_MAX_DATASETS`, `SPECTRA_INSPECTOR_LOG_LEVEL`), matching the
+`spectra_inspector` frontend package. The same names may be set as process
+environment variables instead, with preference given to the values in `.env`.
 
 Unknown keys in `.env` are rejected rather than ignored, so a stale `.env` fails
 fast: keys under the prefix that don't match a setting raise `extra_forbidden`,
@@ -137,6 +137,27 @@ the data root before use: anything landing outside gets a `403`, as does either
 endpoint when desktop mode is off. Unlike the startup scan, a directory holding
 a duplicate basename is logged and skipped rather than raising, and unreadable
 directories are skipped instead of aborting the scan.
+
+#### `SPECTRA_INSPECTOR_MAX_DATASETS`
+
+Unset by default, meaning no limit. When set to a positive integer _and_
+`SPECTRA_INSPECTOR_DESKTOP_MODE` is enabled, a directory scan stops as soon as
+that many datasets have been registered instead of walking the rest of the
+subtree, keeping the dataset dropdown and the scan itself bounded when a client
+selects a directory holding far more data than it can usefully display.
+
+The datasets kept are whichever the traversal reaches first (a directory's own
+file sets before its subdirectories, both in sorted order), so the cap truncates
+rather than selects. The setting is ignored entirely when desktop mode is off,
+where the startup scan of the whole data root is still exhaustive.
+
+A truncated scan is reported as `truncated: true` on the `AvailableDatasets`
+payload (and logged at `INFO`), so a client can tell a partial listing from a
+complete one. The flag describes the most recent scan and is served by
+`/available-datasets` as well, since that endpoint returns whatever working set
+the last scan produced. There is no count of what was skipped: the traversal
+stops at the limit rather than finishing and counting. The frontend's directory
+picker turns the flag into a warning next to the sample dropdown.
 
 ### manual type checking
 

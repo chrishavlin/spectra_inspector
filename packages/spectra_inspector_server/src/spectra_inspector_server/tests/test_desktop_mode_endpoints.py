@@ -36,10 +36,15 @@ def _clear_dependency_caches() -> Generator[None, None, None]:
 
 
 def _client(
-    data_root: Path, monkeypatch: pytest.MonkeyPatch, desktop_mode: bool
+    data_root: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    desktop_mode: bool,
+    max_datasets: int | None = None,
 ) -> TestClient:
     monkeypatch.setenv(f"{ENV_PREFIX}DATA_ROOT", str(data_root))
     monkeypatch.setenv(f"{ENV_PREFIX}DESKTOP_MODE", str(desktop_mode).lower())
+    if max_datasets is not None:
+        monkeypatch.setenv(f"{ENV_PREFIX}MAX_DATASETS", str(max_datasets))
     return TestClient(app)
 
 
@@ -60,6 +65,26 @@ def server_client(
     _clear_dependency_caches: None,
 ) -> Generator[TestClient, None, None]:
     with _client(data_root, monkeypatch, desktop_mode=False) as client:
+        yield client
+
+
+@pytest.fixture
+def capped_desktop_client(
+    data_root: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    _clear_dependency_caches: None,
+) -> Generator[TestClient, None, None]:
+    with _client(data_root, monkeypatch, desktop_mode=True, max_datasets=2) as client:
+        yield client
+
+
+@pytest.fixture
+def capped_server_client(
+    data_root: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    _clear_dependency_caches: None,
+) -> Generator[TestClient, None, None]:
+    with _client(data_root, monkeypatch, desktop_mode=False, max_datasets=2) as client:
         yield client
 
 
@@ -175,6 +200,65 @@ def test_datasets_in_data_root(desktop_client: TestClient) -> None:
     datasets = AvailableDatasets(**response.json())
     assert set(datasets.available_files) == {"C-1", "C-2", "C-3"}
     assert datasets.directory == ""
+
+
+def test_max_datasets_truncates_the_scan(capped_desktop_client: TestClient) -> None:
+    response = capped_desktop_client.get("/datasets-in-directory")
+    assert response.status_code == 200
+
+    # the whole data root holds three sets; the scan stops after two, taking
+    # them in traversal order (session-a, then its nested subdirectory).
+    datasets = AvailableDatasets(**response.json())
+    assert set(datasets.available_files) == {"C-1", "C-2"}
+    assert datasets.truncated is True
+
+
+def test_max_datasets_applies_to_every_selection(
+    capped_desktop_client: TestClient,
+) -> None:
+    # a directory under the cap is unaffected, and reports as much
+    response = capped_desktop_client.get(
+        "/datasets-in-directory", params={"path": "session-b"}
+    )
+    datasets = AvailableDatasets(**response.json())
+    assert set(datasets.available_files) == {"C-3"}
+    assert datasets.truncated is False
+
+    # and the cap still applies to the next selection rather than being
+    # consumed by the first one
+    response = capped_desktop_client.get("/datasets-in-directory")
+    datasets = AvailableDatasets(**response.json())
+    assert set(datasets.available_files) == {"C-1", "C-2"}
+    assert datasets.truncated is True
+
+
+def test_truncation_flag_persists_on_later_listings(
+    capped_desktop_client: TestClient,
+) -> None:
+    # /available-datasets serves the working set the last scan produced, so it
+    # has to keep flagging that the set is partial
+    capped_desktop_client.get("/datasets-in-directory")
+
+    datasets = AvailableDatasets(
+        **capped_desktop_client.get("/available-datasets").json()
+    )
+    assert set(datasets.available_files) == {"C-1", "C-2"}
+    assert datasets.truncated is True
+
+
+def test_max_datasets_ignored_outside_desktop_mode(
+    capped_server_client: TestClient,
+) -> None:
+    datasets = AvailableDatasets(
+        **capped_server_client.get("/available-datasets").json()
+    )
+    assert set(datasets.available_files) == {"C-1", "C-2", "C-3"}
+    assert datasets.truncated is False
+
+
+def test_uncapped_scans_are_never_truncated(desktop_client: TestClient) -> None:
+    response = desktop_client.get("/datasets-in-directory")
+    assert AvailableDatasets(**response.json()).truncated is False
 
 
 @pytest.mark.parametrize("path", ["..", "/etc"])

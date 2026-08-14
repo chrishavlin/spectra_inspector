@@ -20,6 +20,7 @@ class EDAXPathHandler:
         require_valid_path: bool = True,
         init_db: bool = False,
         allow_mixed_basenames: bool = False,
+        max_datasets: int | None = None,
     ):
 
         valid_data_path: Path | None = None
@@ -40,7 +41,10 @@ class EDAXPathHandler:
             raise FileNotFoundError(msg)
 
         self.database = OnDiskDatabase(
-            self, init_db=init_db, allow_mixed_basenames=allow_mixed_basenames
+            self,
+            init_db=init_db,
+            allow_mixed_basenames=allow_mixed_basenames,
+            max_datasets=max_datasets,
         )
 
         nmaps = len(self.database.available_maps)
