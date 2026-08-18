@@ -1,3 +1,10 @@
+"""Reductions of on-disk EDAX datasets into serializeable results.
+
+Every public method of :class:`OperationEDAXStateHandler` is dispatched by name
+off the request queue in ``main.py`` (``queueOpsItem.ops_func``), so a rename
+here is a change to how endpoints call in.
+"""
+
 from typing import Any
 
 import numpy as np
@@ -17,11 +24,36 @@ _DEFAULT_CHUNKSIZE = 128
 
 
 class OperationEDAXStateHandler:
+    """Loads EDAX datasets on demand and reduces them for the API.
+
+    Parameters
+    ----------
+    ph : EDAXPathHandler
+        the path handler owning the database of available filesets
+    allow_mock_files : bool, optional
+        if True, the synthetic samples defined in ``_testing`` are accepted
+        alongside those in the database, by default False. Only enabled when
+        running under pytest.
+    """
+
     def __init__(self, ph: EDAXPathHandler, allow_mock_files: bool = False) -> None:
         self.ph = ph
         self._allow_mock_files = allow_mock_files
 
     def _require_sample(self, sample_name: str) -> None:
+        """Check that a sample can be loaded, raising if it cannot.
+
+        Parameters
+        ----------
+        sample_name : str
+            the sample name (the basename shared by an EDAX fileset)
+
+        Raises
+        ------
+        KeyError
+            If the sample is in neither the database nor, when mock files are
+            allowed, the set of synthetic test samples.
+        """
 
         if sample_name in self.ph.database.available_maps:
             return
@@ -40,6 +72,24 @@ class OperationEDAXStateHandler:
     ) -> tuple[
         list[tuple[int, int]], list[tuple[float, float]], dict[str, Any], dict[str, Any]
     ]:
+        """Fill in unspecified index ranges and collect a sample's metadata.
+
+        Parameters
+        ----------
+        sample_name : str
+            the sample name (the basename shared by an EDAX fileset)
+        input_index_ranges : list[tuple[int, int] | None]
+            the (start, stop) index ranges to validate, ordered by axis. A
+            None entry is replaced by the full extent of that axis.
+
+        Returns
+        -------
+        tuple[list[tuple[int, int]], list[tuple[float, float]], dict, dict]
+            ``(index_ranges, physical_ranges, metadata, original_metadata)``:
+            the filled-in index ranges, the physical values those indices map
+            to via the axis scaling, and serializeable copies of the dataset's
+            two metadata dictionaries.
+        """
 
         self._require_sample(sample_name)
         edax_ds = self.ph.load_edax(sample_name)
@@ -63,6 +113,19 @@ class OperationEDAXStateHandler:
         return valid_index_ranges, physical_ranges, md, orig_md
 
     def get_sample_axes(self, sample_name: str) -> list[EDAX_axis]:
+        """The axis descriptions of a sample.
+
+        Parameters
+        ----------
+        sample_name : str
+            the sample name (the basename shared by an EDAX fileset)
+
+        Returns
+        -------
+        list[EDAX_axis]
+            a copy of the axes, ordered as they are in the data array:
+            (index0, index1, energy channel).
+        """
         self._require_sample(sample_name)
         edax_ds = self.ph.load_edax(sample_name)
         return edax_ds.axes.copy()
@@ -74,6 +137,28 @@ class OperationEDAXStateHandler:
         index0_range: tuple[int, int] | None = None,
         index1_range: tuple[int, int] | None = None,
     ) -> raveledImage:
+        """A single-channel image of a sample, flattened for transport.
+
+        Parameters
+        ----------
+        sample_name : str
+            the sample name (the basename shared by an EDAX fileset)
+        channel_index : int | tuple[int, int]
+            the energy channel to image. A (start, stop) tuple selects a
+            channel slice without reducing it, which yields a 3D result that
+            ``raveledImage`` cannot describe -- callers pass a single index.
+        index0_range : tuple[int, int] | None, optional
+            (start, stop) index range along axis 0, by default None, which
+            uses the full axis.
+        index1_range : tuple[int, int] | None, optional
+            (start, stop) index range along axis 1, by default None, which
+            uses the full axis.
+
+        Returns
+        -------
+        raveledImage
+            the flattened image and the shape needed to restore it.
+        """
         im = self.get_image(
             sample_name,
             channel_index=channel_index,
@@ -93,6 +178,42 @@ class OperationEDAXStateHandler:
         index1_range: tuple[int, int] | None = None,
         edax_ds: Any | None = None,
     ) -> npt.NDArray[np.int64]:
+        """A subset of a sample's data cube.
+
+        The subset is sliced straight out of the memory mapped ``.spd``
+        payload, so only the requested portion is read from disk.
+
+        Parameters
+        ----------
+        sample_name : str
+            the sample name (the basename shared by an EDAX fileset)
+        channel_index : int | tuple[int, int]
+            a single energy channel, or a (start, stop) channel range to keep
+            as an axis of the result.
+        index0_range : tuple[int, int] | None, optional
+            (start, stop) index range along axis 0, by default None, which
+            uses the full axis.
+        index1_range : tuple[int, int] | None, optional
+            (start, stop) index range along axis 1, by default None, which
+            uses the full axis.
+        edax_ds : Any | None, optional
+            an already loaded ``EDAX_raw_ds`` to slice, by default None, in
+            which case the sample is loaded here. Chunked callers pass one in
+            to avoid re-loading the dataset for every chunk.
+
+        Returns
+        -------
+        npt.NDArray[np.int64]
+            the subset, of shape (n_index0, n_index1) for an integer
+            ``channel_index`` or (n_index0, n_index1, n_channels) for a range.
+
+        Raises
+        ------
+        TypeError
+            If ``channel_index`` is neither an int nor a pair of ints.
+        ValueError
+            If the loaded dataset carries no data array.
+        """
 
         self._require_sample(sample_name)
         input_index_ranges = [index0_range, index1_range]
@@ -132,6 +253,30 @@ class OperationEDAXStateHandler:
         chunking_index: int = 0,
         chunksize: int = _DEFAULT_CHUNKSIZE,
     ) -> raveledImage:
+        """An intensity image summed over a channel range, flattened for transport.
+
+        Parameters
+        ----------
+        sample_name : str
+            the sample name (the basename shared by an EDAX fileset)
+        channel_range : tuple[int, int]
+            the (start, stop) energy channel range to sum over
+        index0_range : tuple[int, int] | None, optional
+            (start, stop) index range along axis 0, by default None, which
+            uses the full axis.
+        index1_range : tuple[int, int] | None, optional
+            (start, stop) index range along axis 1, by default None, which
+            uses the full axis.
+        chunking_index : int, optional
+            the spatial axis (0 or 1) to chunk the summation over, by default 0
+        chunksize : int, optional
+            number of elements of ``chunking_index`` per chunk, by default 128
+
+        Returns
+        -------
+        raveledImage
+            the flattened image and the shape needed to restore it.
+        """
         result = self.get_multi_channel_intensity_image(
             sample_name,
             channel_range,
@@ -154,6 +299,38 @@ class OperationEDAXStateHandler:
         chunking_index: int = 0,
         chunksize: int = _DEFAULT_CHUNKSIZE,
     ) -> npt.NDArray[np.int64]:
+        """Sum a sample's data cube over a range of energy channels.
+
+        The summation is chunked along one spatial axis so that the full cube
+        is never held in memory at once.
+
+        Parameters
+        ----------
+        sample_name : str
+            the sample name (the basename shared by an EDAX fileset)
+        channel_range : tuple[int, int]
+            the (start, stop) energy channel range to sum over
+        index0_range : tuple[int, int] | None, optional
+            (start, stop) index range along axis 0, by default None, which
+            uses the full axis.
+        index1_range : tuple[int, int] | None, optional
+            (start, stop) index range along axis 1, by default None, which
+            uses the full axis.
+        chunking_index : int, optional
+            the spatial axis (0 or 1) to chunk the summation over, by default 0
+        chunksize : int, optional
+            number of elements of ``chunking_index`` per chunk, by default 128
+
+        Returns
+        -------
+        npt.NDArray[np.int64]
+            the summed intensity image, of shape (n_index0, n_index1).
+
+        Raises
+        ------
+        ValueError
+            If the loaded dataset carries no data array.
+        """
 
         self._require_sample(sample_name)
         input_index_ranges = [index0_range, index1_range]
@@ -215,6 +392,36 @@ class OperationEDAXStateHandler:
         chunking_index: int = 0,
         chunksize: int = _DEFAULT_CHUNKSIZE,
     ) -> Spectrum1d:
+        """Sum a sample's data cube over a spatial region into a 1D spectrum.
+
+        The summation is chunked along one spatial axis so that the full cube
+        is never held in memory at once.
+
+        Parameters
+        ----------
+        sample_name : str
+            the sample name (the basename shared by an EDAX fileset)
+        channel_range : tuple[int, int] | None, optional
+            the (start, stop) energy channel range to return, by default None,
+            which uses every channel.
+        index0_range : tuple[int, int] | None, optional
+            (start, stop) index range along axis 0 to sum over, by default
+            None, which uses the full axis.
+        index1_range : tuple[int, int] | None, optional
+            (start, stop) index range along axis 1 to sum over, by default
+            None, which uses the full axis.
+        chunking_index : int, optional
+            the spatial axis (0 or 1) to chunk the summation over, by default 0
+        chunksize : int, optional
+            number of elements of ``chunking_index`` per chunk, by default 128
+
+        Returns
+        -------
+        Spectrum1d
+            counts per energy channel over the selected region, carrying the
+            channel indices, the physical energy range they span and the
+            dataset metadata.
+        """
 
         self._require_sample(sample_name)
         input_index_ranges = [index0_range, index1_range, channel_range]
@@ -268,11 +475,44 @@ class OperationEDAXStateHandler:
         )
 
     def get_refined_metadata(self, sample_name: str) -> MetadataModel:
+        """The structured metadata of a sample, read without loading its data.
+
+        Parameters
+        ----------
+        sample_name : str
+            the sample name (the basename shared by an EDAX fileset)
+
+        Returns
+        -------
+        MetadataModel
+            the subset of the EDAX metadata the API exposes.
+        """
         self._require_sample(sample_name)
         fl = self.ph.load_edax(sample_name, metadata_only=True)
         return fl.refined_metadata
 
     def get_combined_metadata(self, sample_name: str) -> CombinedMetadata:
+        """The metadata, axes and data shape of a sample.
+
+        Unlike :meth:`get_refined_metadata` this opens the ``.spd`` payload,
+        since the data shape comes from the array itself.
+
+        Parameters
+        ----------
+        sample_name : str
+            the sample name (the basename shared by an EDAX fileset)
+
+        Returns
+        -------
+        CombinedMetadata
+            the refined metadata, the axes keyed by their position in the
+            array and the (index0, index1, channel) shape of the data.
+
+        Raises
+        ------
+        ValueError
+            If the loaded dataset carries no data array.
+        """
         self._require_sample(sample_name)
         fl = self.ph.load_edax(sample_name, metadata_only=False)
         mm = fl.refined_metadata
