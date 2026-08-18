@@ -53,6 +53,10 @@ test = [
   "pytest-cov>=7",
 ]
 lint = ["pre-commit"]
+# used by scripts/generate_frontend_models.py to regenerate the frontend's copy
+# of the response models from this server's OpenAPI schema. ruff is pinned to
+# the revision the pre-commit hooks use so that generated output stays stable.
+codegen = ["datamodel-code-generator>=0.72.4", "ruff==0.15.0"]
 dev = [{ include-group = "test" }, { include-group = "lint" }]
 docs = [
   "sphinx>=7.0",

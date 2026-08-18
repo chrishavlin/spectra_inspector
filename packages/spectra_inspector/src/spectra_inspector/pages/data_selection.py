@@ -15,6 +15,7 @@ from spectra_inspector.logging import spectraLogger
 from spectra_inspector.user_store_model import (
     USER_STORE_DIV_ID,
     UserStore,
+    sample_metadata_for_store,
     updateDataStore,
 )
 from spectra_inspector.utilities.coerce import spaces_to_placeholder
@@ -114,7 +115,7 @@ def update_selected_dataset(
             input_value = None
             has_input = False
 
-        sample_metadata = available.sample_metadata
+        sample_metadata = sample_metadata_for_store(available.sample_metadata)
         if available is not None:
             new_user_data = updateDataStore(
                 new_user_data, "sample_metadata", sample_metadata

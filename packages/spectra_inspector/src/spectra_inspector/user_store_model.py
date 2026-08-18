@@ -8,11 +8,25 @@ from spectra_inspector.utilities.model import CombinedMetadata, sampleMetadata
 USER_STORE_DIV_ID = "user-mem-store"
 
 
+def sample_metadata_for_store(meta: sampleMetadata | None) -> dict[str, Any] | None:
+    """Flatten a `sampleMetadata` response into the plain dict the store holds.
+
+    Everything in the user store is round-tripped through JSON by `dcc.Store`,
+    so the pydantic models the server interface returns cannot be put in it as
+    they are.
+    """
+    if meta is None:
+        return None
+    return meta.model_dump()
+
+
 @dataclasses.dataclass
 class UserStore:
     selected_dataset: str = "none"
     metadata_json: str = ""
-    sample_metadata: sampleMetadata | None = None
+    # a `sampleMetadata` payload, kept as a dict because the store is JSON;
+    # see `sample_metadata_for_store`.
+    sample_metadata: dict[str, Any] | None = None
     # desktop mode only: the server-side working directory the user picked
     # (relative to the server's data root) and the datasets found in it. Both
     # stay None when the server scans its whole data root at startup.

@@ -1,5 +1,4 @@
 # import requests
-from dataclasses import asdict
 
 import numpy as np
 import pytest
@@ -43,9 +42,14 @@ def test_get_image_spectrum(mocker):
     mock_response = mocker.Mock()
     mock_response.status_code = 200
 
-    expected_response = Spectrum1dDict(list(range(10)), list(range(10)), 0, 1)
+    expected_response = Spectrum1dDict(
+        energy=list(range(10)),
+        intensity=list(range(10)),
+        energy_min=0,
+        energy_max=1,
+    )
 
-    mock_response.json.return_value = asdict(expected_response)
+    mock_response.json.return_value = expected_response.model_dump()
     mocker.patch("requests.Session.get", return_value=mock_response)
 
     sisi = SpectraInspectorServerInterface()

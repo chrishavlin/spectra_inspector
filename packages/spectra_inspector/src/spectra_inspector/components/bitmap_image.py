@@ -18,7 +18,7 @@ from spectra_inspector.user_store_model import UserStore
 from spectra_inspector.utilities.coerce import get_sequential_colorscales
 from spectra_inspector.utilities.interface import SpectraInspectorServerInterface
 from spectra_inspector.utilities.model import CombinedMetadata
-from spectra_inspector.utilities.scaling import get_closest_index
+from spectra_inspector.utilities.scaling import get_axis, get_closest_index
 
 _colorscales = get_sequential_colorscales()
 
@@ -179,8 +179,9 @@ def fetch_im_data(
     the only blocking call in building a figure, and it dominates everything
     else by three orders of magnitude.
     """
-    indx0 = get_closest_index(md.axes_by_index[2], slider_range[0])
-    indx1 = get_closest_index(md.axes_by_index[2], slider_range[1])
+    channel_axis = get_axis(md, 2)
+    indx0 = get_closest_index(channel_axis, slider_range[0])
+    indx1 = get_closest_index(channel_axis, slider_range[1])
 
     msg = f"fetching image data: {user_store.selected_dataset}, {indx0}, {indx1}"
     spectraLogger.info(msg)

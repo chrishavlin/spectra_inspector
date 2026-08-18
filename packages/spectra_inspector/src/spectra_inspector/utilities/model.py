@@ -1,16 +1,18 @@
-from dataclasses import dataclass
-from pathlib import Path
+# DO NOT EDIT: generated from the spectra_inspector_server OpenAPI schema.
+#
+# Regenerate with:
+#
+#     cd packages/spectra_inspector_server
+#     uv run --group codegen python ../../scripts/generate_frontend_models.py
+#
+# The server's model.py is the source of truth; edits made here are overwritten
+# and the model-codegen CI job fails on any difference.
+
+from __future__ import annotations
+
 from typing import Any
 
-from pydantic import BaseModel
-
-
-class EDAX_file_set(BaseModel):
-    spd: Path
-    spc: Path
-    ipr: Path
-    bmp: Path
-    xml: Path
+from pydantic import BaseModel, Field
 
 
 class EDAX_axis(BaseModel):
@@ -23,8 +25,33 @@ class EDAX_axis(BaseModel):
     navigate: bool
 
 
-@dataclass
-class Spectrum1dDict:
+class EDS_1(BaseModel):
+    azimuth_angle: float
+    elevation_angle: float
+    energy_resolution_MnKa: float
+    live_time: float
+
+
+class GeneralMetadata(BaseModel):
+    original_filename: str
+    title: str
+
+
+class Info(BaseModel):
+    app_name: str
+    spectra_inspector_data_root: str
+    desktop_mode: bool | None = False
+
+
+class Sample_1(BaseModel):
+    elements: list[str]
+
+
+class Signal_1(BaseModel):
+    signal_type: str
+
+
+class Spectrum1dDict(BaseModel):
     energy: list[float]
     intensity: list[float]
     energy_min: float
@@ -34,114 +61,102 @@ class Spectrum1dDict:
     weights: dict[str, Any] | None = None
 
 
-class GeneralMetadata(BaseModel):
-    original_filename: str
-    title: str
-
-
-class Signal(BaseModel):
-    signal_type: str
-
-
-class EDS(BaseModel):
-    azimuth_angle: float
-    elevation_angle: float
-    energy_resolution_MnKa: float
-    live_time: float
-
-
-class Detector(BaseModel):
-    EDS: EDS
-
-
-class Stage(BaseModel):
+class Stage_1(BaseModel):
     tilt_alpha: float
 
 
-class SEM(BaseModel):
-    Detector: Detector
-    beam_energy: float
-    Stage: Stage
-
-
-class AcquisitionInstrument(BaseModel):
-    SEM: SEM
-
-
-class Sample(BaseModel):
-    elements: list[str]
-
-
-class MetadataModel(BaseModel):
-    General: GeneralMetadata
-    Signal: Signal
-    Acquisition_instrument: AcquisitionInstrument
-    Sample: Sample
-
-
-class CombinedMetadata(BaseModel):
-    metadata: MetadataModel
-    axes_by_index: dict[int, EDAX_axis]
-    data_shape: tuple[int, int, int]
-
-
-@dataclass
-class Info:
-    app_name: str
-    spectra_inspector_data_root: str
-    desktop_mode: bool = False
+class ValidationError(BaseModel):
+    loc: list[str | int]
+    msg: str
+    type: str
+    input: Any | None = None
+    ctx: dict[str, Any] | None = None
 
 
 class directoryEntry(BaseModel):
-    """a single subdirectory of a browsable directory."""
+    """
+    a single subdirectory of a browsable directory.
+    """
 
     name: str
-    # posix-style path relative to the server's data root
     path: str
 
 
 class directoryListing(BaseModel):
-    """the browsable contents of one directory within the server's data root."""
+    """
+    the browsable contents of one directory within the data root.
+    """
 
-    # posix-style path relative to the data root, "" for the data root itself
     path: str
     name: str
-    # None when this listing is the data root: there is nowhere further up to go
     parent_path: str | None = None
-    directories: list[directoryEntry] = []
-    # number of EDAX file sets found directly in this directory
-    dataset_count: int = 0
-
-
-@dataclass
-class sampleMetadataCSVrecord:
-    sample_id: str
-    lat: float
-    lon: float
-    elevation: float
-    group_name: str
-    sample_type: str
-    description: str
-
-
-@dataclass
-class sampleMetadata:
-    records: list[sampleMetadataCSVrecord] | None = None
-    map_samples: dict[str, str] | None = None
-
-
-@dataclass
-class AvailableDatasets:
-    available_files: list[str]
-    sample_metadata: sampleMetadata | None = None
-    # the directory the listing came from, relative to the server's data root.
-    # None when the whole data root was scanned.
-    directory: str | None = None
-    # true when the server stopped scanning at its SPECTRA_INSPECTOR_MAX_DATASETS
-    # limit, so available_files is the first N of a larger number on disk.
-    truncated: bool = False
+    directories: list[directoryEntry] | None = Field([], validate_default=True)
+    dataset_count: int | None = 0
 
 
 class raveledImage(BaseModel):
     image: list[int]
     shape: tuple[int, int]
+
+
+class sampleMetadataCSVrecord(BaseModel):
+    sample_id: str
+    lat: float | None
+    lon: float | None
+    elevation: float | None
+    group_name: str
+    sample_type: str
+    description: str
+
+
+class Detector_1(BaseModel):
+    EDS: EDS_1
+
+
+class HTTPValidationError(BaseModel):
+    detail: list[ValidationError] | None = None
+
+
+class SEM_1(BaseModel):
+    Detector: Detector_1
+    beam_energy: float
+    Stage: Stage_1
+
+
+class sampleMetadata(BaseModel):
+    records: list[sampleMetadataCSVrecord] | None = None
+    map_samples: dict[str, str] | None = None
+
+
+class AcquisitionInstrument(BaseModel):
+    SEM: SEM_1
+
+
+class AvailableDatasets(BaseModel):
+    available_files: list[str]
+    sample_metadata: sampleMetadata | None = None
+    directory: str | None = None
+    truncated: bool | None = False
+
+
+class MetadataModel(BaseModel):
+    General: GeneralMetadata
+    Signal: Signal_1
+    Acquisition_instrument: AcquisitionInstrument
+    Sample: Sample_1
+
+
+class CombinedMetadata(BaseModel):
+    metadata: MetadataModel
+    axes_by_index: dict[str, EDAX_axis]
+    data_shape: tuple[int, int, int]
+
+
+# These names collide with a field of the same name, so the generator
+# suffixed the class. Alias them back to the spelling the server uses.
+Detector = Detector_1
+EDS = EDS_1
+SEM = SEM_1
+Sample = Sample_1
+Signal = Signal_1
+Stage = Stage_1
