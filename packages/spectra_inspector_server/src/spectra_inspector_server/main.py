@@ -1,7 +1,7 @@
 import asyncio
 import threading
 from asyncio.tasks import Task
-from concurrent.futures import ProcessPoolExecutor
+from concurrent.futures import BrokenExecutor, ProcessPoolExecutor
 from contextlib import asynccontextmanager
 from dataclasses import dataclass
 from pathlib import Path
@@ -113,6 +113,10 @@ SyncedPathHandler = Annotated[EDAXPathHandler, Depends(_synced_path_handler)]
 
 
 _results: dict[str, OptionalOpsReturnType] = {}
+# one event per queued item, set when its result lands in _results. An ops_id
+# missing from here is one nobody is waiting on any more.
+_pending: dict[str, asyncio.Event] = {}
+_OPS_TIMEOUT_S = 60 * 2
 background_tasks: set[Task] = set()  # type:ignore[type-arg]
 
 
@@ -142,13 +146,34 @@ def process_handler(ph: EDAXPathHandler, item: queueOpsItem) -> OptionalOpsRetur
 
 
 async def process_requests(q: asyncio.Queue, ph: EDAXPathHandler) -> None:  # type:ignore[type-arg]
+    # the worker is kept alive across requests: it caches the memmaps of the
+    # filesets it has already opened, and re-mapping a cube is expensive.
     while True:
-        with ProcessPoolExecutor() as pool:
-            item = await q.get()  # Get a request from the queue
-            loop = asyncio.get_running_loop()
-            r = await loop.run_in_executor(pool, process_handler, ph, item)
-            _results[item.ops_id] = r
-            q.task_done()
+        with ProcessPoolExecutor(max_workers=1) as pool:
+            pool_is_usable = True
+            while pool_is_usable:
+                item = await q.get()  # Get a request from the queue
+                loop = asyncio.get_running_loop()
+                r: OptionalOpsReturnType = None
+                try:
+                    r = await loop.run_in_executor(pool, process_handler, ph, item)
+                except BrokenExecutor:
+                    spectraLogger.exception("worker process died, restarting it")
+                    pool_is_usable = False
+                except Exception:  # noqa: BLE001
+                    spectraLogger.exception(
+                        "%s failed for ops_id %s", item.ops_func, item.ops_id
+                    )
+                done = _pending.get(item.ops_id)
+                if done is None:
+                    spectraLogger.warning(
+                        "nothing is waiting on ops_id %s, dropping its result",
+                        item.ops_id,
+                    )
+                else:
+                    _results[item.ops_id] = r
+                    done.set()
+                q.task_done()
 
 
 @asynccontextmanager
@@ -313,19 +338,23 @@ async def image_metadata(sample_name: str, ph: SyncedPathHandler) -> MetadataMod
     return ops.get_refined_metadata(sample_name)
 
 
+async def submit_op(q: asyncio.Queue, item: queueOpsItem) -> None:  # type:ignore[type-arg]
+    """Queue an operation, registering interest in its result first."""
+    _pending[item.ops_id] = asyncio.Event()
+    await q.put(item)
+
+
 async def await_op_result(item: queueOpsItem) -> OptionalOpsReturnType:
-    total_time = 0.0
-    dt = 0.01
-    timeout = 60 * 2
-    while True:
-        if item.ops_id not in _results:
-            await asyncio.sleep(dt)
-            total_time += dt
-        elif total_time > timeout:
-            msg = f"timeout error after {total_time} s"
-            raise TimeoutError(msg)
-        else:
-            break
+    # the consumer runs in this loop too, so waiting on an event hands the
+    # result over as soon as it exists rather than on the next poll.
+    done = _pending[item.ops_id]
+    try:
+        await asyncio.wait_for(done.wait(), timeout=_OPS_TIMEOUT_S)
+    except TimeoutError:
+        msg = f"timeout error after {_OPS_TIMEOUT_S} s"
+        raise TimeoutError(msg) from None
+    finally:
+        _pending.pop(item.ops_id, None)
     result = _results.pop(item.ops_id)
     assert item.ops_id not in _results
     return result
@@ -394,7 +423,7 @@ async def image_spectrum(
         },
     )
 
-    await q.put(item)
+    await submit_op(q, item)
     result = None
     try:
         result = await await_op_result(item)
@@ -447,7 +476,7 @@ async def image_data(
         },
     )
 
-    await request.app.state.q.put(item)
+    await submit_op(request.app.state.q, item)
     try:
         result = await await_op_result(item)
     except TimeoutError as err:
@@ -510,7 +539,7 @@ async def image_data_summed(
         },
     )
 
-    await request.app.state.q.put(item)
+    await submit_op(request.app.state.q, item)
     try:
         result = await await_op_result(item)
     except TimeoutError as err:
