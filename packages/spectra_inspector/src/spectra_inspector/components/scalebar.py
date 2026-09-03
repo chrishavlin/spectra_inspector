@@ -71,24 +71,28 @@ class scalebarHandler:
 
         return new_trace
 
-    def add_to_or_update_figure(
+    def get_pieces(
         self,
-        fig: Figure | None,
         md: CombinedMetadata,
-    ):
+        x_range: list[float] | None = None,
+        y_range: list[float] | None = None,
+    ) -> tuple[dict[str, Any], dict[str, Any]]:
+        """The scalebar trace and its label annotation for a view.
 
-        if fig is None:
-            return
-
+        Ranges are ascending pixel ranges of the visible image; None means the
+        full axis. The bar shrinks to a round number when the view is narrower
+        than the default width.
+        """
         widths = {"x": 0.0, "y": 0.0}
         scalebar_pos = {"x": 0.0, "y": 0.0}
         ax_to_id = {ax.name: iax for iax, ax in md.axes_by_index.items()}
-        for ax in ["x", "y"]:
-            rng = conditionally_get_axis_range(fig, ax)
-            if rng is None:
-                rng = [0, md.axes_by_index[ax_to_id[ax]].size]
-            rng[0] = max(rng[0], 0)
-            rng = np.ceil(rng)
+        for ax, requested in (("x", x_range), ("y", y_range)):
+            low, high = (
+                requested
+                if requested is not None
+                else (0, md.axes_by_index[ax_to_id[ax]].size)
+            )
+            rng = np.ceil([max(low, 0), high])
 
             widths[ax] = rng[1] - rng[0]
             scalebar_pos[ax] = rng[0] + np.ceil(self.pixel_offset_factor * widths[ax])
@@ -109,10 +113,6 @@ class scalebarHandler:
             override_width=override_width,
         )
 
-        figdata = fig["data"]
-        if figdata is None:
-            return
-
         text_annotate_dict = {
             "x": text_x_loc,
             "y": scalebar_pos["y"],
@@ -125,14 +125,34 @@ class scalebarHandler:
                 "weight": 1000,
             },
         }
+        return new_trace, text_annotate_dict
+
+    def add_to_or_update_figure(
+        self,
+        fig: Figure | None,
+        md: CombinedMetadata,
+    ):
+
+        if fig is None:
+            return
+
+        figdata = fig["data"]
+        if figdata is None:
+            return
+
+        new_trace, text_annotate_dict = self.get_pieces(
+            md,
+            x_range=conditionally_get_axis_range(fig, "x"),
+            y_range=conditionally_get_axis_range(fig, "y"),
+        )
 
         if len(figdata) <= 1:
             # no scalebar yet, add it
             fig.add_trace(new_trace)
             fig.add_annotation(**text_annotate_dict)
         else:
-            fig["data"][1] = new_trace
-            fig["layout"]["annotations"][0] = text_annotate_dict
+            fig.data[1].update({k: v for k, v in new_trace.items() if k != "type"})
+            fig.layout.annotations[0].update(text_annotate_dict)
 
 
 def conditionally_get_axis_range(fig: Figure | None, ax: str) -> None | list[float]:

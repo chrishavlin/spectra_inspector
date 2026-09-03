@@ -41,18 +41,23 @@ from spectra_inspector.user_store_model import (
     updateDataStore,
 )
 from spectra_inspector.utilities.coerce import (
-    copy_layout_attrs,
-    copy_layout_attrs_for_new_fig,
     placeholder_to_spaces,
     plotly_im_trace_to_array,
     plotly_to_matplotlib,
-    sync_layouts,
 )
 from spectra_inspector.utilities.interface import SpectraInspectorServerInterface
 from spectra_inspector.utilities.summary_writer import summaryWriter
+from spectra_inspector.utilities.view_sync import (
+    apply_axes_to_patch,
+    empty_view,
+    ensure_view,
+    shapes_from_relayout,
+    sorted_axis_range,
+    update_view_from_relayout,
+)
 
 if TYPE_CHECKING:
-    from spectra_inspector.utilities.model import AvailableDatasets
+    from spectra_inspector.utilities.model import AvailableDatasets, CombinedMetadata
 
 dash.register_page(__name__, order=1, path_template="/inspector/<sample_name>")
 
@@ -129,6 +134,7 @@ class inspectorIDs(BaseModel):
     spectrum_container: str = "spectrum-container"
     image_container_type: str = "bitmap-image"
     shapes_store: str = "active-shapes"
+    view_store: str = "image-view-store"
     processed_graph_id_store: str = "processed-graph-ids"
     graph_id_store: str = "graph-id-store"
     full_spectrum_store: str = "full-spectrum-store"
@@ -158,6 +164,11 @@ def _get_div_store() -> html.Div:
                 id=_IDS.shapes_store,
                 storage_type="memory",
                 data={},
+            ),
+            dcc.Store(
+                id=_IDS.view_store,  # zoom + tool shared by the image panels
+                storage_type="memory",
+                data=empty_view(),
             ),
             dcc.Store(id=_IDS.full_spectrum_store, storage_type="memory", data={}),
             dcc.Store(id=_IDS.active_spectrum_metadata, storage_type="memory", data={}),
@@ -658,12 +669,19 @@ def export_summary(
     raise ValueError(msg)
 
 
+def _graph_dict(index: int) -> dict[str, str | int]:
+    return {"type": _imageIDS.graph, "index": index}
+
+
+def _active_shapes(shapes_store: dict | None) -> list[dict]:
+    return list((shapes_store or {}).get("active_shapes", []))
+
+
 @callback(
     Output({"type": _imageIDS.graph, "index": ALL}, "figure"),
     Output(_IDS.processed_graph_id_store, "data"),
-    Output(_IDS.shapes_store, "data"),
+    Output(_IDS.view_store, "data", allow_duplicate=True),
     Input({"type": _imageSliderIds.refreshbutton, "index": ALL}, "n_clicks"),
-    Input({"type": _imageIDS.graph, "index": ALL}, "relayoutData"),
     Input({"type": _imageIDS.colorscale, "index": ALL}, "value"),
     Input(_IDS.reset_all_axes, "n_clicks"),
     State(_IDS.graph_id_store, "data"),
@@ -673,6 +691,7 @@ def export_summary(
     State(_IDS.processed_graph_id_store, "data"),
     State("sample-name", "children"),
     State({"type": _imageIDS.graph, "index": ALL}, "figure"),
+    State(_IDS.view_store, "data"),
     State(_IDS.shapes_store, "data"),
     running=[
         (Output("full-im-container-loading", "display"), "show", "hide"),
@@ -684,8 +703,7 @@ def export_summary(
     prevent_initial_call=True,
 )
 def update_graph_figure(
-    n_clicks: list[int | None],
-    relayout_data_list: list,
+    n_clicks: list[int | None],  # noqa: ARG001
     colormap_choices: list[str | None],
     reset_nclicks: int | None,
     graph_id_store: dict,
@@ -695,219 +713,217 @@ def update_graph_figure(
     processed_graph_store: dict,
     sample_name: str,
     fig_list: list,
-    shapes_store: dict,
+    view_store: dict | None,
+    shapes_store: dict | None,
 ):
+    """Build image figures: new panels, a refreshed panel, a colormap change,
+    or a reset of the shared view.
+
+    Zooms, tool changes and box annotations are deliberately *not* inputs here:
+    every call ships the full figures (image data included) to the server and
+    back, so those go through the lightweight ``sync_image_views`` instead.
+    Whatever is built here is put into the shared view so it lands in step
+    with the other panels.
+    """
 
     if "graph_ids" not in processed_graph_store:
         processed_graph_store["graph_ids"] = []
-    if "active_shapes" not in shapes_store:
-        shapes_store["active_shapes"] = []
     if "selected_dataset" not in user_store_dict:
         user_store_dict["selected_dataset"] = sample_name
     user_store = UserStore(**user_store_dict)
+    view = ensure_view(view_store)
+    shapes = _active_shapes(shapes_store)
+    no_updates = [no_update] * len(fig_list)
 
     triggered_id = ctx.triggered_id
+    spectraLogger.info(f"update_graph_figure triggered by {ctx.triggered_prop_ids}")
+    if triggered_id is None or not _valid_sample_name(sample_name):
+        return no_updates, processed_graph_store, no_update
 
-    if triggered_id is None:
-        spectraLogger.info(f"no trigger id, initial call passthrough {len(fig_list)}")
-        return (
-            [
-                no_update,
-            ]
-            * len(fig_list),
-            processed_graph_store,
-            shapes_store,
-        )
+    # Panels in the layout without a figure yet. Inserting a panel fires this
+    # callback (its colorscale and refresh button are inputs), but which of the
+    # new inputs ctx reports as the trigger is not worth relying on.
+    new_positions: list[int] = []
+    for active_div in graph_id_store.get("active_div_ids", []):
+        pos = _find_id_in_list(_imageIDS.graph, active_div["index"], graph_ids)
+        if (
+            pos is not None
+            and _graph_dict(active_div["index"])
+            not in processed_graph_store["graph_ids"]
+        ):
+            new_positions.append(pos)
 
-    colorscale_changed = (
-        "type" in triggered_id and triggered_id["type"] == _imageIDS.colorscale
-    )
-    reset_axis_button_clicked = (
-        triggered_id == _IDS.reset_all_axes and reset_nclicks is not None
-    )
-    if colorscale_changed or reset_axis_button_clicked:
-        new_list = _recopy_all_figs(
-            fig_list,
-            user_store,
-            slider_range_list,
-            colormap_choices,
-        )
-        new_list = copy_layout_attrs(new_list, fig_list[0], layout_attrs=["shapes"])
+    if new_positions:
+        spectraLogger.info(f"building figures for panels at {new_positions}")
+        md = user_store.conditionally_fetch_metadata()
+        assert md is not None
 
-        return new_list, processed_graph_store, shapes_store
-
-    triggered_index: int = 0  # the html id index
-    triggered_index_loc: int = 0  # the position in the list
-    if triggered_id is not None:
-        # find the position in the input lists
-        triggered_index = triggered_id["index"]
-        index_loc = _find_id_in_list(_imageIDS.graph, triggered_index, graph_ids)
-        assert isinstance(index_loc, int)
-        triggered_index_loc = index_loc
-
-    graph_dict = {"type": _imageIDS.graph, "index": triggered_index}
-
-    # check for figure refresh
-    colormap = colormap_choices[triggered_index_loc]
-    assert isinstance(colormap, str)
-    refresh = triggered_id["type"] == _imageSliderIds.refreshbutton
-    if (
-        refresh
-        and _valid_sample_name(sample_name)
-        and graph_dict in processed_graph_store["graph_ids"]
-    ):
-        spectraLogger.info(
-            f"refreshing image id {triggered_id}, {n_clicks[triggered_index_loc]}"
-        )
-        new_fig = get_new_im(
-            user_store,
-            slider_range_list[triggered_index_loc],
-            colormap,
-            scalebar_handler=scalebar_handler,
-        )
-        fig_list[triggered_index_loc] = new_fig
-        fig_list = copy_layout_attrs_for_new_fig(fig_list, triggered_index_loc)
-        return fig_list, processed_graph_store, shapes_store
-
-    graph_triggered = triggered_id["type"] == _imageIDS.graph
-    if graph_triggered:
-        # add new figures!
-        initialized = processed_graph_store["initialized"]
-
-        new_graph_dicts = []
-        active_divs = graph_id_store["active_div_ids"]
-        div_index_to_list_index = {
-            active_div["index"]: idiv for idiv, active_div in enumerate(active_divs)
-        }
-
-        if initialized is False:
-            for active_div in active_divs:
-                gdict = {"type": _imageIDS.graph, "index": active_div["index"]}
-                if gdict not in processed_graph_store["graph_ids"]:
-                    new_graph_dicts.append(gdict)
-        elif graph_dict not in processed_graph_store["graph_ids"]:
-            new_graph_dicts.append({"type": _imageIDS.graph, "index": triggered_index})
-
-        if len(new_graph_dicts) > 0:
-            # fetch metadata once for the whole batch rather than once per
-            # panel inside get_new_im
-            md = user_store.conditionally_fetch_metadata()
-            assert md is not None
-
-            list_positions = [
-                div_index_to_list_index[gd["index"]] for gd in new_graph_dicts
-            ]
-
-            # On the first pass every panel needs its own image, and those
-            # fetches are the slow part -- run them concurrently. Afterwards a
-            # new panel is seeded from the existing figure and fetches nothing.
-            im_arrays: list[npt.NDArray | None]
-            if initialized:
-                seed = plotly_im_trace_to_array(fig_list[0]["data"][0])
-                im_arrays = [seed] * len(new_graph_dicts)
-            else:
-                im_arrays = list(
-                    fetch_im_data_parallel(
-                        user_store,
-                        [slider_range_list[pos] for pos in list_positions],
-                        md,
-                    )
-                )
-
-            for graph_dict, list_pos, im_array in zip(
-                new_graph_dicts, list_positions, im_arrays, strict=True
-            ):
-                processed_graph_store["graph_ids"].append(graph_dict)
-
-                new_fig = get_new_im(
+        # On the first pass every panel needs its own image, and those fetches
+        # are the slow part -- run them concurrently. A panel added later is
+        # seeded from an existing figure and fetches nothing until refreshed.
+        seed = next((fig for fig in fig_list if fig and fig.get("data")), None)
+        im_arrays: list[npt.NDArray]
+        if seed is not None:
+            im_arrays = [plotly_im_trace_to_array(seed["data"][0])] * len(new_positions)
+        else:
+            im_arrays = list(
+                fetch_im_data_parallel(
                     user_store,
-                    slider_range_list[list_pos],
-                    colormap,
-                    im_data=im_array,
-                    scalebar_handler=scalebar_handler,
-                    md=md,
+                    [slider_range_list[pos] for pos in new_positions],
+                    md,
                 )
-                fig_list[list_pos] = new_fig
+            )
 
-                if initialized:
-                    fig_list = copy_layout_attrs_for_new_fig(
-                        fig_list, triggered_index_loc
-                    )
+        new_figs = list(no_updates)
+        for pos, im_array in zip(new_positions, im_arrays, strict=True):
+            colormap = colormap_choices[pos]
+            assert isinstance(colormap, str)
+            processed_graph_store["graph_ids"].append(
+                _graph_dict(graph_ids[pos]["index"])
+            )
+            new_figs[pos] = get_new_im(
+                user_store,
+                slider_range_list[pos],
+                colormap,
+                im_data=im_array,
+                scalebar_handler=scalebar_handler,
+                md=md,
+                view=view,
+                shapes=shapes,
+            )
+        processed_graph_store["initialized"] = True
+        return new_figs, processed_graph_store, no_update
 
-            processed_graph_store["initialized"] = True
-            return fig_list, processed_graph_store, shapes_store
+    if triggered_id == _IDS.reset_all_axes and reset_nclicks:
+        # back to the full image on every panel, keeping the tool and the box.
+        # A layout patch is all it takes, the image data stays in the browser.
+        view = ensure_view({"dragmode": view["dragmode"]})
+        md = user_store.conditionally_fetch_metadata()
+        patches = list(no_updates)
+        for pos, graph_id in enumerate(graph_ids):
+            if _graph_dict(graph_id["index"]) in processed_graph_store["graph_ids"]:
+                patches[pos] = _view_patch(view, md)
+        return patches, processed_graph_store, view
 
-        # finally, sync a number of relayouts
-        relay = relayout_data_list[triggered_index_loc]
-        relay_update = {}
-        update_layout = False
+    # Removing a panel also fires this callback, with every remaining panel's
+    # inputs reported as triggered. A click or a colormap pick reports one.
+    if not isinstance(triggered_id, dict) or len(ctx.triggered_prop_ids) != 1:
+        return no_updates, processed_graph_store, no_update
 
-        # copy over these keys
-        for relay_key in ["shapes", "dragmode"]:
-            if relay_key in relay:
-                update_layout = True
-                relay_update[relay_key] = relay[relay_key]
+    pos = _find_id_in_list(_imageIDS.graph, triggered_id["index"], graph_ids)
+    if (
+        pos is None
+        or _graph_dict(triggered_id["index"]) not in processed_graph_store["graph_ids"]
+    ):
+        return no_updates, processed_graph_store, no_update
+    colormap = colormap_choices[pos]
+    assert isinstance(colormap, str)
 
-        if "shapes" in relay_update:
-            if len(relay_update["shapes"]) > 1:
-                # keep only the latest
-                relay_update["shapes"] = [
-                    relay_update["shapes"][-1],
-                ]
-            shapes_store["active_shapes"] = relay_update["shapes"]
+    refresh = triggered_id["type"] == _imageSliderIds.refreshbutton
+    spectraLogger.info(
+        f"{'refreshing' if refresh else 'recoloring'} panel {triggered_id}"
+    )
+    # a colormap change redraws from the image already in the figure; a refresh
+    # fetches the image for the panel's (possibly new) energy range.
+    im_data = None if refresh else plotly_im_trace_to_array(fig_list[pos]["data"][0])
+    new_figs = list(no_updates)
+    new_figs[pos] = get_new_im(
+        user_store,
+        slider_range_list[pos],
+        colormap,
+        im_data=im_data,
+        scalebar_handler=scalebar_handler,
+        view=view,
+        shapes=shapes,
+    )
+    return new_figs, processed_graph_store, no_update
 
-        # handle any updates to axes by copying over the modified
-        # axis to all others
-        joined_relay_keys = " ".join(relay.keys())
-        for ax in ["xaxis", "yaxis"]:
-            if ax in joined_relay_keys:
-                relay_update[ax] = fig_list[triggered_index_loc]["layout"][ax]
-                update_layout = True
 
-        # apply the layout updates
-        if update_layout:
-            # sync once to get layout synced across
-            new_fig_list = sync_layouts(relay_update, fig_list)
+def _view_patch(view: dict, md: "CombinedMetadata | None") -> Patch:
+    """A figure patch moving a panel to the shared view, scalebar included."""
+    patch = apply_axes_to_patch(Patch(), view)
+    if md is not None:
+        trace, annotation = scalebar_handler.get_pieces(
+            md,
+            x_range=sorted_axis_range(view, "xaxis"),
+            y_range=sorted_axis_range(view, "yaxis"),
+        )
+        patch["data"][1] = trace
+        patch["layout"]["annotations"][0] = annotation
+    return patch
 
-            # update the scalebar trace
-            md = user_store.conditionally_fetch_metadata()
-            if md is not None:
-                for fig in new_fig_list:
-                    scalebar_handler.add_to_or_update_figure(fig, md)
-                # sync again as the ranges can get adjusted when adding a trace
-                new_fig_list = sync_layouts(relay_update, new_fig_list)
-            return new_fig_list, processed_graph_store, shapes_store
+
+@callback(
+    Output({"type": _imageIDS.graph, "index": ALL}, "figure", allow_duplicate=True),
+    Output(_IDS.view_store, "data"),
+    Output(_IDS.shapes_store, "data"),
+    Input({"type": _imageIDS.graph, "index": ALL}, "relayoutData"),
+    State({"type": _imageIDS.graph, "index": ALL}, "id"),
+    State(_IDS.processed_graph_id_store, "data"),
+    State(_IDS.view_store, "data"),
+    State(_IDS.shapes_store, "data"),
+    State(USER_STORE_DIV_ID, "data"),
+    State("sample-name", "children"),
+    prevent_initial_call=True,
+)
+def sync_image_views(
+    relayout_data_list: list[dict | None],
+    graph_ids: list[dict[str, str | int]],
+    processed_graph_store: dict,
+    view_store: dict | None,
+    shapes_store: dict | None,
+    user_store_dict: dict,
+    sample_name: str,
+):
+    """Mirror a zoom, pan, tool change or box annotation onto every panel.
+
+    Only ``relayoutData`` comes in and only layout patches go out, so the image
+    data never leaves the browser and the other panels follow almost at once.
+    The shared view is rebuilt from the relayout keys rather than read off the
+    figure, which does not carry plotly's zoom ranges (issue #65).
+    """
+    no_updates = [no_update] * len(relayout_data_list)
+    nothing = (no_updates, no_update, no_update)
+
+    triggered_id = ctx.triggered_id
+    if (
+        not isinstance(triggered_id, dict)
+        or triggered_id.get("type") != _imageIDS.graph
+    ):
+        return nothing
+    pos = _find_id_in_list(_imageIDS.graph, triggered_id["index"], graph_ids)
+    relay = relayout_data_list[pos] if pos is not None else None
+    if not relay:
+        return nothing
+
+    view, axes_changed, dragmode_changed = update_view_from_relayout(view_store, relay)
+    shapes, shapes_changed = shapes_from_relayout(relay, _active_shapes(shapes_store))
+    if not (axes_changed or dragmode_changed or shapes_changed):
+        return nothing
+
+    md: CombinedMetadata | None = None
+    if axes_changed:
+        if "selected_dataset" not in user_store_dict:
+            user_store_dict["selected_dataset"] = sample_name
+        md = UserStore(**user_store_dict).conditionally_fetch_metadata()
+
+    processed = processed_graph_store.get("graph_ids", [])
+    patches = list(no_updates)
+    for ipos, graph_id in enumerate(graph_ids):
+        if _graph_dict(graph_id["index"]) not in processed:
+            continue
+        patch = _view_patch(view, md) if axes_changed else Patch()
+        if dragmode_changed:
+            patch["layout"]["dragmode"] = view["dragmode"]
+        if shapes_changed:
+            patch["layout"]["shapes"] = shapes
+        patches[ipos] = patch
 
     return (
-        [
-            no_update,
-        ]
-        * len(fig_list),
-        processed_graph_store,
-        shapes_store,
+        patches,
+        view if (axes_changed or dragmode_changed) else no_update,
+        {"active_shapes": shapes} if shapes_changed else no_update,
     )
-
-
-def _recopy_all_figs(fig_list, user_store, slider_range_list, colormap_choices):
-    """
-    refreshes all figures without fetching data again.
-    """
-    # image data is reused from the existing figures, so the only backend call
-    # left here is the metadata one -- fetch it once instead of per figure.
-    md = user_store.conditionally_fetch_metadata()
-    new_list = []
-    for igraph in range(len(fig_list)):
-        im_array = plotly_im_trace_to_array(fig_list[igraph]["data"][0])
-        new_fig = get_new_im(
-            user_store,
-            slider_range_list[igraph],
-            colormap_choices[igraph],
-            im_data=im_array,
-            scalebar_handler=scalebar_handler,
-            md=md,
-        )
-        new_list.append(new_fig)
-    return new_list
 
 
 @callback(
@@ -921,6 +937,8 @@ def _recopy_all_figs(fig_list, user_store, slider_range_list, colormap_choices):
     Output(_IDS.active_spectrum_metadata, "data", allow_duplicate=True),
     Output(_IDS.image_container, "children", allow_duplicate=True),
     Output(_IDS.spectrum_container, "figure"),
+    Output(_IDS.view_store, "data", allow_duplicate=True),
+    Output(_IDS.shapes_store, "data", allow_duplicate=True),
     Input(selectorIDs.get_id_with_index("dropdown"), "value"),
     Input(selectorIDs.get_id_with_index("refresh"), "n_clicks"),
     State(USER_STORE_DIV_ID, "data"),
@@ -1001,4 +1019,6 @@ def update_selected_dataset(
         active_spectrum_metadata,
         figure_div_children,
         None,
+        empty_view(),
+        {"active_shapes": []},
     )
