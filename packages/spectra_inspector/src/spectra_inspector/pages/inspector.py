@@ -17,6 +17,7 @@ from dash import (
     dcc,
     html,
     no_update,
+    set_props,
 )
 from pydantic import BaseModel
 
@@ -895,6 +896,12 @@ def sync_image_views(
     relay = relayout_data_list[pos] if pos is not None else None
     if not relay:
         return nothing
+
+    # Dash only fires a callback when a prop's value changes, and plotly reports
+    # every double click as the same {"xaxis.autorange": true, ...} (likewise a
+    # re-picked tool). Clear the event once read so the next identical one on
+    # this panel still counts as a change.
+    set_props(triggered_id, {"relayoutData": None})
 
     view, axes_changed, dragmode_changed = update_view_from_relayout(view_store, relay)
     shapes, shapes_changed = shapes_from_relayout(relay, _active_shapes(shapes_store))
