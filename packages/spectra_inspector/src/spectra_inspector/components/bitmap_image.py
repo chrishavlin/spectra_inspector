@@ -19,6 +19,7 @@ from spectra_inspector.utilities.coerce import get_sequential_colorscales
 from spectra_inspector.utilities.interface import SpectraInspectorServerInterface
 from spectra_inspector.utilities.model import CombinedMetadata
 from spectra_inspector.utilities.scaling import get_axis, get_closest_index
+from spectra_inspector.utilities.view_sync import apply_view_to_figure
 
 _colorscales = get_sequential_colorscales()
 
@@ -90,7 +91,11 @@ def bitmap_image_layout(
         id=imIDs.loadingoverlay,
         overlay_style={"visibility": "visible", "filter": "blur(2px)"},
         type="circle",
-        delay_hide=2000,
+        # the overlay swallows mouse events while shown, so only show it for
+        # updates that take a while (fetching an image) and not for the quick
+        # layout patches that keep the panels in sync.
+        delay_show=300,
+        delay_hide=250,
     )
 
     energy_range_selector, _ = get_element_dropdown_and_slider(
@@ -233,6 +238,8 @@ def get_new_im(
     zmin: float | None = None,
     zmax: float | None = None,
     md: CombinedMetadata | None = None,
+    view: dict | None = None,
+    shapes: list[dict] | None = None,
 ):
 
     if md is None:
@@ -260,6 +267,17 @@ def get_new_im(
     fig.update_xaxes(visible=False)
     fig.update_yaxes(visible=False)
     fig.update_layout(dragmode="drawrect")
+    # px.imshow keeps the aspect ratio with constrain="domain". plotly.js resolves
+    # that constraint against a private record of the last range set by a user
+    # interaction, so a zoom set on the figure from python (the other panels)
+    # comes out a few pixels different from the zoom dragged out in the browser.
+    # constrain="range" depends on the current range alone and lands every panel
+    # on the same view.
+    fig.update_xaxes(constrain="range")
+    fig.update_yaxes(constrain="range")
+
+    # the shared view must be in place before the scalebar is sized to it
+    apply_view_to_figure(fig, view, shapes)
 
     if scalebar_handler is not None:
         scalebar_handler.add_to_or_update_figure(fig, md)
