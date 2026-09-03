@@ -5,7 +5,7 @@ from concurrent.futures import BrokenExecutor, ProcessPoolExecutor
 from contextlib import asynccontextmanager
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Annotated, Literal
+from typing import TYPE_CHECKING, Annotated, Literal
 from uuid import uuid4
 
 from fastapi import Depends, FastAPI, HTTPException, Request
@@ -35,15 +35,27 @@ from spectra_inspector_server.model import (
 from spectra_inspector_server.processor.operations import OperationEDAXStateHandler
 from spectra_inspector_server.settings import Settings
 
+if TYPE_CHECKING:
+    from collections.abc import Container
 
-def _valid_sample_name(sample_name: str, ph: EDAXPathHandler) -> bool:
-    if sample_name in ph.database.available_maps:
+
+def _valid_sample_name(
+    sample_name: str, ph: EDAXPathHandler, spectrum_only: bool = False
+) -> bool:
+    """Whether ``sample_name`` can be served: as a ``.spc`` spectrum when
+    ``spectrum_only`` is set, otherwise as a map."""
+    known: Container[str]
+    if spectrum_only:
+        known = ph.database.available_spectra
+    else:
+        known = ph.database.available_maps
+    if sample_name in known:
         return True
 
     if pytest_running():
         from spectra_inspector_server._testing import _on_disc_mock  # noqa: PLC0415
 
-        return sample_name in _on_disc_mock.filenames
+        return _on_disc_mock.is_mock(sample_name, spectrum_only=spectrum_only)
 
     return False
 
@@ -228,6 +240,7 @@ def _available_datasets_response(ph: EDAXPathHandler) -> AvailableDatasets:
         sample_metadata=all_meta,
         directory=directory,
         truncated=ph.database.scan_truncated,
+        available_spectra=[str(nm) for nm in ph.database.available_spectra],
     )
 
 
@@ -328,14 +341,18 @@ async def datasets_in_directory(
 
 
 @app.get("/image-metadata")
-async def image_metadata(sample_name: str, ph: SyncedPathHandler) -> MetadataModel:
+async def image_metadata(
+    sample_name: str, ph: SyncedPathHandler, spectrum_only: bool = False
+) -> MetadataModel:
+    """``spectrum_only`` names the sample's ``.spc`` spectrum rather than its
+    map, here and on every endpoint that takes it."""
 
-    if not _valid_sample_name(sample_name, ph):
+    if not _valid_sample_name(sample_name, ph, spectrum_only=spectrum_only):
         msg = f"{sample_name} is not a valid sample"
         raise HTTPException(404, detail=msg)
 
     ops = OperationEDAXStateHandler(ph, allow_mock_files=pytest_running())
-    return ops.get_refined_metadata(sample_name)
+    return ops.get_refined_metadata(sample_name, spectrum_only=spectrum_only)
 
 
 async def submit_op(q: asyncio.Queue, item: queueOpsItem) -> None:  # type:ignore[type-arg]
@@ -362,15 +379,15 @@ async def await_op_result(item: queueOpsItem) -> OptionalOpsReturnType:
 
 @app.get("/image-metadata-combined")
 async def image_metadata_combined(
-    sample_name: str, ph: SyncedPathHandler
+    sample_name: str, ph: SyncedPathHandler, spectrum_only: bool = False
 ) -> CombinedMetadata:
 
-    if not _valid_sample_name(sample_name, ph):
+    if not _valid_sample_name(sample_name, ph, spectrum_only=spectrum_only):
         msg = f"{sample_name} is not a valid sample"
         raise HTTPException(404, detail=msg)
 
     ops = OperationEDAXStateHandler(ph, allow_mock_files=pytest_running())
-    return ops.get_combined_metadata(sample_name)
+    return ops.get_combined_metadata(sample_name, spectrum_only=spectrum_only)
 
 
 @app.get("/image-spectrum")
@@ -385,9 +402,10 @@ async def image_spectrum(
     index1_0: int | None | Literal["none"] = None,
     index1_1: int | None | Literal["none"] = None,
     include_weights: bool = True,
+    spectrum_only: bool = False,
 ) -> Spectrum1dDict:
 
-    if not _valid_sample_name(sample_name, ph):
+    if not _valid_sample_name(sample_name, ph, spectrum_only=spectrum_only):
         msg = f"{sample_name} is not a valid sample"
         raise HTTPException(404, detail=msg)
 
@@ -420,6 +438,7 @@ async def image_spectrum(
             "channel_range": channel_range,
             "index0_range": index0_range,
             "index1_range": index1_range,
+            "spectrum_only": spectrum_only,
         },
     )
 

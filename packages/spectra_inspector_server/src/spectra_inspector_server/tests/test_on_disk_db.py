@@ -35,8 +35,12 @@ def test_duplicate_basename_warns_and_skips(
     assert ph.database.available_maps["C-1"].spd.name == "C-1.spd"
 
     warnings = [r.getMessage() for r in caplog.records if r.levelno == logging.WARNING]
-    assert len(warnings) == 2
-    assert all("Duplicate map name" in w for w in warnings)
+    map_warnings = [w for w in warnings if "Duplicate map name" in w]
+    assert len(map_warnings) == 2
+    # each set's .spc is registered as a spectrum too, under the same rule
+    spectrum_warnings = [w for w in warnings if "Duplicate spectrum name" in w]
+    assert len(spectrum_warnings) == 2
+    assert len(warnings) == 4
 
 
 def test_duplicate_basename_in_working_directory(root_with_duplicates: Path) -> None:

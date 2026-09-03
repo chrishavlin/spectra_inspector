@@ -156,6 +156,23 @@ client-side.
 the `DH_assessment` ratio; `Spectrum1d.get_weights()` attaches them to
 `/image-spectrum` responses when `include_weights=true`.
 
+### Spectrum-only datasets (issue #115)
+
+Besides maps, the scan registers **every** `.spc` it sees in
+`OnDiskDatabase.available_spectra` (`_recursive_inspection` / `find_spc_files`),
+whether the file is standalone or the sidecar of a full set.
+`AvailableDatasets.available_spectra` lists them next to `available_files`, and
+`directoryListing.spectrum_count` counts them per directory. The two name spaces
+overlap (`C-12` is both a map and its spectrum), so the per-sample endpoints
+(`/image-metadata`, `/image-metadata-combined`, `/image-spectrum`) take
+`spectrum_only: bool` to say which is meant; the image endpoints only ever serve
+maps. With `spectrum_only`, `EDAXPathHandler.load_edax` goes through
+`file_loaders.load_edax_spc`, which reads the lone `.spc` via rsciio into an
+`EDAX_raw_ds` whose `data` is 1D and whose only axis is the energy axis, so
+`CombinedMetadata.data_shape` is `(channel,)` and `axes_by_index` has key 0
+only. `get_spectrum(..., spectrum_only=True)` returns the stored counts (index
+ranges are ignored) and the weights / DH assessment come out as for a map.
+
 ### Testing without EDAX data
 
 `_testing.py` exposes `onDiscMock` with two synthetic sample names
@@ -165,6 +182,13 @@ full `EDAX_raw_ds` including realistic `original_metadata` headers.
 `OperationEDAXStateHandler._require_sample` accept mock names only when it is
 true, so `TestClient` tests hit every endpoint without a data root. Keep new
 endpoints going through those two guards or they will be untestable.
+
+For spectra, `onDiscMock.is_mock(name, spectrum_only=...)` accepts the map names
+in both modes plus `faked-spectrum-only` as a spectrum with no map behind it
+(`createEDAXSpectrumMock()`, 4096 channels of 10 eV so the calibration windows
+are covered). `write_mock_spc(path)` writes a **genuine** `.spc` using rsciio's
+own header dtype, so the real loader can be exercised on a `tmp_path` without
+checking EDAX data into the repo (`tests/test_spectrum_only.py`).
 
 ## Frontend architecture
 
@@ -195,6 +219,36 @@ only appears once a browser wires the page up:
   dropdown value from the callback that renders the listing is a cycle.
 
 Verify changes here in an actual browser, not just via callback invocation.
+
+`components/dataset_selector.py` carries the **"Spectrum only" switch** (issue
+#115). The server always sends both name lists; the switch picks which one the
+dropdown shows (never both -- a standalone `.spc` is not offered as a map), and
+a page-local `liststore` keeps both lists so a flip needs no round trip. The
+mode itself lives in the user store (`spectrum_only`) and rides along on every
+per-sample request. Things that only show in the browser:
+
+- Pages are rebuilt on navigation and the layout cannot read the user store, so
+  the inspector gets the mode from the `?spectrum_only=true` query string the
+  "Load Selected" link carries; `hydrate_spectrum_only` then sets the switch
+  from the store on mount, and `toggle_spectrum_only` (an `ALL` callback, so it
+  can also write the plain-id user store) tells a hydration apart from a user
+  flip by comparing the switch to the store. A flip clears the selection, since
+  the same name means the other kind of dataset. `resolve_spectrum_only` falls
+  back to the switch while the store has no mode yet (fresh session on a URL).
+- Callbacks whose outputs already exist in the app layout (the user store)
+  **do** fire when only their inputs are inserted with a page, despite
+  `prevent_initial_call=True`; that is how every page's
+  `update_selected_dataset` runs on load, and it is chained after the toggle
+  callback because the dropdown value is an input of it.
+- Dropdown option labels must stay **plain strings**. A component label is
+  mounted by dash-renderer with a path into the layout tree; after a callback
+  replaces the options that path is stale, and reopening the menu crashed the
+  renderer, which re-mounted the page from the stale layout and flipped the
+  switch back. The dark theme's white-on-white value text is fixed with a
+  `color` on the dropdown's `style` instead.
+- In spectrum-only mode the inspector hides the image buttons and the panel area
+  (`inspectorIDs.image_controls` / `image_section`) and `initial_update` opens
+  no panels; only the spectrum and the export panel remain.
 
 ### Browser testing without EDAX data
 

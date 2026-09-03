@@ -1,7 +1,10 @@
 import os
 from collections import OrderedDict
+from pathlib import Path
+from typing import Any
 
 import numpy as np
+import numpy.typing as npt
 
 from spectra_inspector_server.model import EDAX_raw_ds
 
@@ -218,20 +221,150 @@ def createEDAXMock(im_shape: tuple[int, int, int] | None = None) -> EDAX_raw_ds:
     return EDAX_raw_ds(fake_raw_ds)
 
 
+def createEDAXSpectrumMock(
+    n_channels: int = 4096, ev_per_channel: int = 10, start_energy: float = 0.0
+) -> EDAX_raw_ds:
+    """A standalone ``.spc`` spectrum, shaped as rsciio's spc reader returns it.
+
+    The defaults match a real EDAX export: 4096 channels of 10 eV, so the
+    calibration windows (up to 15 keV) all fall inside the spectrum and the
+    element weights can be computed.
+    """
+    rng = np.random.default_rng()
+    intensity = (rng.random(n_channels) * 100).astype(np.uint32)
+
+    # a spectrum's metadata comes out of the same header fields as a map's
+    map_mock = createEDAXMock()
+    metadata = map_mock.metadata
+    metadata["General"] = {"original_filename": "C-12.spc", "title": "EDS Spectrum"}
+
+    spc_h = OrderedDict(
+        {
+            "filler1": np.void(b"bytesfiller"),
+            "dataStart": np.int32(20740),
+            "numPts": np.int16(n_channels),
+            "filler1_1": np.void(b"bytesfiller"),
+            "evPerChan": np.int32(ev_per_channel),
+            "filler2": np.void(b"bytesfiller"),
+            "startEnergy": np.float32(start_energy),
+            "endEnergy": np.float32(start_energy + n_channels * ev_per_channel / 1000),
+            "liveTime": np.float32(3609.19),
+            "tilt": np.float32(0.0),
+            "filler3": np.void(b"bytesfiller"),
+            "detReso": np.float32(125.65),
+            "filler4": np.void(b"bytesfiller"),
+            "azimuth": np.float32(0.0),
+            "elevation": np.float32(33.5),
+            "filler5": np.void(b"bytesfiller"),
+            "kV": np.float32(15.0),
+            "filler6": np.void(b"bytesfiller"),
+            "numElem": np.int16(8),
+            "at": np.array([8, 11, 12, 13, 14, 19, 20, 26] + [0] * 40, dtype=np.uint16),
+            "filler7": np.void(b"bytesfiller"),
+        }
+    )
+
+    return EDAX_raw_ds(
+        {
+            "data": intensity,
+            "axes": [
+                {
+                    "size": n_channels,
+                    "index_in_array": 0,
+                    "name": "Energy",
+                    "scale": ev_per_channel / 1000.0,
+                    "offset": np.float32(start_energy),
+                    "units": "keV",
+                    "navigate": False,
+                }
+            ],
+            "metadata": metadata,
+            "original_metadata": {"spc_header": spc_h},
+        }
+    )
+
+
+def write_mock_spc(
+    path: Path,
+    intensity: npt.NDArray[np.uint32] | None = None,
+    ev_per_channel: int = 10,
+    start_energy: float = 0.0,
+    elements: tuple[int, ...] = (8, 11, 12, 13, 14, 19, 20, 26),
+) -> npt.NDArray[np.uint32]:
+    """Write a synthetic but genuine ``.spc`` file that rsciio can read.
+
+    The header is laid out with rsciio's own dtype description of the parts of
+    the header it reads, so the file round-trips through ``rsciio.edax`` like
+    an EDAX export would. This is what lets the ``.spc`` loader be tested
+    without checking a real spectrum into the repository.
+
+    Returns the counts written, so a test can compare them to what is read.
+    """
+    from rsciio.edax._api import get_spc_dtype_list  # noqa: PLC0415
+
+    if intensity is None:
+        rng = np.random.default_rng(0)
+        intensity = (rng.random(4096) * 100).astype(np.uint32)
+    intensity = np.ascontiguousarray(intensity, dtype="<u4")
+
+    header_dtype = np.dtype(
+        get_spc_dtype_list(load_all=False, endianness="<")  # type: ignore[no-untyped-call]
+    )
+    # Any: numpy's stubs do not type field access on structured arrays
+    header: Any = np.zeros(1, dtype=header_dtype)
+    header["dataStart"] = header_dtype.itemsize
+    header["numPts"] = len(intensity)
+    header["evPerChan"] = ev_per_channel
+    header["startEnergy"] = start_energy
+    header["endEnergy"] = start_energy + len(intensity) * ev_per_channel / 1000
+    header["liveTime"] = 3609.19
+    header["detReso"] = 125.65
+    header["elevation"] = 33.5
+    header["kV"] = 15.0
+    header["numElem"] = len(elements)
+    at = np.zeros(48, dtype="<u2")
+    at[: len(elements)] = elements
+    header["at"] = at
+
+    with Path(path).open("wb") as f:
+        f.write(header.tobytes())
+        f.write(intensity.tobytes())
+    return intensity
+
+
 class onDiscMock:
+    """The synthetic samples accepted everywhere while pytest is running.
+
+    ``filenames`` are maps; every map also has a ``.spc`` alongside it in a
+    real export, so those names are valid spectra too, and ``spectrum_only``
+    adds a spectrum with no map behind it.
+    """
+
     filenames = (
         "faked-dataset-C12",
         "faked-dataset-2",
     )
+    spectrum_only_filenames = ("faked-spectrum-only",)
 
     def __init__(self) -> None:
         pass
 
-    def load(self, file: str) -> EDAX_raw_ds:
-        if file in self.filenames:
-            return createEDAXMock()
-        msg = f"File {file} is not a fake file"
-        raise ValueError(msg)
+    @property
+    def spectrum_filenames(self) -> tuple[str, ...]:
+        return (*self.filenames, *self.spectrum_only_filenames)
+
+    def is_mock(self, file: str, spectrum_only: bool = False) -> bool:
+        if spectrum_only:
+            return file in self.spectrum_filenames
+        return file in self.filenames
+
+    def load(self, file: str, spectrum_only: bool = False) -> EDAX_raw_ds:
+        if not self.is_mock(file, spectrum_only=spectrum_only):
+            msg = f"File {file} is not a fake file"
+            raise ValueError(msg)
+        if spectrum_only:
+            return createEDAXSpectrumMock()
+        return createEDAXMock()
 
 
 def pytest_running() -> bool:
@@ -240,4 +373,10 @@ def pytest_running() -> bool:
 
 _on_disc_mock = onDiscMock()
 
-__all__ = ["_on_disc_mock", "createEDAXMock", "pytest_running"]
+__all__ = [
+    "_on_disc_mock",
+    "createEDAXMock",
+    "createEDAXSpectrumMock",
+    "pytest_running",
+    "write_mock_spc",
+]

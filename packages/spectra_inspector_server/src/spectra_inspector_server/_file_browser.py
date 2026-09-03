@@ -11,6 +11,7 @@ from pathlib import Path
 from spectra_inspector_server._database.on_disk_db import (
     _check_files_in_directory,
     _inventory_directory,
+    find_spc_files,
 )
 from spectra_inspector_server.model import directoryEntry, directoryListing
 
@@ -103,6 +104,7 @@ def list_directory(
         parent_path=parent_path,
         directories=entries,
         dataset_count=len(datasets),
+        spectrum_count=len(find_spc_files(target, inventoried_files=files)),
     )
 
 
