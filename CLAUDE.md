@@ -244,6 +244,11 @@ Several Dash/plotly behaviours here are not visible from the python side:
   several entries); a real click or dropdown pick reports one.
 - The per-panel `dcc.Loading` uses `delay_show` so quick layout patches never
   raise its overlay, which blocks the mouse while visible.
+- Dash fires a callback only when a prop's value actually changes, and plotly
+  reports every double click as the same `{"xaxis.autorange": true, ...}` (a
+  re-picked tool likewise). `sync_image_views` therefore clears the triggering
+  graph's `relayoutData` with `dash.set_props` once it has read it; a side
+  update like that does not re-trigger callbacks, so it costs nothing.
 
 All cross-callback state lives in a single `dcc.Store` with id
 `USER_STORE_DIV_ID` (`"user-mem-store"`), whose dict is the `UserStore`
