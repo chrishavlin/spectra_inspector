@@ -14,9 +14,15 @@ from spectra_inspector_server._file_tree_handling import EDAXPathHandler
 from spectra_inspector_server.model import (
     CombinedMetadata,
     EDAX_axis,
+    EDAX_raw_ds,
     MetadataModel,
     Spectrum1d,
     raveledImage,
+)
+from spectra_inspector_server.processor._reductions import (
+    accumulator_dtype,
+    chunk_bounds,
+    fast_accumulator_limit,
 )
 from spectra_inspector_server.processor.utilities import _make_serializeable_dict
 
@@ -67,6 +73,36 @@ class OperationEDAXStateHandler:
         msg = f"{sample_name} not in available datasets"
         raise KeyError(msg)
 
+    def _load(self, sample_name: str, metadata_only: bool = False) -> EDAX_raw_ds:
+        self._require_sample(sample_name)
+        return self.ph.load_edax(sample_name, metadata_only=metadata_only)
+
+    def _cube(self, sample_name: str, edax_ds: EDAX_raw_ds) -> npt.NDArray[np.int64]:
+        if edax_ds.data is None:
+            msg = f"data is None for sample {sample_name}"
+            raise ValueError(msg)
+        return edax_ds.data
+
+    @staticmethod
+    def _index_ranges(
+        edax_ds: EDAX_raw_ds, input_index_ranges: list[tuple[int, int] | None]
+    ) -> tuple[list[tuple[int, int]], list[tuple[float, float]]]:
+
+        valid_index_ranges: list[tuple[int, int]] = []
+        physical_ranges: list[tuple[float, float]] = []
+        for index_id, index_range in enumerate(input_index_ranges):
+            valid_range: tuple[int, int]
+            if index_range is None:
+                valid_range = (0, edax_ds.axes_by_index[index_id].size)
+            else:
+                valid_range = (index_range[0], index_range[1])
+            valid_index_ranges.append(valid_range)
+            physical_ranges.append(
+                edax_ds.axis_range(index_id, valid_range[0], valid_range[1])
+            )
+
+        return valid_index_ranges, physical_ranges
+
     def _validate_index_ranges(
         self, sample_name: str, input_index_ranges: list[tuple[int, int] | None]
     ) -> tuple[
@@ -90,22 +126,10 @@ class OperationEDAXStateHandler:
             to via the axis scaling, and serializeable copies of the dataset's
             two metadata dictionaries.
         """
-
-        self._require_sample(sample_name)
-        edax_ds = self.ph.load_edax(sample_name)
-
-        valid_index_ranges: list[tuple[int, int]] = []
-        physical_ranges: list[tuple[float, float]] = []
-        for index_id, index_range in enumerate(input_index_ranges):
-            valid_range: tuple[int, int]
-            if index_range is None:
-                valid_range = (0, edax_ds.axes_by_index[index_id].size)
-            else:
-                valid_range = (index_range[0], index_range[1])
-            valid_index_ranges.append(valid_range)
-            physical_ranges.append(
-                edax_ds.axis_range(index_id, valid_range[0], valid_range[1])
-            )
+        edax_ds = self._load(sample_name)
+        valid_index_ranges, physical_ranges = self._index_ranges(
+            edax_ds, input_index_ranges
+        )
 
         md = _make_serializeable_dict(edax_ds.metadata)
         orig_md = _make_serializeable_dict(edax_ds.original_metadata)
@@ -126,9 +150,7 @@ class OperationEDAXStateHandler:
             a copy of the axes, ordered as they are in the data array:
             (index0, index1, energy channel).
         """
-        self._require_sample(sample_name)
-        edax_ds = self.ph.load_edax(sample_name)
-        return edax_ds.axes.copy()
+        return self._load(sample_name).axes.copy()
 
     def get_single_image(
         self,
@@ -215,10 +237,13 @@ class OperationEDAXStateHandler:
             If the loaded dataset carries no data array.
         """
 
-        self._require_sample(sample_name)
-        input_index_ranges = [index0_range, index1_range]
-        valid_index_ranges, _, _, _ = self._validate_index_ranges(
-            sample_name, input_index_ranges
+        if edax_ds is None:
+            edax_ds = self._load(sample_name)
+        else:
+            self._require_sample(sample_name)
+
+        valid_index_ranges, _ = self._index_ranges(
+            edax_ds, [index0_range, index1_range]
         )
 
         channel_slice: int | slice
@@ -230,14 +255,7 @@ class OperationEDAXStateHandler:
             msg = f"unexpected type for channel_index: must be int or (int, int), but {channel_index=}"  # type:ignore[unreachable]
             raise TypeError(msg)
 
-        if edax_ds is None:
-            edax_ds = self.ph.load_edax(sample_name)
-
-        if edax_ds.data is None:
-            msg = f"data is None for sample {sample_name}"
-            raise ValueError(msg)
-
-        im_subset: npt.NDArray[np.int64] = edax_ds.data[
+        im_subset: npt.NDArray[np.int64] = self._cube(sample_name, edax_ds)[
             slice(valid_index_ranges[0][0], valid_index_ranges[0][1]),
             slice(valid_index_ranges[1][0], valid_index_ranges[1][1]),
             channel_slice,
@@ -332,55 +350,42 @@ class OperationEDAXStateHandler:
             If the loaded dataset carries no data array.
         """
 
-        self._require_sample(sample_name)
-        input_index_ranges = [index0_range, index1_range]
-        valid_index_ranges, _, _, _ = self._validate_index_ranges(
-            sample_name, input_index_ranges
+        edax_ds = self._load(sample_name)
+        data = self._cube(sample_name, edax_ds)
+        valid_index_ranges, _ = self._index_ranges(
+            edax_ds, [index0_range, index1_range]
         )
         index_ranges = [valid_index_ranges[0], valid_index_ranges[1], channel_range]
-        orig_ranges = index_ranges.copy()
 
         shapes_by_dim = [indx[1] - indx[0] for indx in index_ranges]
         final_shape: tuple[int, int] = (shapes_by_dim[0], shapes_by_dim[1])
-
-        index_offsets = [indx[0] for indx in index_ranges[:-1]]
         im_output = np.zeros(final_shape, dtype=np.int64)
         assert im_output.ndim == 2
+
+        acc_dtype = accumulator_dtype(data.dtype, shapes_by_dim[2])
 
         # prepare channel slice once
         channel_slice = slice(channel_range[0], channel_range[1])
 
-        edax_ds = self.ph.load_edax(sample_name)
-
-        i_chunk_0 = orig_ranges[chunking_index][0]
-        while i_chunk_0 < orig_ranges[chunking_index][1]:
-            i_chunk_1 = i_chunk_0 + chunksize
-            i_chunk_1 = min(i_chunk_1, orig_ranges[chunking_index][1])
-
-            index_ranges[chunking_index] = (i_chunk_0, i_chunk_1)
-
-            # build slices for direct memmap access
-            data_slices = (
-                slice(index_ranges[0][0], index_ranges[0][1]),
-                slice(index_ranges[1][0], index_ranges[1][1]),
+        for chunk in chunk_bounds(*index_ranges[chunking_index], chunksize):
+            slices = [
+                slice(*index_ranges[0]),
+                slice(*index_ranges[1]),
                 channel_slice,
-            )
-
-            # Sum directly from the memmap along the channel axis using
-            # numpy's accumulation dtype to avoid creating large int64 copies.
-            if edax_ds.data is None:
-                msg = f"data is None for sample {sample_name}"
-                raise ValueError(msg)
-            im_subset = np.sum(edax_ds.data[data_slices], axis=-1, dtype=np.int64)
-            slcs = [
+            ]
+            slices[chunking_index] = slice(*chunk)
+            out_slices = tuple(
                 slice(
-                    index_ranges[idim][0] - index_offsets[idim],
-                    index_ranges[idim][1] - index_offsets[idim],
+                    slices[idim].start - index_ranges[idim][0],
+                    slices[idim].stop - index_ranges[idim][0],
                 )
                 for idim in range(2)
-            ]
-            im_output[slcs[0], slcs[1]] = im_output[slcs[0], slcs[1]] + im_subset
-            i_chunk_0 += chunksize
+            )
+            # sum directly from the memmap along the channel axis, into an
+            # accumulator narrow enough to stay on numpy's fast reduce loop.
+            im_output[out_slices] += np.sum(
+                data[tuple(slices)], axis=-1, dtype=acc_dtype
+            )
         return im_output
 
     def get_spectrum(
@@ -423,7 +428,6 @@ class OperationEDAXStateHandler:
             dataset metadata.
         """
 
-        self._require_sample(sample_name)
         input_index_ranges = [index0_range, index1_range, channel_range]
         valid_index_ranges, physical_ranges, md, md_orig = self._validate_index_ranges(
             sample_name, input_index_ranges
@@ -434,33 +438,30 @@ class OperationEDAXStateHandler:
             valid_index_ranges[2],
         ]
 
-        orig_ranges = index_ranges.copy()
+        data = self._cube(sample_name, self._load(sample_name))
+
         final_shape = (index_ranges[2][1] - index_ranges[2][0],)
-        im_output = np.zeros(final_shape, dtype=int)
+        im_output = np.zeros(final_shape, dtype=np.int64)
 
         assert im_output.ndim == 1
 
-        i_chunk_0 = orig_ranges[chunking_index][0]
-        edax_ds = self.ph.load_edax(sample_name)
-        while i_chunk_0 < orig_ranges[chunking_index][1]:
-            i_chunk_1 = i_chunk_0 + chunksize
-            i_chunk_1 = min(i_chunk_1, orig_ranges[chunking_index][1])
+        shapes_by_dim = [indx[1] - indx[0] for indx in index_ranges]
+        # every chunk sums over both spatial axes, so the number of terms per
+        # accumulator element is the chunk length times the un-chunked axis.
+        across = shapes_by_dim[1 - chunking_index]
+        fast_limit = fast_accumulator_limit(data.dtype) // max(across, 1)
+        max_chunk = min(chunksize, fast_limit) if fast_limit >= 1 else chunksize
 
-            index_ranges[chunking_index] = (i_chunk_0, i_chunk_1)
+        chunks = chunk_bounds(*index_ranges[chunking_index], max_chunk)
+        longest = max((c[1] - c[0] for c in chunks), default=0)
+        acc_dtype = accumulator_dtype(data.dtype, longest * across)
 
-            im = self.get_image(
-                sample_name,
-                index_ranges[2],
-                index0_range=index_ranges[0],
-                index1_range=index_ranges[1],
-                edax_ds=edax_ds,
-            )
-
-            im_reduced = im.sum(axis=0).sum(axis=0)
-            assert im_reduced.size == im_output.size
-            im_output = im_output + im_reduced
-
-            i_chunk_0 += chunksize
+        for chunk in chunks:
+            slices = [slice(*rng) for rng in index_ranges]
+            slices[chunking_index] = slice(*chunk)
+            partial = np.sum(data[tuple(slices)], axis=(0, 1), dtype=acc_dtype)
+            assert partial.size == im_output.size
+            im_output += partial
 
         energy_channel_axis = np.arange(index_ranges[2][0], index_ranges[2][1])
         energy_min, energy_max = physical_ranges[2]
@@ -487,9 +488,7 @@ class OperationEDAXStateHandler:
         MetadataModel
             the subset of the EDAX metadata the API exposes.
         """
-        self._require_sample(sample_name)
-        fl = self.ph.load_edax(sample_name, metadata_only=True)
-        return fl.refined_metadata
+        return self._load(sample_name, metadata_only=True).refined_metadata
 
     def get_combined_metadata(self, sample_name: str) -> CombinedMetadata:
         """The metadata, axes and data shape of a sample.
@@ -513,15 +512,11 @@ class OperationEDAXStateHandler:
         ValueError
             If the loaded dataset carries no data array.
         """
-        self._require_sample(sample_name)
-        fl = self.ph.load_edax(sample_name, metadata_only=False)
+        fl = self._load(sample_name)
         mm = fl.refined_metadata
 
         axes = fl.axes_by_index
-        if fl.data is None:
-            msg = f"data is None for sample {sample_name}"
-            raise ValueError(msg)
-        shp = fl.data.shape
+        shp = self._cube(sample_name, fl).shape
         assert len(shp) == 3
 
         return CombinedMetadata(metadata=mm, axes_by_index=axes, data_shape=shp)

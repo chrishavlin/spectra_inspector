@@ -1,3 +1,5 @@
+from collections import OrderedDict
+from pathlib import Path
 from typing import Any
 
 import numpy as np
@@ -36,26 +38,57 @@ def load_spd_into_memmap(
     nbytes = str(header["countBytes"])
     data_type = {"1": "u1", "2": "u2", "4": "u4"}[nbytes]
 
-    with open(spd_path) as f:
+    with Path(spd_path).open("rb") as f:
         # Read data from file into a numpy memmap object
         data: npt.NDArray[np.int64] = np.memmap(
             f, mode="r", offset=offset, dtype=data_type
-        )  # type: ignore[call-overload]
+        )
     data = data.squeeze().reshape((nCh, nx, ny), order="F").T
     return data
+
+
+_CacheKey = tuple[str, bool]
+_CacheEntry = tuple[tuple[int, int], EDAX_raw_ds]
+# Mapping a fileset is cheap but *using* it is not: faulting a whole cube's
+# worth of pages into a fresh mapping costs tens of ms even when the file is
+# already in the page cache, so hold the mapping open between requests.
+_MAX_CACHED_FILESETS = 4
+_ds_cache: OrderedDict[_CacheKey, _CacheEntry] = OrderedDict()
+
+
+def _file_stamp(spd: Path) -> tuple[int, int]:
+    stat = spd.stat()
+    return (stat.st_mtime_ns, stat.st_size)
+
+
+def clear_edax_cache() -> None:
+    _ds_cache.clear()
 
 
 def load_edax_spd(
     edax_files: EDAX_file_set, metadata_only: bool = False
 ) -> EDAX_raw_ds:
+    key = (str(edax_files.spd), metadata_only)
+    stamp = _file_stamp(edax_files.spd)
+    cached = _ds_cache.get(key)
+    if cached is not None:
+        if cached[0] == stamp:
+            _ds_cache.move_to_end(key)
+            return cached[1]
+        del _ds_cache[key]
+
     md = load_edax_spd_metadata(edax_files)
-    if metadata_only:
-        return EDAX_raw_ds(md)
-    data = load_spd_into_memmap(
-        md["original_metadata"]["spd_header"], str(edax_files.spd)
-    )
-    md.update({"data": data})
-    return EDAX_raw_ds(md)
+    if not metadata_only:
+        data = load_spd_into_memmap(
+            md["original_metadata"]["spd_header"], str(edax_files.spd)
+        )
+        md.update({"data": data})
+
+    ds = EDAX_raw_ds(md)
+    _ds_cache[key] = (stamp, ds)
+    while len(_ds_cache) > _MAX_CACHED_FILESETS:
+        _ds_cache.popitem(last=False)
+    return ds
 
 
 def find_data_start(msa_path: str) -> int:

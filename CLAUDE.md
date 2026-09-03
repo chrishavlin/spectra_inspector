@@ -127,16 +127,27 @@ Request flow for anything expensive: the `lifespan` context creates an
 `asyncio.Queue` and a long-running `process_requests` consumer that dispatches
 each item into a `ProcessPoolExecutor`. Endpoints build a `queueOpsItem`
 (`ops_func` is the **string name of a method on `OperationEDAXStateHandler`**,
-dispatched via `getattr`), push it, then poll the module-level `_results` dict
-by `ops_id` in `await_op_result` (2-minute timeout → HTTP 404). `/info`,
-`/available-datasets`, and the metadata endpoints skip the queue and run inline.
+dispatched via `getattr`), push it with `submit_op`, then wait in
+`await_op_result` on the `asyncio.Event` `submit_op` registered for that
+`ops_id` (2-minute timeout → HTTP 404). `/info`, `/available-datasets`, and the
+metadata endpoints skip the queue and run inline.
+
+The pool holds a single worker and outlives the requests it serves, because
+`load_edax_spd` caches the filesets it has opened (bounded, invalidated on
+mtime/size) and re-mapping a cube costs tens of milliseconds of page faults even
+when the file is still in the page cache. Anything that makes the worker
+short-lived again gives that cost back.
 
 So adding a heavy endpoint means: add a method to
 `processor/operations.py::OperationEDAXStateHandler`, add response models to
 `model.py`, enqueue a `queueOpsItem` naming that method, regenerate the frontend
 models (above), and mirror the client call in the frontend's
 `utilities/interface.py`. Large reductions chunk over axis 0
-(`_DEFAULT_CHUNKSIZE = 128`) to avoid materializing the full cube.
+(`_DEFAULT_CHUNKSIZE = 128`) to avoid materializing the full cube, and go
+through `processor/_reductions.py::accumulator_dtype` for what dominates them:
+the narrowest accumulator that provably cannot overflow, because numpy's 32 bit
+reduce loop runs about twice as fast as the 64 bit one. The reductions are
+deliberately single-threaded.
 
 Images cross the wire as `raveledImage` (flat list + shape), reshaped
 client-side.
