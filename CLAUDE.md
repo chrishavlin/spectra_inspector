@@ -185,6 +185,55 @@ only appears once a browser wires the page up:
 
 Verify changes here in an actual browser, not just via callback invocation.
 
+### Browser testing without EDAX data
+
+The inspector's image panels are independent `dcc.Graph`s kept in step by
+callbacks, and whether they actually stay in step (zoom, tool, box) only shows
+in a browser. A headless setup that needs no data:
+
+- Backend: `PYTEST_VERSION=1 SPECTRA_INSPECTOR_DATA_ROOT=<any empty dir>` makes
+  `faked-dataset-C12` a valid sample everywhere (`pytest_running()`), but
+  `/available-datasets` will not list it, and the inspector's dataset dropdown
+  clears a value that is not among its options, so the page renders nothing. Run
+  the server through a small wrapper that patches
+  `main._available_datasets_response` to append `onDiscMock.filenames`; the same
+  wrapper can patch `_testing.createEDAXMock` to a 512x512 shape so callback
+  timings resemble real maps (the default mock is 16x16).
+- Frontend: `uv run python serve.py --port 8050`, then open
+  `/inspector/faked-dataset-C12`.
+- Driver: playwright in a throwaway venv with
+  `p.chromium.launch(channel="chrome")` uses the installed Google Chrome, no
+  browser download. Read a panel's state from
+  `document.querySelectorAll('.js-plotly-plot')[i]._fullLayout` (ranges,
+  dragmode, shapes), click tools via `.modebar-btn[data-title="Zoom"]`, and drag
+  on the panel's `.nsewdrag` rect. Compare `_fullLayout` across panels rather
+  than the Dash `figure` prop.
+- While a `dcc.Loading` overlay is showing, the panel swallows mouse events:
+  wait for `.dash-spinner` to disappear before dragging.
+
+### Syncing the image panels (issue #65)
+
+Several Dash/plotly behaviours here are not visible from the python side:
+
+- The graph `figure` prop never receives plotly's zoom ranges, so a callback
+  cannot read the current view off `State(graph, "figure")`. The view is rebuilt
+  from `relayoutData` keys (`"xaxis.range[0]"`, `"xaxis.autorange"`,
+  `"shapes[0].x1"`, ...) in `utilities/view_sync.py` and kept in the
+  `image-view-store`; `sync_image_views` applies it to every panel as a `Patch`,
+  so no image data crosses the wire. Keep relayout events out of
+  `update_graph_figure`: every `State` is uploaded with the request, and that
+  callback reads the full figures.
+- px.imshow sets `constrain="domain"`; plotly.js resolves that against a private
+  record of the last interactively set range, so a range set from python comes
+  out a few pixels different from the same zoom dragged in the browser.
+  `get_new_im` sets `constrain="range"` on both axes, which depends only on the
+  current range and lands every panel on the same view.
+- Removing a panel fires callbacks with wildcard inputs and reports _every_
+  remaining panel's input props as triggered (`ctx.triggered_prop_ids` has
+  several entries); a real click or dropdown pick reports one.
+- The per-panel `dcc.Loading` uses `delay_show` so quick layout patches never
+  raise its overlay, which blocks the mouse while visible.
+
 All cross-callback state lives in a single `dcc.Store` with id
 `USER_STORE_DIV_ID` (`"user-mem-store"`), whose dict is the `UserStore`
 dataclass (`user_store_model.py`). Read it as `UserStore(**store_dict)`, write
