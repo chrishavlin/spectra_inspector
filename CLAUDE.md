@@ -63,8 +63,19 @@ cd packages/spectra_inspector_server && uv run fastapi run src/spectra_inspector
 cd packages/spectra_inspector           && uv run python serve.py                                # :8050
 ```
 
-Docker: `./start_docker.sh` (or `.ps1`/`.bat`) wraps `docker compose` and passes
-both packages' `.env` files.
+Docker: `./start_docker.sh [dev|prod]` (or `.ps1`/`.bat`; `stop_docker.*` tears
+down) wraps `docker compose` and passes both packages' `.env` files, which
+compose both interpolates (`${...}` in the compose files) and hands to the
+containers via `env_file` -- the images carry no configuration (`.dockerignore`
+excludes `.env`). `compose.yaml` is the shared base with no published ports;
+`compose.override.yaml` (auto-loaded, dev) adds root user, dev deps, the Dash
+debugger, watch sync, and publishes 8050 on all interfaces plus 8000 on
+loopback; `compose.prod.yaml` publishes only `127.0.0.1:8050`, adds restart
+policies, a `/info` health check and log rotation. The frontend reaches the
+backend by service name (`SPECTRA_INSPECTOR_SERVER_HOST=fastapi` set in
+`compose.yaml`), so the backend never needs a host port. The frontend
+Dockerfile's `CMD` runs `serve.py --debug 0`; the dev overlay's `command` turns
+the debugger back on.
 
 Note: `[tool.pytest]` in the server's `pyproject.toml` is not a table pytest
 reads (`[tool.pytest.ini_options]` is), so `testpaths`/`filterwarnings` there

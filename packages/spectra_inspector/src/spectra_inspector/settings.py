@@ -18,7 +18,8 @@ class Settings(BaseSettings):
     max_tmp_dirs: int = 100
 
     # connection info for the fastapi spectra_inspector_server
-    server_host: str = "localhost"  # host.docker.internal
+    # compose.yaml overrides this with the backend's service name in docker
+    server_host: str = "localhost"
     server_port: int = 8000
 
     # how many image panels may be fetched at once when a page loads. The

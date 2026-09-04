@@ -1,0 +1,9 @@
+# the host virtualenv is for a different platform and is rebuilt in the image;
+# configuration reaches the container through compose's env_file, not the image
+.venv
+.env
+__pycache__
+*.pyc
+.pytest_cache
+.mypy_cache
+.ruff_cache

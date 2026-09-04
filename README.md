@@ -115,33 +115,78 @@ When serving as a desktop app:
 ## Running via Docker
 
 The repository includes OS-specific helper scripts that build the Docker Compose
-services and pass both `.env` files to Compose.
+services and pass both `.env` files to Compose. Each takes an optional mode,
+`dev` (the default) or `prod`:
 
 - macOS/Linux:
 
   ```sh
-  ./start_docker.sh
+  ./start_docker.sh          # development
+  ./start_docker.sh prod     # deployment
+  ./stop_docker.sh [prod]    # stop and remove the containers
   ```
 
 - Windows PowerShell:
 
   ```powershell
-  ./start_docker.ps1
+  ./start_docker.ps1 [prod]
+  ./stop_docker.ps1 [prod]
   ```
 
 - Windows Command Prompt:
 
   ```bat
-  start_docker.bat
+  start_docker.bat [prod]
+  stop_docker.bat [prod]
   ```
 
-These scripts run `docker compose` with both environment files so the frontend
-and backend pick up the correct configuration. After startup, the app should be
-available at http://localhost:8050 and the API docs at
-http://localhost:8000/docs.
+The `.env` files serve two purposes: Compose interpolates the `${...}`
+references in the compose files from them (the data-root bind mount), and it
+hands them to the containers as environment. They are not baked into the images,
+so a configuration change only needs the stack restarted, not rebuilt. Inside
+docker the frontend always reaches the backend by its service name over the
+compose network, so `SPECTRA_INSPECTOR_SERVER_HOST`/`_PORT` and
+`SPECTRA_INSPECTOR_WRITE_DIR` from the frontend `.env` are overridden. The data
+root is mounted read-only.
 
-On windows, you may need to go to http://127.0.0.1:8050 and
-http://127.0.0.1:8000/docs .
+### Development mode
+
+`compose.yaml` holds the service definitions and `compose.override.yaml`, which
+`docker compose` loads automatically, adds the development settings: the
+containers run as root with the dev dependencies, the Dash debugger and reloader
+are on, and `docker compose watch` syncs edits into the running containers. The
+app is available at http://localhost:8050 (published on every interface, so it
+can be checked from another device) and the API docs at
+http://127.0.0.1:8000/docs (loopback only; the frontend does not use this port).
+
+On windows, you may need to go to http://127.0.0.1:8050 instead of `localhost`.
+
+### Deployment mode
+
+`prod` layers `compose.prod.yaml` on `compose.yaml` instead and starts the stack
+detached:
+
+```sh
+docker compose --env-file packages/spectra_inspector/.env \
+               --env-file packages/spectra_inspector_server/.env \
+               -f compose.yaml -f compose.prod.yaml up --build --detach
+```
+
+- The only host endpoint is the frontend on `127.0.0.1:8050`. The backend is not
+  published at all; the frontend reaches it over the compose network. A reverse
+  proxy on the host is expected to terminate TLS (and provide authentication,
+  the app has none) and forward to `http://127.0.0.1:8050`. Allow a proxy read
+  timeout of at least 180 s (backend operations may run for two minutes) and
+  request bodies of tens of MB (Dash callbacks upload the figure state).
+- Both containers run as the image's non-root user with the Dash debugger off,
+  restart on failure and after a host reboot (`restart: unless-stopped`; the
+  docker daemon must itself be enabled at boot), and cap their json log files.
+- The backend has a health check against `/info`; the frontend waits for it.
+  `docker compose ps` shows the state, `docker compose logs -f` follows both
+  services' logs.
+
+Set `SPECTRA_INSPECTOR_N_FASTAPI_WORKERS` in the backend `.env` to run more than
+one uvicorn worker.
 
 ## Running via uv
 
