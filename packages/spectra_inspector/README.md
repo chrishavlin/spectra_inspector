@@ -30,6 +30,9 @@ package reads is prefixed with `SPECTRA_INSPECTOR_`, matching the
   the sample dropdown. Requires `SPECTRA_INSPECTOR_DESKTOP_MODE=true` in the
   `spectra_inspector_server` `.env` as well — the endpoints it calls return
   `403` otherwise.
+- `SPECTRA_INSPECTOR_N_FRONTEND_WORKERS`=2 gunicorn worker processes started by
+  the docker image (`gunicorn spectra_inspector.main:server`). Not read by
+  `serve.py`, which runs the flask development server.
 
 Unknown keys in `.env` are rejected rather than ignored, so a stale `.env` fails
 fast: keys under the prefix that don't match a setting raise `extra_forbidden`,

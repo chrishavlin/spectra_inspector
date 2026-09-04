@@ -74,8 +74,10 @@ loopback; `compose.prod.yaml` publishes only `127.0.0.1:8050`, adds restart
 policies, a `/info` health check and log rotation. The frontend reaches the
 backend by service name (`SPECTRA_INSPECTOR_SERVER_HOST=fastapi` set in
 `compose.yaml`), so the backend never needs a host port. The frontend
-Dockerfile's `CMD` runs `serve.py --debug 0`; the dev overlay's `command` turns
-the debugger back on.
+Dockerfile's `CMD` serves `spectra_inspector.main:server` (the Flask app) with
+gunicorn (`SPECTRA_INSPECTOR_N_FRONTEND_WORKERS` gthread workers, 180 s
+timeout); the dev overlay's `command` swaps in `serve.py --debug 1`, the Flask
+development server with the reloader.
 
 Note: `[tool.pytest]` in the server's `pyproject.toml` is not a table pytest
 reads (`[tool.pytest.ini_options]` is), so `testpaths`/`filterwarnings` there
