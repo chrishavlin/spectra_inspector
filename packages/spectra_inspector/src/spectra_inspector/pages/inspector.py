@@ -140,6 +140,7 @@ class inspectorIDs(BaseModel):
     graph_id_store: str = "graph-id-store"
     full_spectrum_store: str = "full-spectrum-store"
     active_spectrum_metadata: str = "active-spectrum-metadata"
+    zeroed_elements_store: str = "zeroed-elements"
 
 
 _IDS = inspectorIDs()
@@ -173,6 +174,9 @@ def _get_div_store() -> html.Div:
             ),
             dcc.Store(id=_IDS.full_spectrum_store, storage_type="memory", data={}),
             dcc.Store(id=_IDS.active_spectrum_metadata, storage_type="memory", data={}),
+            # elements the user has zeroed out in the weights table; specific
+            # to the active spectrum, so cleared whenever that changes
+            dcc.Store(id=_IDS.zeroed_elements_store, storage_type="memory", data=[]),
         ]
     )
 
@@ -325,18 +329,55 @@ def initialize_full_spectrum_data(
 
 @callback(
     Output(_dataExportIDS.elementweightsdiv, "children"),
-    Input(
-        _IDS.active_spectrum_metadata,
-        "data",
-    ),
+    Input(_IDS.active_spectrum_metadata, "data"),
+    Input(_IDS.zeroed_elements_store, "data"),
 )
 def update_element_weights(
     active_spectrum_metadata: dict | None,
+    zeroed_elements: list[str] | None,
 ):
-    if "attrs" in active_spectrum_metadata:
-        tble = data_export_panel.get_formatted_element_weights(active_spectrum_metadata)
+    if active_spectrum_metadata and "attrs" in active_spectrum_metadata:
+        tble = data_export_panel.get_formatted_element_weights(
+            active_spectrum_metadata,
+            zeroed_elements=zeroed_elements or [],
+            ids=_dataExportIDS,
+        )
         return html.Div(tble)
     return html.Div()
+
+
+@callback(
+    Output(_IDS.zeroed_elements_store, "data", allow_duplicate=True),
+    Input(_IDS.active_spectrum_metadata, "data"),
+    prevent_initial_call=True,
+)
+def clear_zeroed_elements(_active_spectrum_metadata):
+    # a new spectrum (dataset switch, new box) gets a fresh weights table
+    return []
+
+
+@callback(
+    Output(_IDS.zeroed_elements_store, "data", allow_duplicate=True),
+    Input({"type": _dataExportIDS.zeroelement, "index": ALL}, "n_clicks"),
+    Input(_dataExportIDS.resetweights, "n_clicks"),
+    State(_IDS.zeroed_elements_store, "data"),
+    prevent_initial_call=True,
+)
+def update_zeroed_elements(_zero_clicks, _reset_clicks, zeroed_elements):
+    # re-rendering the weights table recreates the X buttons, which fires this
+    # with every n_clicks back at zero; only a real click carries a count.
+    if not any(trigger["value"] for trigger in ctx.triggered):
+        return no_update
+
+    trigger_id = ctx.triggered_id
+    if trigger_id == _dataExportIDS.resetweights:
+        return []
+
+    zeroed = list(zeroed_elements or [])
+    element = trigger_id["index"]
+    if element in zeroed:
+        return no_update
+    return [*zeroed, element]
 
 
 @callback(
@@ -576,6 +617,7 @@ def export_msa(
     State(_dataExportIDS.formatdropdown, "value"),
     State(_IDS.active_spectrum_metadata, "data"),
     State(_dataExportIDS.msafileformat, "value"),
+    State(_IDS.zeroed_elements_store, "data"),
     prevent_initial_call=True,
     running=[
         (Output(_dataExportIDS.exportsummary, "disabled"), True, False),
@@ -595,6 +637,7 @@ def export_summary(
     export_summary_format: Literal[".zip", "PDF"] | None,
     active_spectrum_metadata: dict | None,
     msafileformat: Literal["Y", "XY"] | None,
+    zeroed_elements: list[str] | None,
 ):
 
     if export_clicks is None or export_clicks == 0:
@@ -663,7 +706,9 @@ def export_summary(
             # nothing to export: the weights file is simply left out of the zip
             spectraLogger.info("no element weights available, skipping their export")
         else:
-            _ = s.write_element_weights(wts)
+            _ = s.write_element_weights(
+                data_export_panel.apply_zeroed_elements(wts, zeroed_elements or [])
+            )
 
         return dcc.send_file(s.get_zip())
     msg = f"Unexpected value for format, {export_summary_format=}"

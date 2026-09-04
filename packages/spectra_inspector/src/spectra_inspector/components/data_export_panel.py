@@ -1,3 +1,5 @@
+from collections.abc import Iterable
+
 import dash_bootstrap_components as dbc
 from dash import Input, Output, State, callback, dcc, html
 
@@ -5,18 +7,26 @@ from spectra_inspector.components.layout_ids import indexedLayoutIDMapper
 
 WEIGHTS_UNAVAILABLE_MSG = "Weights unavailable for this map"
 
+# the weights entries that are not per-element and so cannot be zeroed out
+SUMMARY_WEIGHT_KEYS: tuple[str, ...] = (
+    "total_count",
+    "counts_14_15_kev",
+    "DH_assessment",
+)
+
 
 class dataExportPanelIDS(indexedLayoutIDMapper):
     prop_names: tuple[str, ...] = (
         "div",
         "formatdropdown",
-        "slider",
         "exportsummary",
         "exportmsa",
         "downloadsummary",
         "downloadmsa",
         "msafileformat",
         "elementweightsdiv",
+        "resetweights",
+        "zeroelement",
     )
 
     def __init__(
@@ -59,6 +69,18 @@ class dataExportPanelIDS(indexedLayoutIDMapper):
     @property
     def elementweightsdiv(self) -> str:
         return self.full_id("-elementweightsdiv")
+
+    @property
+    def resetweights(self) -> str:
+        return self.full_id("-resetweights")
+
+    @property
+    def zeroelement(self) -> str:
+        return self.full_id("-zeroelement")
+
+    def zero_element_id(self, element: str) -> dict[str, str]:
+        """The pattern-matching id of the button that zeroes one element."""
+        return {"type": self.zeroelement, "index": element}
 
 
 def get_layout(
@@ -150,7 +172,29 @@ def get_layout(
                     dbc.Col(
                         html.Div(
                             [
-                                html.H5("Element weights", className="card-subtitle"),
+                                dbc.Row(
+                                    [
+                                        dbc.Col(
+                                            html.H5(
+                                                "Element weights",
+                                                className="card-subtitle",
+                                            )
+                                        ),
+                                        dbc.Col(
+                                            dbc.Button(
+                                                "Reset",
+                                                id=layoutIDs.resetweights,
+                                                n_clicks=0,
+                                                color="secondary",
+                                                size="sm",
+                                                title="Restore the computed weights",
+                                            ),
+                                            width="auto",
+                                        ),
+                                    ],
+                                    align="center",
+                                    className="mb-2",
+                                ),
                                 html.Div("", id=layoutIDs.elementweightsdiv),
                             ]
                         ),
@@ -200,7 +244,24 @@ def get_element_weights(active_spectrum_metadata: dict) -> dict | None:
     return active_spectrum_metadata.get("attrs", {}).get("weights") or None
 
 
-def get_formatted_element_weights(active_spectrum_metadata: dict):
+def apply_zeroed_elements(wts: dict, zeroed_elements: Iterable[str]) -> dict:
+    """The weights with every element the user has zeroed out set to 0.0."""
+    zeroed = set(zeroed_elements)
+    return {key: (0.0 if key in zeroed else value) for key, value in wts.items()}
+
+
+def _format_weight(value) -> str:
+    # exact zeros and whole counts come back from the JSON store as ints
+    if isinstance(value, int | float) and not isinstance(value, bool):
+        return f"{value:.8f}"
+    return str(value)
+
+
+def get_formatted_element_weights(
+    active_spectrum_metadata: dict,
+    zeroed_elements: Iterable[str] = (),
+    ids: dataExportPanelIDS | None = None,
+):
 
     if "attrs" not in active_spectrum_metadata:
         return html.Div()
@@ -209,21 +270,42 @@ def get_formatted_element_weights(active_spectrum_metadata: dict):
     if wts is None:
         return html.Div(WEIGHTS_UNAVAILABLE_MSG)
 
-    # Format floats and isolate string data pairs
+    ids = ids or _layoutIDs
+    zeroed = set(zeroed_elements)
     formatted_data = {
-        key: (f"{value:.8f}" if isinstance(value, float) else str(value))
-        for key, value in wts.items()
+        key: _format_weight(value)
+        for key, value in apply_zeroed_elements(wts, zeroed).items()
     }
 
-    table_rows = [
-        html.Tr(
-            [
-                html.Td(key, style={"font-weight": "500"}),
-                html.Td(val),
-            ]
+    table_rows = []
+    for key, val in formatted_data.items():
+        is_zeroed = key in zeroed
+        value_cell = html.Td(
+            val,
+            className="text-muted" if is_zeroed else None,
+            title=f"computed: {_format_weight(wts[key])}" if is_zeroed else None,
         )
-        for key, val in formatted_data.items()
-    ]
+        if key in SUMMARY_WEIGHT_KEYS:
+            action_cell = html.Td()
+        else:
+            action_cell = html.Td(
+                dbc.Button(
+                    "\u2715",
+                    id=ids.zero_element_id(key),
+                    n_clicks=0,
+                    color="link",
+                    size="sm",
+                    disabled=is_zeroed,
+                    title=f"Zero out {key}",
+                    className="p-0 text-danger",
+                ),
+                style={"width": "2rem", "textAlign": "center"},
+            )
+        table_rows.append(
+            html.Tr(
+                [html.Td(key, style={"font-weight": "500"}), value_cell, action_cell]
+            )
+        )
 
     # 2. Build the string using ONLY keys and values (no column headers)
     clipboard_text = "\n".join(f"{k}\t{v}" for k, v in formatted_data.items())
@@ -237,8 +319,8 @@ def get_formatted_element_weights(active_spectrum_metadata: dict):
                 title="Copy values for Excel",
                 style={
                     "position": "absolute",
-                    "top": "8px",
-                    "right": "8px",
+                    "top": "0",
+                    "right": "0",
                     "zIndex": "10",
                     "fontSize": "1.1rem",
                     "cursor": "pointer",
@@ -257,5 +339,6 @@ def get_formatted_element_weights(active_spectrum_metadata: dict):
                 style={"backgroundColor": "white", "margin-bottom": "0"},
             ),
         ],
-        style={"position": "relative"},  # Necessary context for absolute positioning
+        # the clipboard icon floats in the right-hand gutter, clear of the X column
+        style={"position": "relative", "paddingRight": "2.25rem"},
     )
