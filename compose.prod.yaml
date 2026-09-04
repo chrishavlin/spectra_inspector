@@ -1,0 +1,46 @@
+# Deployment overlay, used as
+#   docker compose -f compose.yaml -f compose.prod.yaml up --detach
+# (which is what `./start_docker.sh prod` runs).
+#
+# The only host endpoint is the frontend on the loopback interface. A reverse
+# proxy on the host terminates TLS (and authentication, the app has none) and
+# forwards to http://127.0.0.1:8050. The backend is reachable only from the
+# frontend over the compose network. Both containers run as the image's
+# non-root user with the dash debugger off, and come back on their own after
+# a crash or a host reboot.
+services:
+  frontend:
+    ports:
+      - "127.0.0.1:8050:8050"
+    restart: unless-stopped
+    depends_on:
+      fastapi:
+        condition: service_healthy
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+  fastapi:
+    restart: unless-stopped
+    healthcheck:
+      # /info answers inline, without the processing queue
+      test:
+        [
+          "CMD",
+          "python",
+          "-c",
+          "import urllib.request;
+          urllib.request.urlopen('http://127.0.0.1:8000/info', timeout=5)",
+        ]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      # the startup scan of the data root can take a while on a large tree
+      start_period: 120s
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"

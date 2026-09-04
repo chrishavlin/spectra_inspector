@@ -1,0 +1,55 @@
+# Development overlay. `docker compose` loads this on top of compose.yaml
+# whenever no -f flags are given, so `./start_docker.sh` (or `docker compose
+# up`) gets it and `./start_docker.sh prod` does not.
+services:
+  frontend:
+    ports:
+      # all interfaces, so the page can be checked from another device
+      - "8050:8050"
+    environment:
+      - UV_NO_DEV=0
+    user: root
+    # the dash debugger and reloader, which pick up the synced edits below
+    command:
+      [
+        "uv",
+        "run",
+        "python",
+        "serve.py",
+        "--debug",
+        "1",
+        "--host",
+        "0.0.0.0",
+        "--port",
+        "8050",
+      ]
+    develop:
+      # `docker compose watch` syncs edits into the running container and
+      # rebuilds when the lockfile changes
+      # https://docs.docker.com/compose/file-watch/
+      watch:
+        - action: sync
+          path: ./packages/spectra_inspector
+          target: /app
+          ignore:
+            - .venv/
+        - action: rebuild
+          path: ./packages/spectra_inspector/uv.lock
+
+  fastapi:
+    ports:
+      # interactive API docs at http://127.0.0.1:8000/docs; the frontend does
+      # not use this port
+      - "127.0.0.1:8000:8000"
+    environment:
+      - UV_NO_DEV=0
+    user: root
+    develop:
+      watch:
+        - action: sync
+          path: ./packages/spectra_inspector_server
+          target: /app
+          ignore:
+            - .venv/
+        - action: rebuild
+          path: ./packages/spectra_inspector_server/uv.lock

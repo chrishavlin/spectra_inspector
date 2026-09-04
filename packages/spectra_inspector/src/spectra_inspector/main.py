@@ -22,6 +22,9 @@ app = Dash(
     ],
 )
 
+# the flask app, for a wsgi server: `gunicorn spectra_inspector.main:server`
+server = app.server
+
 
 # configure theme
 theme_toggle = ThemeSwitchAIO(

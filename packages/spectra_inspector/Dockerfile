@@ -44,8 +44,16 @@ ENV PATH="/app/.venv/bin:$PATH"
 # Reset the entrypoint, don't invoke `uv`
 ENTRYPOINT []
 
+# Number of gunicorn worker processes. Overridable at run time (docker compose
+# passes the frontend .env through to the container).
+ENV SPECTRA_INSPECTOR_N_FRONTEND_WORKERS=2
+
 # Use the non-root user to run our application
 USER nonroot
 
-# need a wsgi server.... but for now:
-CMD ["uv", "run", "python", "serve.py", "--host", "0.0.0.0", "--port", "8050"]
+# Serve the dash app's flask server with gunicorn. Callbacks mostly wait on the
+# backend over HTTP, so threads per worker cover the browser's parallel image
+# fetches; the timeout outlasts the backend's two minute operation limit.
+# compose.override.yaml replaces this with the flask development server for
+# development. `sh -c` so the worker count is expanded at container start.
+CMD ["sh", "-c", "uv run gunicorn --workers ${SPECTRA_INSPECTOR_N_FRONTEND_WORKERS} --threads 4 --worker-class gthread --timeout 180 --bind 0.0.0.0:8050 --access-logfile - spectra_inspector.main:server"]
