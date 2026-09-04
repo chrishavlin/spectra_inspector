@@ -47,5 +47,7 @@ ENTRYPOINT []
 # Use the non-root user to run our application
 USER nonroot
 
-# need a wsgi server.... but for now:
-CMD ["uv", "run", "python", "serve.py", "--host", "0.0.0.0", "--port", "8050"]
+# Debugger and reloader off; compose.override.yaml turns them back on for
+# development. Still the flask development server: a wsgi server (gunicorn)
+# would be the next step for a deployment.
+CMD ["uv", "run", "python", "serve.py", "--debug", "0", "--host", "0.0.0.0", "--port", "8050"]

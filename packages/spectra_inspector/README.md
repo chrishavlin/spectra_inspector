@@ -15,14 +15,15 @@ package reads is prefixed with `SPECTRA_INSPECTOR_`, matching the
 - `SPECTRA_INSPECTOR_APP_NAME`='Spectra Inspector' display name used by the app
 - `SPECTRA_INSPECTOR_WRITE_DIR`='/path/to/a/writeable/directory' occasionally
   cleared by the frontend, used for storing temp files provided as downloads to
-  user
+  user. In docker the compose files point this at a directory inside the
+  container instead.
 - `SPECTRA_INSPECTOR_MAX_TMP_DIRS`=100 max number of tmp directories before they
   start clearing
-- `SPECTRA_INSPECTOR_SERVER_HOST`=host to use. Use "host.docker.internal" for
-  deployment when the `spectra_inspector_server` is running via docker on the
-  same machine.
+- `SPECTRA_INSPECTOR_SERVER_HOST`=host to use. Only read when running outside
+  docker: the compose files set it to the backend's service name (`fastapi`),
+  which resolves over the compose network, so the backend needs no host port.
 - `SPECTRA_INSPECTOR_SERVER_PORT`=port to access `spectra_inspector_server` api
-  on
+  on. Likewise fixed to `8000` by the compose files.
 - `SPECTRA_INSPECTOR_DESKTOP_MODE`=false. Set to `true` to show the
   working-directory picker on the data selection and inspector pages: it browses
   the server's data root and loads the datasets of the directory you pick into
