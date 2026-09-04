@@ -2,7 +2,7 @@ from pathlib import Path
 from typing import Any
 
 from dotenv import dotenv_values
-from pydantic import model_validator
+from pydantic import PositiveInt, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 ENV_FILE = ".env"
@@ -34,6 +34,10 @@ class Settings(BaseSettings):
     # server's /browse-directory and /datasets-in-directory endpoints, which
     # are disabled otherwise.
     desktop_mode: bool = False
+
+    # gunicorn worker processes the docker image starts; only the Dockerfile
+    # CMD reads it (serve.py runs the flask development server instead)
+    n_frontend_workers: PositiveInt = 2
 
     model_config = SettingsConfigDict(env_file=ENV_FILE, env_prefix=ENV_PREFIX)
 

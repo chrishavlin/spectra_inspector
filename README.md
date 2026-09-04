@@ -34,6 +34,9 @@ need. Every frontend setting is read with a `SPECTRA_INSPECTOR_` prefix
   picker on the data selection and inspector pages. Defaults to `false`. The
   backend must be started with `SPECTRA_INSPECTOR_DESKTOP_MODE=true` as well;
   see [Configuration for local deployment](#configuration-for-local-deployment).
+- `SPECTRA_INSPECTOR_N_FRONTEND_WORKERS`: number of gunicorn worker processes
+  the docker image starts. Defaults to `2`. Only used by the docker deployment;
+  `serve.py` runs the flask development server instead.
 
 These names gained the `SPECTRA_INSPECTOR_` prefix in a later release; an
 existing `.env` still using the unprefixed spellings (`WRITE_DIR`,
@@ -178,9 +181,12 @@ docker compose --env-file packages/spectra_inspector/.env \
   the app has none) and forward to `http://127.0.0.1:8050`. Allow a proxy read
   timeout of at least 180 s (backend operations may run for two minutes) and
   request bodies of tens of MB (Dash callbacks upload the figure state).
-- Both containers run as the image's non-root user with the Dash debugger off,
-  restart on failure and after a host reboot (`restart: unless-stopped`; the
-  docker daemon must itself be enabled at boot), and cap their json log files.
+- The frontend is served by gunicorn (`SPECTRA_INSPECTOR_N_FRONTEND_WORKERS`
+  worker processes, four threads each) rather than the flask development server
+  that `serve.py` and the development overlay use. Both containers run as the
+  image's non-root user, restart on failure and after a host reboot
+  (`restart: unless-stopped`; the docker daemon must itself be enabled at boot),
+  and cap their json log files.
 - The backend has a health check against `/info`; the frontend waits for it.
   `docker compose ps` shows the state, `docker compose logs -f` follows both
   services' logs.
