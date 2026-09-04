@@ -1,0 +1,58 @@
+/* Page chrome: the fixed sidebar and the content column beside it.
+   Dash serves this directory automatically (see main.py). Colours come from
+   Bootstrap's CSS variables so the ThemeSwitchAIO stylesheet swap applies. */
+
+:root {
+  --si-sidebar-width: 16rem;
+}
+
+.si-sidebar {
+  position: fixed;
+  top: 0;
+  left: 0;
+  bottom: 0;
+  width: var(--si-sidebar-width);
+  padding: 2rem 1rem;
+  border-right: 1px solid var(--bs-border-color);
+  background-color: var(--bs-body-bg);
+  overflow-y: auto;
+}
+
+.si-content {
+  margin-left: calc(var(--si-sidebar-width) + 2rem);
+  margin-right: 2rem;
+  padding: 2rem 1rem;
+}
+
+.si-topbar {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+  padding: 0.5rem 1rem;
+  border-bottom: 1px solid var(--bs-border-color);
+  background-color: var(--bs-body-bg);
+}
+
+.si-topbar h4 {
+  margin: 0;
+}
+
+@media (max-width: 1399.98px) {
+  :root {
+    --si-sidebar-width: 12rem;
+  }
+  .si-sidebar h2 {
+    font-size: 1.6rem;
+  }
+}
+
+@media (max-width: 767.98px) {
+  .si-sidebar {
+    display: none;
+  }
+  .si-content {
+    margin-left: 1rem;
+    margin-right: 1rem;
+    padding: 1rem 0;
+  }
+}
