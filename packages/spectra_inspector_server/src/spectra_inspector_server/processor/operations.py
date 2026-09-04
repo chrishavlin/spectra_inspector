@@ -5,7 +5,7 @@ off the request queue in ``main.py`` (``queueOpsItem.ops_func``), so a rename
 here is a change to how endpoints call in.
 """
 
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 import numpy as np
 import numpy.typing as npt
@@ -25,6 +25,9 @@ from spectra_inspector_server.processor._reductions import (
     fast_accumulator_limit,
 )
 from spectra_inspector_server.processor.utilities import _make_serializeable_dict
+
+if TYPE_CHECKING:
+    from collections.abc import Container
 
 _DEFAULT_CHUNKSIZE = 128
 
@@ -46,13 +49,17 @@ class OperationEDAXStateHandler:
         self.ph = ph
         self._allow_mock_files = allow_mock_files
 
-    def _require_sample(self, sample_name: str) -> None:
+    def _require_sample(self, sample_name: str, spectrum_only: bool = False) -> None:
         """Check that a sample can be loaded, raising if it cannot.
 
         Parameters
         ----------
         sample_name : str
-            the sample name (the basename shared by an EDAX fileset)
+            the sample name (the basename shared by an EDAX fileset, or of a
+            standalone ``.spc``)
+        spectrum_only : bool, optional
+            look the name up among the ``.spc`` spectra rather than the maps,
+            by default False
 
         Raises
         ------
@@ -61,21 +68,34 @@ class OperationEDAXStateHandler:
             allowed, the set of synthetic test samples.
         """
 
-        if sample_name in self.ph.database.available_maps:
+        known: Container[str]
+        if spectrum_only:
+            known = self.ph.database.available_spectra
+        else:
+            known = self.ph.database.available_maps
+        if sample_name in known:
             return
 
         if self._allow_mock_files:
             from spectra_inspector_server._testing import _on_disc_mock  # noqa: PLC0415
 
-            if sample_name in _on_disc_mock.filenames:
+            if _on_disc_mock.is_mock(sample_name, spectrum_only=spectrum_only):
                 return
 
-        msg = f"{sample_name} not in available datasets"
+        kind = "spectra" if spectrum_only else "datasets"
+        msg = f"{sample_name} not in available {kind}"
         raise KeyError(msg)
 
-    def _load(self, sample_name: str, metadata_only: bool = False) -> EDAX_raw_ds:
-        self._require_sample(sample_name)
-        return self.ph.load_edax(sample_name, metadata_only=metadata_only)
+    def _load(
+        self,
+        sample_name: str,
+        metadata_only: bool = False,
+        spectrum_only: bool = False,
+    ) -> EDAX_raw_ds:
+        self._require_sample(sample_name, spectrum_only=spectrum_only)
+        return self.ph.load_edax(
+            sample_name, metadata_only=metadata_only, spectrum_only=spectrum_only
+        )
 
     def _cube(self, sample_name: str, edax_ds: EDAX_raw_ds) -> npt.NDArray[np.int64]:
         if edax_ds.data is None:
@@ -396,6 +416,7 @@ class OperationEDAXStateHandler:
         index1_range: tuple[int, int] | None = None,
         chunking_index: int = 0,
         chunksize: int = _DEFAULT_CHUNKSIZE,
+        spectrum_only: bool = False,
     ) -> Spectrum1d:
         """Sum a sample's data cube over a spatial region into a 1D spectrum.
 
@@ -419,6 +440,10 @@ class OperationEDAXStateHandler:
             the spatial axis (0 or 1) to chunk the summation over, by default 0
         chunksize : int, optional
             number of elements of ``chunking_index`` per chunk, by default 128
+        spectrum_only : bool, optional
+            read the sample's ``.spc`` file on its own instead of summing the
+            map, by default False. There is nothing spatial to sum over then,
+            so the index ranges are ignored.
 
         Returns
         -------
@@ -427,6 +452,9 @@ class OperationEDAXStateHandler:
             channel indices, the physical energy range they span and the
             dataset metadata.
         """
+
+        if spectrum_only:
+            return self._get_spc_spectrum(sample_name, channel_range=channel_range)
 
         input_index_ranges = [index0_range, index1_range, channel_range]
         valid_index_ranges, physical_ranges, md, md_orig = self._validate_index_ranges(
@@ -475,22 +503,76 @@ class OperationEDAXStateHandler:
             original_metadata=md_orig,
         )
 
-    def get_refined_metadata(self, sample_name: str) -> MetadataModel:
+    def _get_spc_spectrum(
+        self,
+        sample_name: str,
+        channel_range: tuple[int, int] | None = None,
+    ) -> Spectrum1d:
+        """The spectrum stored in a sample's ``.spc`` file.
+
+        Parameters
+        ----------
+        sample_name : str
+            the sample name (the basename of the ``.spc``)
+        channel_range : tuple[int, int] | None, optional
+            the (start, stop) energy channel range to return, by default None,
+            which uses every channel.
+
+        Returns
+        -------
+        Spectrum1d
+            the counts per energy channel as stored in the file, carrying the
+            channel indices, the physical energy range they span and the
+            file's metadata.
+
+        Raises
+        ------
+        ValueError
+            If the loaded dataset carries no data array, or is not 1D.
+        """
+        edax_ds = self._load(sample_name, spectrum_only=True)
+        data = self._cube(sample_name, edax_ds)
+        if data.ndim != 1:
+            msg = f"expected a 1D spectrum for {sample_name}, got shape {data.shape}"
+            raise ValueError(msg)
+
+        (valid_range,), (physical_range,) = self._index_ranges(edax_ds, [channel_range])
+        intensity = np.asarray(data[valid_range[0] : valid_range[1]], dtype=np.int64)
+
+        return Spectrum1d(
+            energy=np.arange(valid_range[0], valid_range[1]),
+            intensity=intensity,
+            energy_min=physical_range[0],
+            energy_max=physical_range[1],
+            metadata=_make_serializeable_dict(edax_ds.metadata),
+            original_metadata=_make_serializeable_dict(edax_ds.original_metadata),
+        )
+
+    def get_refined_metadata(
+        self, sample_name: str, spectrum_only: bool = False
+    ) -> MetadataModel:
         """The structured metadata of a sample, read without loading its data.
 
         Parameters
         ----------
         sample_name : str
             the sample name (the basename shared by an EDAX fileset)
+        spectrum_only : bool, optional
+            read the sample's ``.spc`` on its own rather than the map, by
+            default False
 
         Returns
         -------
         MetadataModel
             the subset of the EDAX metadata the API exposes.
         """
-        return self._load(sample_name, metadata_only=True).refined_metadata
+        return self._load(
+            sample_name, metadata_only=True, spectrum_only=spectrum_only
+        ).refined_metadata
 
-    def get_combined_metadata(self, sample_name: str) -> CombinedMetadata:
+    def get_combined_metadata(
+        self, sample_name: str, spectrum_only: bool = False
+    ) -> CombinedMetadata:
         """The metadata, axes and data shape of a sample.
 
         Unlike :meth:`get_refined_metadata` this opens the ``.spd`` payload,
@@ -500,23 +582,27 @@ class OperationEDAXStateHandler:
         ----------
         sample_name : str
             the sample name (the basename shared by an EDAX fileset)
+        spectrum_only : bool, optional
+            describe the sample's ``.spc`` on its own rather than the map, by
+            default False
 
         Returns
         -------
         CombinedMetadata
             the refined metadata, the axes keyed by their position in the
-            array and the (index0, index1, channel) shape of the data.
+            array and the shape of the data: (index0, index1, channel) for a
+            map, (channel,) for a standalone spectrum.
 
         Raises
         ------
         ValueError
             If the loaded dataset carries no data array.
         """
-        fl = self._load(sample_name)
+        fl = self._load(sample_name, spectrum_only=spectrum_only)
         mm = fl.refined_metadata
 
         axes = fl.axes_by_index
         shp = self._cube(sample_name, fl).shape
-        assert len(shp) == 3
+        assert len(shp) == (1 if spectrum_only else 3)
 
         return CombinedMetadata(metadata=mm, axes_by_index=axes, data_shape=shp)

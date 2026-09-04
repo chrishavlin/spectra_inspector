@@ -15,6 +15,7 @@ if TYPE_CHECKING:
 class InspectionProgress:
     directories_scanned: int = 0
     datasets_found: int = 0
+    spectra_found: int = 0
     log_every: int = 100
     # stop the traversal once this many datasets have been found. None means
     # walk the whole tree.
@@ -30,6 +31,9 @@ class InspectionProgress:
 
 class OnDiskDatabase:
     available_maps: dict[str, EDAX_file_set]
+    # every .spc found, including the ones that belong to a set in
+    # available_maps: the frontend's "spectrum only" mode lists them all.
+    available_spectra: dict[str, Path]
     sample_metadata_csv: str
     sample_metadata_fullpath: Path | None = None
     allow_mixed_basenames: bool
@@ -52,6 +56,7 @@ class OnDiskDatabase:
     ):
         self.sample_metadata_csv = sample_metadata_csv
         self.available_maps = {}
+        self.available_spectra = {}
         self.allow_mixed_basenames = allow_mixed_basenames
         self.max_datasets = max_datasets
         if init_db:
@@ -59,6 +64,7 @@ class OnDiskDatabase:
 
     def _clear(self) -> None:
         self.available_maps = {}
+        self.available_spectra = {}
         self._available_samples = None
         self.scan_truncated = False
 
@@ -126,6 +132,7 @@ class OnDiskDatabase:
         scratch.available_samples  # noqa: B018  (populate before publishing)
 
         self.available_maps = scratch.available_maps
+        self.available_spectra = scratch.available_spectra
         self._available_samples = scratch._available_samples
         self.sample_metadata_fullpath = scratch.sample_metadata_fullpath
         self.scan_truncated = scratch.scan_truncated
@@ -173,6 +180,28 @@ class OnDiskDatabase:
         self.available_maps[basename] = new_set
         return True
 
+    def add_spectrum(self, basename: str, spc: Path) -> bool:
+        """Register a ``.spc`` spectrum under ``basename``.
+
+        Returns True when it was added, False when ``basename`` is already
+        registered as a spectrum (the new one is skipped with a warning, the
+        same first-one-wins rule as ``add_fileset``).
+        """
+        existing = self.available_spectra.get(basename)
+        if existing is not None:
+            spectraLogger.warning(
+                "Duplicate spectrum name! Skipping %s, the name %s is already "
+                "registered for %s.",
+                spc,
+                basename,
+                existing,
+            )
+            return False
+
+        spectraLogger.debug(f"adding {basename} to available_spectra")
+        self.available_spectra[basename] = spc
+        return True
+
     @property
     def sample_metadata_mapper(self) -> SampleMetadataMapper | None:
         if self.sample_metadata_fullpath:
@@ -184,9 +213,8 @@ class OnDiskDatabase:
     @property
     def available_samples(self) -> dict[str, str]:
         if self._available_samples is None:
-            samples = {
-                mapn: _map_to_sample_name(str(mapn)) for mapn in self.available_maps
-            }
+            names = {*self.available_maps, *self.available_spectra}
+            samples = {name: _map_to_sample_name(str(name)) for name in sorted(names)}
             self._available_samples = samples
         return self._available_samples
 
@@ -261,6 +289,13 @@ def _recursive_inspection(
             spectraLogger.warning("Could not read directory %s, skipping", dirname)
             return progress
 
+        # every .spc is a dataset of its own in spectrum-only mode, whether or
+        # not it also belongs to a file set registered below.
+        for spc in find_spc_files(dirname, inventoried_files=files):
+            basename = str(spc) if allow_mixed_basenames else spc.stem
+            if db.add_spectrum(basename, spc):
+                progress.spectra_found += 1
+
         # check for edax files
         for edax_set in _check_files_in_directory(
             dirname,
@@ -332,6 +367,16 @@ def _check_files_in_directory(
     )
 
     return new_edax
+
+
+def find_spc_files(
+    directory: str | Path,
+    *,
+    inventoried_files: dict[str, list[Path]] | None = None,
+) -> list[Path]:
+    """Every ``.spc`` file directly in ``directory``, sorted by name."""
+    inventory = _validate_inventory_files(directory, inventoried_files)
+    return sorted(inventory["spc"])
 
 
 def find_edax_datasets_common_basename(

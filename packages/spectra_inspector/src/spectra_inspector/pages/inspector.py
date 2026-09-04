@@ -31,7 +31,12 @@ from spectra_inspector.components import (
     fetch_im_data_parallel,
     get_new_im,
 )
-from spectra_inspector.components.dataset_selector import format_selections
+from spectra_inspector.components.dataset_selector import (
+    dataset_names,
+    dropdown_options,
+    list_store_data,
+    resolve_spectrum_only,
+)
 from spectra_inspector.components.energy_range_slider import elementDropdownSliderIDS
 from spectra_inspector.components.scalebar import scalebarHandler
 from spectra_inspector.logging import spectraLogger
@@ -83,6 +88,7 @@ def get_spectrum(
     index0_range: tuple[int, int] | None = None,
     index1_range: tuple[int, int] | None = None,
     directory_sync: dict | None = None,
+    spectrum_only: bool = False,
 ) -> pd.DataFrame:
 
     sisi = SpectraInspectorServerInterface()
@@ -92,6 +98,7 @@ def get_spectrum(
         index0_range=index0_range,
         index1_range=index1_range,
         directory_sync=directory_sync,
+        spectrum_only=spectrum_only,
     )
 
     min_e = spectrum.energy_min
@@ -132,6 +139,9 @@ class inspectorIDs(BaseModel):
     metadata: str = "metadata-info"
     sample_name: str = "sample-name"
     image_container: str = "image-container"
+    # the wrappers hidden in spectrum-only mode: the image buttons and the panels
+    image_controls: str = "image-controls"
+    image_section: str = "image-section"
     spectrum_container: str = "spectrum-container"
     image_container_type: str = "bitmap-image"
     shapes_store: str = "active-shapes"
@@ -180,14 +190,31 @@ def _get_div_store() -> html.Div:
 selectorIDs = datasetSelectorLayoutIDs(index=1)
 
 
-def layout(sample_name: str | None = None, **kwargs):  # noqa: ARG001
+def _query_flag(value: str | bool | None) -> bool:
+    return str(value).strip().lower() in ("1", "true", "yes", "on")
+
+
+def layout(
+    sample_name: str | None = None,
+    spectrum_only: str | None = None,
+    **kwargs,  # noqa: ARG001
+):
+    """``spectrum_only`` arrives as the ``?spectrum_only=true`` query string
+    the data selection page puts on its "Load Selected" link, which is the
+    only way the mode can reach a layout -- the user store is client side."""
+
+    spectrum_only_mode = _query_flag(spectrum_only)
 
     _layout_rows = []
     _layout_rows.append(html.Div(hidden=True, id=_IDS.metadata))
 
     sisi = SpectraInspectorServerInterface()
     _data_selector, _ = dataset_selector(
-        sisi, component_index=1, sample_id=sample_name, dropdown_label="Sample: "
+        sisi,
+        component_index=1,
+        sample_id=sample_name,
+        dropdown_label="Sample: ",
+        spectrum_only=spectrum_only_mode,
     )
 
     _layout_rows.append(directory_selector(component_index=1))
@@ -203,22 +230,32 @@ def layout(sample_name: str | None = None, **kwargs):  # noqa: ARG001
                             style={"minWidth": 0},
                         ),
                         dbc.Col(
-                            dbc.Button(
-                                "Add Image",
-                                id=_IDS.add_image,
-                                n_clicks=0,
-                                color="secondary",
+                            dbc.Row(
+                                [
+                                    dbc.Col(
+                                        dbc.Button(
+                                            "Add Image",
+                                            id=_IDS.add_image,
+                                            n_clicks=0,
+                                            color="secondary",
+                                        ),
+                                        width=6,
+                                    ),
+                                    dbc.Col(
+                                        dbc.Button(
+                                            "Reset Images",
+                                            id=_IDS.reset_all_axes,
+                                            n_clicks=0,
+                                            color="secondary",
+                                        ),
+                                        width=6,
+                                    ),
+                                ],
+                                id=_IDS.image_controls,
+                                className="g-4",
+                                style={"display": "none"} if spectrum_only_mode else {},
                             ),
-                            width=3,
-                        ),
-                        dbc.Col(
-                            dbc.Button(
-                                "Reset Images",
-                                id=_IDS.reset_all_axes,
-                                n_clicks=0,
-                                color="secondary",
-                            ),
-                            width=3,
+                            width=6,
                         ),
                     ],
                     align="top",
@@ -246,8 +283,9 @@ def layout(sample_name: str | None = None, **kwargs):  # noqa: ARG001
         overlay_style={"visibility": "visible", "filter": "blur(2px)"},
         type="circle",
     )
-    # im_container
-    _layout_rows.append(im_container)
+    _layout_rows.append(
+        html.Div(im_container, id=_IDS.image_section, hidden=spectrum_only_mode)
+    )
 
     spectrum_graph = dcc.Loading(
         dcc.Graph(
@@ -310,9 +348,11 @@ def initialize_full_spectrum_data(
     if _valid_sample_name(sample_name) and not has_data:
         spectraLogger.info("fetching and storing full spectrum data")
         assert isinstance(sample_name, str)
+        user_store = UserStore(**(user_store_dict or {}))
         df = get_spectrum(
             sample_name,
-            directory_sync=UserStore(**(user_store_dict or {})).directory_sync(),
+            directory_sync=user_store.directory_sync(),
+            spectrum_only=user_store.spectrum_only,
         )
         new_store_data = {}
         new_store_data["intensity"] = df.intensity.tolist()
@@ -407,11 +447,13 @@ def update_spectrum(
             spectraLogger.info(
                 f"fetching subsample spectrum with ranges {index0_range}, {index1_range}"
             )
+            user_store = UserStore(**(user_store_dict or {}))
             df = get_spectrum(
                 sample_name,
                 index0_range=(index0_range[0], index0_range[1]),
                 index1_range=(index1_range[0], index1_range[1]),
-                directory_sync=UserStore(**(user_store_dict or {})).directory_sync(),
+                directory_sync=user_store.directory_sync(),
+                spectrum_only=user_store.spectrum_only,
             )
             name = "spatial subset"
             active_spectrum_metadata["intensity"] = df.intensity.tolist()
@@ -439,8 +481,22 @@ def update_spectrum(
 @callback(
     Output(_IDS.add_image, "n_clicks"),
     Input(_IDS.sample_name, "children"),
+    State(USER_STORE_DIV_ID, "data"),
+    State(selectorIDs.get_id_with_index("spectrumonly"), "value"),
 )
-def initial_update(input_value: str | None):
+def initial_update(
+    input_value: str | None,
+    user_store_dict: dict | None,
+    spectrum_only_switch: bool | None = False,
+):
+    """Open the initial image panels for a newly selected map.
+
+    A spectrum has no images, so nothing is opened for it. The mode comes off
+    the user store, or off the switch as the page rendered it when this fires
+    on a fresh load before the store has been written.
+    """
+    if resolve_spectrum_only(user_store_dict, spectrum_only_switch):
+        return no_update
     if _valid_sample_name(input_value):
         return NUMBER_OF_INITIAL_FIGURES
     return no_update
@@ -946,10 +1002,14 @@ def sync_image_views(
     Output(_IDS.spectrum_container, "figure"),
     Output(_IDS.view_store, "data", allow_duplicate=True),
     Output(_IDS.shapes_store, "data", allow_duplicate=True),
+    Output(selectorIDs.get_id_with_index("liststore"), "data", allow_duplicate=True),
+    Output(_IDS.image_controls, "style"),
+    Output(_IDS.image_section, "hidden"),
     Input(selectorIDs.get_id_with_index("dropdown"), "value"),
     Input(selectorIDs.get_id_with_index("refresh"), "n_clicks"),
     State(USER_STORE_DIV_ID, "data"),
     State(selectorIDs.get_id_with_index("dropdown"), "options"),
+    State(selectorIDs.get_id_with_index("spectrumonly"), "value"),
     prevent_initial_call=True,
 )
 def update_selected_dataset(
@@ -957,10 +1017,17 @@ def update_selected_dataset(
     n_clicks: int | None,
     current_user_data: dict,
     current_options,
+    spectrum_only_switch: bool | None = False,
 ):
+    """Load a newly picked sample (or refresh the list) and reset the page.
+
+    In spectrum-only mode the image controls and panel area are hidden along
+    the way: the sample is a lone ``.spc`` and there is nothing to image.
+    """
     sisi = SpectraInspectorServerInterface()
     trigger = ctx.triggered_id
     dir_sync = UserStore(**current_user_data).directory_sync()
+    spectrum_only = resolve_spectrum_only(current_user_data, spectrum_only_switch)
 
     data_store_selected = current_user_data.get("selected_dataset")
     if input_value is None or (input_value == "none" and data_store_selected):
@@ -973,13 +1040,15 @@ def update_selected_dataset(
     has_input = input_value and input_value != "none"
 
     available: None | AvailableDatasets = None
+    output_lists = no_update
     if is_refresh:
         available = sisi.get_available_datasets(
             refresh_db=True, directory_sync=dir_sync
         )
-        all_files = ["none", *available.available_files]
-        output_options = format_selections(all_files)
-        if input_value not in output_options:
+        output_lists = list_store_data(available)
+        names = dataset_names(available, spectrum_only)
+        output_options = dropdown_options(names)
+        if input_value not in names:
             input_value = None
             has_input = False
 
@@ -989,11 +1058,14 @@ def update_selected_dataset(
     meta_json_str: str = "{}"
     new_user_data = current_user_data.copy()
     if has_input:
-        meta = sisi.get_combined_image_metadata(input_value, directory_sync=dir_sync)
+        meta = sisi.get_combined_image_metadata(
+            input_value, directory_sync=dir_sync, spectrum_only=spectrum_only
+        )
         meta_json_str = meta.model_dump_json()
     new_user_data = updateDataStore(current_user_data, "metadata_json", meta_json_str)
 
     new_user_data = updateDataStore(new_user_data, "selected_dataset", input_value)
+    new_user_data = updateDataStore(new_user_data, "spectrum_only", spectrum_only)
 
     if new_user_data.get("sample_metadata", None) is None:
         if available is None:
@@ -1028,4 +1100,7 @@ def update_selected_dataset(
         None,
         empty_view(),
         {"active_shapes": []},
+        output_lists,
+        {"display": "none"} if spectrum_only else {},
+        spectrum_only,
     )

@@ -36,6 +36,12 @@ class UserStore:
     # whether that directory was scanned recursively, so a server worker that
     # has to catch up scans it the same way the user asked for.
     working_directory_recursive: bool = True
+    # the .spc spectra found alongside `available_files`, same caveats.
+    available_spectra: list[str] | None = None
+    # "spectrum only" mode: the dataset list holds every .spc (standalone or
+    # part of a file set), `selected_dataset` names one of them, and the
+    # inspector shows its spectrum without any image panels.
+    spectrum_only: bool = False
 
     def get_metadata(self) -> CombinedMetadata | None:
         if self.metadata_json != "":
@@ -64,7 +70,9 @@ class UserStore:
         if md is None and self.selected_dataset != "none":
             sisi = SpectraInspectorServerInterface()
             md = sisi.get_combined_image_metadata(
-                self.selected_dataset, directory_sync=self.directory_sync()
+                self.selected_dataset,
+                directory_sync=self.directory_sync(),
+                spectrum_only=self.spectrum_only,
             )
 
         return md
