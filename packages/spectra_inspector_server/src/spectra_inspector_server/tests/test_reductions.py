@@ -67,7 +67,7 @@ def fixed_mock(
     ds = createEDAXMock(im_shape=(16, 16, 10))
     assert ds.data is not None
     ds.data = ds.data.astype(request.param)
-    monkeypatch.setattr(_on_disc_mock, "load", lambda _name: ds)
+    monkeypatch.setattr(_on_disc_mock, "load", lambda _name, **_kwargs: ds)
     return ds
 
 

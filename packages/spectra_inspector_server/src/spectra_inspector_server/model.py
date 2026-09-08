@@ -1,5 +1,5 @@
 from collections.abc import Mapping
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
@@ -25,7 +25,8 @@ class EDAX_axis(BaseModel):
     index_in_array: int
     name: str
     scale: float
-    offset: int
+    # rsciio hands back the .spc header's startEnergy here, a float
+    offset: float
     units: str
     navigate: bool
 
@@ -145,10 +146,18 @@ class MetadataModel(BaseModel):
 class CombinedMetadata(BaseModel):
     metadata: MetadataModel
     axes_by_index: dict[int, EDAX_axis]
-    data_shape: tuple[int, int, int]
+    # (index0, index1, channel) for a map, (channel,) for a standalone spectrum
+    data_shape: tuple[int, ...]
 
 
 class EDAX_raw_ds:
+    """An EDAX dataset as rsciio hands it back.
+
+    A map's ``data`` is the (index0, index1, channel) cube of an ``.spd`` file;
+    a standalone ``.spc`` spectrum is the 1D (channel,) array of counts, with
+    the energy axis as its only axis.
+    """
+
     data: npt.NDArray[np.int64] | None
     axes: list[EDAX_axis]
     metadata: dict[str, Any]
@@ -282,6 +291,9 @@ class directoryListing(BaseModel):
     directories: list[directoryEntry] = []
     # number of EDAX file sets found directly in this directory
     dataset_count: int = 0
+    # number of .spc spectra found directly in this directory, whether or not
+    # they belong to one of those file sets
+    spectrum_count: int = 0
 
 
 @dataclass
@@ -341,6 +353,9 @@ class AvailableDatasets:
     # true when the scan stopped on SPECTRA_INSPECTOR_MAX_DATASETS, so
     # available_files is the first N of an unknown larger number on disk.
     truncated: bool = False
+    # every .spc spectrum found, standalone or part of a file set. Served for
+    # the frontend's "spectrum only" mode.
+    available_spectra: list[str] = field(default_factory=list)
 
 
 class raveledImage(BaseModel):

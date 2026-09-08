@@ -165,18 +165,26 @@ class SpectraInspectorServerInterface:
         return model.AvailableDatasets(**r.json())
 
     def get_image_metadata(
-        self, sample_name: str, directory_sync: dict | None = None
+        self,
+        sample_name: str,
+        directory_sync: dict | None = None,
+        spectrum_only: bool = False,
     ) -> model.MetadataModel:
-        payload: dict = {"sample_name": sample_name}
+        payload: dict = {"sample_name": sample_name, "spectrum_only": spectrum_only}
         payload.update(directory_sync or {})
         uri = self._get_endpoint("image-metadata")
         r = self._get(uri, params=payload)
         return model.MetadataModel(**r.json())
 
     def get_combined_image_metadata(
-        self, sample_name: str, directory_sync: dict | None = None
+        self,
+        sample_name: str,
+        directory_sync: dict | None = None,
+        spectrum_only: bool = False,
     ) -> model.CombinedMetadata:
-        payload: dict = {"sample_name": sample_name}
+        """``spectrum_only`` asks about the sample's ``.spc`` spectrum rather
+        than its map, here and in ``get_image_spectrum``."""
+        payload: dict = {"sample_name": sample_name, "spectrum_only": spectrum_only}
         payload.update(directory_sync or {})
         uri = self._get_endpoint("image-metadata-combined")
         r = self._get(uri, params=payload)
@@ -190,10 +198,15 @@ class SpectraInspectorServerInterface:
         index1_range: tuple[int, int] | None = None,
         include_weights: bool = True,
         directory_sync: dict | None = None,
+        spectrum_only: bool = False,
     ) -> model.Spectrum1dDict:
 
         payload: dict
-        payload = {"sample_name": sample_name, "include_weights": include_weights}
+        payload = {
+            "sample_name": sample_name,
+            "include_weights": include_weights,
+            "spectrum_only": spectrum_only,
+        }
         payload.update(directory_sync or {})
 
         if isinstance(channel_range, tuple):

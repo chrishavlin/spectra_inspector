@@ -91,6 +91,28 @@ def load_edax_spd(
     return ds
 
 
+def load_edax_spc(spc_path: Path) -> EDAX_raw_ds:
+    """Load a ``.spc`` file on its own, as a 1D spectrum.
+
+    rsciio reads a lone ``.spc`` as counts per channel with a single energy
+    axis; the metadata comes out in the same shape as a map's, so the result
+    is an ``EDAX_raw_ds`` whose ``data`` is (channel,) rather than a cube.
+    """
+    ds = edax.file_reader(spc_path)
+    if len(ds) > 1:
+        msg = f"The following EDAX file includes more than one ds object, only the first will be loaded: {spc_path}"
+        spectraLogger.info(msg)
+
+    return EDAX_raw_ds(
+        {
+            "axes": ds[0]["axes"],
+            "metadata": ds[0]["metadata"],
+            "original_metadata": ds[0]["original_metadata"],
+            "data": ds[0]["data"],
+        }
+    )
+
+
 def find_data_start(msa_path: str) -> int:
     idx = 0
     with open(msa_path) as fh:

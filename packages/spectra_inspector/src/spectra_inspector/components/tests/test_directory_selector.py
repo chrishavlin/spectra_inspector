@@ -8,14 +8,18 @@ from dash._utils import AttributeDict
 # the components package re-exports the directory_selector *function* under the
 # module's own name, so these have to come off the module path directly.
 from spectra_inspector.components.directory_selector import (
+    browse_status,
+    committed_status,
     data_root_label,
     directory_selector,
     directorySelectorLayoutIDs,
     entry_id,
     hydrate_browse_position,
+    loaded_status,
     navigate_directory,
     parent_path,
     path_label,
+    recount_committed_status,
     show_directory_listing,
     store_working_directory,
     use_directory,
@@ -435,7 +439,7 @@ def test_use_directory_populates_the_sample_dropdown(mocker):
         mocker, get_datasets_in_directory=mocker.MagicMock(return_value=available)
     )
 
-    options, status, committed = use_directory(1, {"path": "session-a"}, True)
+    options, status, committed, lists = use_directory(1, {"path": "session-a"}, True)
 
     sisi.get_datasets_in_directory.assert_called_once_with("session-a", recursive=True)
 
@@ -445,9 +449,11 @@ def test_use_directory_populates_the_sample_dropdown(mocker):
         "path": "session-a",
         "recursive": True,
         "available_files": ["C-1", "C-2"],
+        "available_spectra": [],
         "sample_metadata": {"records": [], "map_samples": {}},
         "truncated": False,
     }
+    assert lists == {"available_files": ["C-1", "C-2"], "available_spectra": []}
 
 
 def test_use_directory_reports_the_real_root_in_desktop_mode(mocker):
@@ -461,7 +467,7 @@ def test_use_directory_reports_the_real_root_in_desktop_mode(mocker):
         get_info=mocker.MagicMock(return_value=info),
     )
 
-    _, status, _ = use_directory(1, {"path": "session-a"}, True)
+    _, status, _, _ = use_directory(1, {"path": "session-a"}, True)
 
     assert "from /data/edax/session-a." in status.children
 
@@ -472,7 +478,7 @@ def test_use_directory_passes_the_recursive_flag(mocker):
         mocker, get_datasets_in_directory=mocker.MagicMock(return_value=available)
     )
 
-    _, status, _ = use_directory(1, {"path": "session-a"}, False)
+    _, status, _, _ = use_directory(1, {"path": "session-a"}, False)
 
     sisi.get_datasets_in_directory.assert_called_once_with("session-a", recursive=False)
     assert "Loaded 1 dataset " in status.children
@@ -490,7 +496,7 @@ def test_use_directory_warns_about_a_truncated_scan(mocker):
         mocker, get_datasets_in_directory=mocker.MagicMock(return_value=available)
     )
 
-    options, status, _ = use_directory(1, {"path": "session-a"}, True)
+    options, status, _, _ = use_directory(1, {"path": "session-a"}, True)
 
     # the datasets that did come back are still usable
     assert [o["value"] for o in options] == ["none", "C-1", "C-2"]
@@ -507,7 +513,7 @@ def test_use_directory_does_not_warn_on_a_complete_scan(mocker):
         mocker, get_datasets_in_directory=mocker.MagicMock(return_value=available)
     )
 
-    _, status, _ = use_directory(1, {"path": "session-a"}, True)
+    _, status, _, _ = use_directory(1, {"path": "session-a"}, True)
 
     assert status.children == "Loaded 1 dataset from <data root>/session-a."
     # unset props are absent on a Dash component rather than None
@@ -525,11 +531,80 @@ def test_use_directory_reports_server_errors(mocker):
     err = ServerRequestError("'nope' is not a directory")
     _mock_interface(mocker, get_datasets_in_directory=mocker.MagicMock(side_effect=err))
 
-    options, status, committed = use_directory(1, {"path": "nope"}, True)
+    options, status, committed, lists = use_directory(1, {"path": "nope"}, True)
 
     assert options is no_update
     assert committed is no_update
+    assert lists is no_update
     assert "not a directory" in status.children
+
+
+_SPECTRA = AvailableDatasets(
+    available_files=["C-1"],
+    available_spectra=["C-1", "S-1"],
+    directory="session-a",
+)
+
+
+def test_use_directory_in_spectrum_only_mode(mocker):
+    _mock_interface(
+        mocker, get_datasets_in_directory=mocker.MagicMock(return_value=_SPECTRA)
+    )
+
+    options, status, committed, lists = use_directory(
+        1, {"path": "session-a"}, True, spectrum_only=True
+    )
+
+    # every .spc, the set's own one included
+    assert [o["value"] for o in options] == ["none", "C-1", "S-1"]
+    assert "Loaded 2 spectra" in status.children
+    assert committed["available_files"] == ["C-1"]
+    assert committed["available_spectra"] == ["C-1", "S-1"]
+    assert lists == {"available_files": ["C-1"], "available_spectra": ["C-1", "S-1"]}
+
+
+def test_standalone_spectra_stay_out_of_the_map_list(mocker):
+    _mock_interface(
+        mocker, get_datasets_in_directory=mocker.MagicMock(return_value=_SPECTRA)
+    )
+
+    options, status, _, lists = use_directory(
+        1, {"path": "session-a"}, True, spectrum_only=False
+    )
+
+    assert [o["value"] for o in options] == ["none", "C-1"]
+    assert "Loaded 1 dataset " in status.children
+    # both lists are kept regardless, so flipping the switch needs no rescan
+    assert lists["available_spectra"] == ["C-1", "S-1"]
+
+
+def test_status_labels_count_by_kind():
+    assert loaded_status(1, "x").children == "Loaded 1 dataset from x."
+    assert loaded_status(1, "x", spectrum_only=True).children == (
+        "Loaded 1 spectrum from x."
+    )
+    assert loaded_status(3, "x", spectrum_only=True).children == (
+        "Loaded 3 spectra from x."
+    )
+    assert browse_status(2, False) == "2 datasets in this directory."
+    assert browse_status(2, False, spectrum_only=True) == (
+        "2 spectra in this directory."
+    )
+
+
+def test_committed_status_counts_spectra_in_spectrum_only_mode():
+    store = {
+        "working_directory": "",
+        "available_files": ["C-1"],
+        "available_spectra": ["C-1", "S-1"],
+        "spectrum_only": True,
+    }
+    status = committed_status("", store, "<data root>")
+    assert status.children == "Loaded 2 spectra from <data root>."
+
+    store["spectrum_only"] = False
+    status = committed_status("", store, "<data root>")
+    assert status.children == "Loaded 1 dataset from <data root>."
 
 
 _COMMIT = {
@@ -571,6 +646,7 @@ def test_store_working_directory():
 
     assert user_data["working_directory"] == "session-a"
     assert user_data["available_files"] == ["C-1", "C-2"]
+    assert user_data["available_spectra"] == []
     assert user_data["sample_metadata"] == {"records": [], "map_samples": {}}
     # the previous selection came from a directory that is no longer loaded
     assert user_data["selected_dataset"] == "none"
@@ -614,3 +690,35 @@ def test_store_working_directory_picks_the_triggering_selector():
 
     assert user_data["working_directory"] == "session-a"
     assert user_data["available_files"] == ["C-1", "C-2"]
+
+
+def test_recount_committed_status_follows_the_mode():
+    store = {
+        "working_directory": "session-a",
+        "available_files": ["C-1"],
+        "available_spectra": ["C-1", "S-1"],
+        "spectrum_only": True,
+    }
+    browse = {"path": "session-a"}
+    status = recount_committed_status(store, {}, browse, "<data root>/session-a")
+    assert status.children == "Loaded 2 spectra from <data root>/session-a."
+
+    store["spectrum_only"] = False
+    status = recount_committed_status(store, {}, browse, "<data root>/session-a")
+    assert status.children == "Loaded 1 dataset from <data root>/session-a."
+
+    # browsing elsewhere, nothing committed, or not hydrated yet: leave it alone
+    assert recount_committed_status(store, {}, {"path": "b"}, "x") is no_update
+    assert recount_committed_status({}, {}, browse, "x") is no_update
+    assert recount_committed_status(store, {}, None, "x") is no_update
+
+
+def test_store_working_directory_carries_the_spectra():
+    _set_inputs_list([{"type": "directory-selector-committedstore", "index": 0}])
+
+    commit = {**_COMMIT, "available_spectra": ["C-1", "C-2", "S-1"]}
+    user_data, _ = store_working_directory([commit], {"spectrum_only": True})
+
+    assert user_data["available_spectra"] == ["C-1", "C-2", "S-1"]
+    # the mode is not the directory's business, it stays as it was
+    assert user_data["spectrum_only"] is True

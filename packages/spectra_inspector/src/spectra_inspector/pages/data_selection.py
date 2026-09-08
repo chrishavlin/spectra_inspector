@@ -9,7 +9,12 @@ from spectra_inspector.components import (
     directorySelectorLayoutIDs,
     sample_map,
 )
-from spectra_inspector.components.dataset_selector import format_selections
+from spectra_inspector.components.dataset_selector import (
+    dataset_names,
+    dropdown_options,
+    list_store_data,
+    resolve_spectrum_only,
+)
 from spectra_inspector.components.nested_accordian import nested_accordian
 from spectra_inspector.logging import spectraLogger
 from spectra_inspector.user_store_model import (
@@ -82,10 +87,12 @@ def layout(**kwargs) -> html.Div:  # noqa: ARG001
     Output(USER_STORE_DIV_ID, "data"),
     Output(selectorIDs.get_id_with_index("dropdown"), "options"),
     Output(selectorIDs.get_id_with_index("dropdown"), "value"),
+    Output(selectorIDs.get_id_with_index("liststore"), "data", allow_duplicate=True),
     Input(selectorIDs.get_id_with_index("dropdown"), "value"),
     Input(selectorIDs.get_id_with_index("refresh"), "n_clicks"),
     State(USER_STORE_DIV_ID, "data"),
     State(selectorIDs.get_id_with_index("dropdown"), "options"),
+    State(selectorIDs.get_id_with_index("spectrumonly"), "value"),
     prevent_initial_call=True,
 )
 def update_selected_dataset(
@@ -93,25 +100,29 @@ def update_selected_dataset(
     n_clicks,
     current_user_data: dict,
     current_options,
-) -> tuple[dbc.NavLink, html.Div, dict]:
+    spectrum_only_switch: bool | None = False,
+):
     sisi = SpectraInspectorServerInterface()
 
     trigger = ctx.triggered_id
     dir_sync = UserStore(**current_user_data).directory_sync()
+    spectrum_only = resolve_spectrum_only(current_user_data, spectrum_only_switch)
 
     is_refresh = trigger == selectorIDs.get_id_with_index("refresh") and n_clicks > 0
     is_dropdown = trigger == selectorIDs.get_id_with_index("dropdown")
     has_input = input_value and input_value != "none"
 
     new_user_data = updateDataStore(current_user_data, "selected_dataset", input_value)
+    new_user_data = updateDataStore(new_user_data, "spectrum_only", spectrum_only)
     output_options = current_options
+    output_lists = no_update
     if new_user_data.get("sample_metadata", None) is None or is_refresh:
         available = sisi.get_available_datasets(
             refresh_db=True, directory_sync=dir_sync
         )
         if is_refresh:
-            all_files = ["none", *available.available_files]
-            output_options = format_selections(all_files)
+            output_lists = list_store_data(available)
+            output_options = dropdown_options(dataset_names(available, spectrum_only))
             input_value = None
             has_input = False
 
@@ -123,7 +134,9 @@ def update_selected_dataset(
 
     meta_json_str: str = "{}"
     if has_input:
-        meta = sisi.get_combined_image_metadata(input_value, directory_sync=dir_sync)
+        meta = sisi.get_combined_image_metadata(
+            input_value, directory_sync=dir_sync, spectrum_only=spectrum_only
+        )
         meta_json_str = meta.model_dump_json()
         meta_dict = meta.model_dump()
 
@@ -145,12 +158,14 @@ def update_selected_dataset(
     else:
         valid_input_vale = "none"
 
-    nl = dbc.NavLink(
-        dbc.Button("Load Selected"),
-        href=f"/inspector/{valid_input_vale}",
-    )
+    # the inspector renders its own selector from the URL, so carry the mode
+    # along: the user store is not readable at layout time.
+    href = f"/inspector/{valid_input_vale}"
+    if spectrum_only:
+        href += "?spectrum_only=true"
+    nl = dbc.NavLink(dbc.Button("Load Selected"), href=href)
 
-    return nl, md, new_user_data, output_options, input_value
+    return nl, md, new_user_data, output_options, input_value, output_lists
 
 
 @callback(

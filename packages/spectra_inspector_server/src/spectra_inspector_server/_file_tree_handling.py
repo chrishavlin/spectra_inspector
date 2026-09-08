@@ -5,7 +5,10 @@ from spectra_inspector_server._database import OnDiskDatabase
 from spectra_inspector_server._logging import spectraLogger
 from spectra_inspector_server._testing import _on_disc_mock
 from spectra_inspector_server.model import EDAX_file_set, EDAX_raw_ds
-from spectra_inspector_server.processor.file_loaders import load_edax_spd
+from spectra_inspector_server.processor.file_loaders import (
+    load_edax_spc,
+    load_edax_spd,
+)
 
 _ENV_DATA_ROOT = "SPECTRAINSPECTORDATAROOT"
 
@@ -73,17 +76,32 @@ class EDAXPathHandler:
     def get_sample_edax_file_names(self, sample_name: str) -> EDAX_file_set | None:
         return self.database.available_maps.get(sample_name, None)
 
-    def load_edax(self, sample_name: str, metadata_only: bool = False) -> EDAX_raw_ds:
-        if sample_name in _on_disc_mock.filenames:
+    def get_sample_spc_file(self, sample_name: str) -> Path | None:
+        return self.database.available_spectra.get(sample_name, None)
+
+    def load_edax(
+        self,
+        sample_name: str,
+        metadata_only: bool = False,
+        spectrum_only: bool = False,
+    ) -> EDAX_raw_ds:
+        """Load a sample, as the map of its file set or, with
+        ``spectrum_only``, as the 1D spectrum of its ``.spc`` alone."""
+        if _on_disc_mock.is_mock(sample_name, spectrum_only=spectrum_only):
             # a short-circuit for testing
-            return _on_disc_mock.load(sample_name)
+            return _on_disc_mock.load(sample_name, spectrum_only=spectrum_only)
 
-        # first check database
-        files = self.database.available_maps.get(sample_name, None)
-        if files:
-            return load_edax_spd(files, metadata_only=metadata_only)
+        if spectrum_only:
+            spc = self.database.available_spectra.get(sample_name, None)
+            if spc:
+                return load_edax_spc(spc)
+        else:
+            files = self.database.available_maps.get(sample_name, None)
+            if files:
+                return load_edax_spd(files, metadata_only=metadata_only)
 
-        msg = f"{sample_name} does not exist in database."
+        kind = "spectrum" if spectrum_only else "map"
+        msg = f"{sample_name} does not exist in database as a {kind}."
         raise FileNotFoundError(msg)
 
 
