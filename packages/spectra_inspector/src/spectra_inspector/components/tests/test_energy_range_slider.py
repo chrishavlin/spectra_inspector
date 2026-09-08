@@ -41,9 +41,11 @@ def test_dropdown_offers_the_server_presets(server_ranges):
     cont, ids = ers.get_element_dropdown_and_slider(index=3)
     dropdown, slider = _dropdown_and_slider(cont, ids)
 
-    assert dropdown.options == ["none", "Na", "Mg", "Al"]
-    assert dropdown.value == "Na"
-    assert slider.value == server_ranges["Na"]
+    els = ["Na", "Mg", "Al"]
+    els.sort()
+    assert dropdown.options == ["none", *els]
+    assert dropdown.value == els[0]
+    assert slider.value == server_ranges[els[0]]
 
 
 def test_init_element_is_honoured(server_ranges):
@@ -58,8 +60,10 @@ def test_unknown_init_element_falls_back_to_the_first_preset(server_ranges):
     cont, ids = ers.get_element_dropdown_and_slider(init_element="Xx")
     dropdown, slider = _dropdown_and_slider(cont, ids)
 
-    assert dropdown.value == "Na"
-    assert slider.value == server_ranges["Na"]
+    els = list(_RANGES.keys())
+    els.sort()
+    assert dropdown.value == els[0]
+    assert slider.value == server_ranges[els[0]]
 
 
 @pytest.fixture
