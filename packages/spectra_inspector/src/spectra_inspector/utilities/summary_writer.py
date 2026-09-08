@@ -1,8 +1,9 @@
 import datetime
+import json
 import shutil
 import uuid
 from pathlib import Path
-from typing import Literal
+from typing import Any, Literal
 from zoneinfo import ZoneInfo
 
 import fpdf
@@ -13,15 +14,33 @@ from matplotlib.figure import Figure
 
 from spectra_inspector.logging import spectraLogger
 from spectra_inspector.settings import Settings
+from spectra_inspector.utilities.export_metadata import (
+    flatten_for_display,
+    readme_text,
+    subselection_lines,
+)
+
+# the core PDF fonts are latin-1 only; anything else (a µm axis unit is fine, a
+# CJK sample description is not) is replaced rather than failing the export
+_PDF_ENCODING = "latin-1"
+
+
+def _pdf_safe(text: str) -> str:
+    return text.encode(_PDF_ENCODING, errors="replace").decode(_PDF_ENCODING)
 
 
 class summaryWriter:
     folder_name: Path = Path("spector-inspector")
     pdf_name: Path = Path("SpectraInspectorSummary.pdf")
     element_weights_name: Path = Path("ElementWeights.txt")
+    metadata_name: Path = Path("metadata.json")
+    readme_name: Path = Path("README.txt")
     parent_write_dir: Path
     unique_write_dir: Path
     settings: Settings
+    # the record `build_export_metadata` produces, once `set_export_metadata`
+    # has been called; the PDF and the zip's json/README are rendered from it
+    export_metadata: dict[str, Any] | None = None
 
     def __init__(
         self,
@@ -95,6 +114,28 @@ class summaryWriter:
             f.writelines(f"{element}\t{weight}\n" for element, weight in wts.items())
         return fi
 
+    def set_export_metadata(self, metadata: dict[str, Any]) -> None:
+        self.export_metadata = metadata
+
+    def write_metadata_files(self) -> tuple[Path, Path]:
+        """Write the export record as ``metadata.json`` and a ``README.txt``
+        listing every file that will end up in the zip (these two included)."""
+        if self.export_metadata is None:
+            msg = "set_export_metadata must be called before writing the metadata"
+            raise RuntimeError(msg)
+
+        json_file = self.full_file(self.metadata_name)
+        json_file.write_text(
+            json.dumps(self.export_metadata, indent=2, default=str), encoding="utf-8"
+        )
+
+        readme = self.full_file(self.readme_name)
+        files = [f.name for f in self.write_dir.glob("*") if f.is_file()]
+        if readme.name not in files:
+            files.append(readme.name)
+        readme.write_text(readme_text(self.export_metadata, files), encoding="utf-8")
+        return json_file, readme
+
     def get_zip(self, include_pdf: bool = False) -> Path:
 
         if include_pdf:
@@ -105,6 +146,41 @@ class summaryWriter:
         zfilename = shutil.make_archive(str(zip_fi), "zip", root_dir=self.write_dir)
 
         return Path(zfilename)
+
+    def _pdf_metadata_pages(self, pdf: fpdf.FPDF) -> None:
+        """The sample metadata (as the data-selection accordion shows it) and
+        the box subselection, as text; a heading only when no record was set."""
+        pdf.add_page()
+        pdf.set_font("Helvetica", size=14)
+        pdf.cell(text="Sample metadata", new_x="LMARGIN", new_y="NEXT")
+        pdf.ln(2)
+
+        md = self.export_metadata
+        pdf.set_font("Courier", size=8)
+        if md is None:
+            pdf.multi_cell(w=0, text="not available for this export")
+            return
+
+        header = [
+            f"dataset: {md.get('dataset')}",
+            f"generated: {md.get('generated_utc')}",
+        ]
+        sample = md.get("sample")
+        body = (
+            flatten_for_display(sample)
+            if sample is not None
+            else ["unavailable: the server could not be reached for it"]
+        )
+        pdf.multi_cell(w=0, text=_pdf_safe("\n".join([*header, "", *body])))
+
+        pdf.ln(4)
+        pdf.set_font("Helvetica", size=14)
+        pdf.cell(text="Box subselection", new_x="LMARGIN", new_y="NEXT")
+        pdf.ln(2)
+        pdf.set_font("Courier", size=8)
+        pdf.multi_cell(
+            w=0, text=_pdf_safe("\n".join(subselection_lines(md.get("subselection"))))
+        )
 
     def write_pdf(
         self,
@@ -117,7 +193,7 @@ class summaryWriter:
         for f in files:
             if f.stem.startswith("bitmap"):
                 bitmaps.append(self.write_dir / f)
-            elif f.stem.startswith("spectr"):
+            elif f.stem.startswith("spectr") and f.suffix == ".png":
                 spectrum.append(self.write_dir / f)
         bitmaps.sort()
 
@@ -132,8 +208,8 @@ class summaryWriter:
 
         pdf.write(text="\n".join(lines))
 
-        pdf.add_page()
-        pdf.cell(text="Sample metadata:")
+        self._pdf_metadata_pages(pdf)
+        pdf.set_font("Helvetica", size=18)
 
         for fname in bitmaps + spectrum:
             pdf.add_page()
