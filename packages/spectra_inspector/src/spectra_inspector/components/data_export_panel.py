@@ -14,6 +14,12 @@ SUMMARY_WEIGHT_KEYS: tuple[str, ...] = (
     "DH_assessment",
 )
 
+# whole-number counts, displayed without a fractional part
+INTEGER_WEIGHT_KEYS: tuple[str, ...] = ("total_count", "counts_14_15_kev")
+
+ZERO_SYMBOL = "\u2715"
+RESTORE_SYMBOL = "\u21ba"
+
 
 class dataExportPanelIDS(indexedLayoutIDMapper):
     prop_names: tuple[str, ...] = (
@@ -250,9 +256,11 @@ def apply_zeroed_elements(wts: dict, zeroed_elements: Iterable[str]) -> dict:
     return {key: (0.0 if key in zeroed else value) for key, value in wts.items()}
 
 
-def _format_weight(value) -> str:
+def _format_weight(key: str, value) -> str:
     # exact zeros and whole counts come back from the JSON store as ints
     if isinstance(value, int | float) and not isinstance(value, bool):
+        if key in INTEGER_WEIGHT_KEYS:
+            return f"{round(value):d}"
         return f"{value:.8f}"
     return str(value)
 
@@ -273,7 +281,7 @@ def get_formatted_element_weights(
     ids = ids or _layoutIDs
     zeroed = set(zeroed_elements)
     formatted_data = {
-        key: _format_weight(value)
+        key: _format_weight(key, value)
         for key, value in apply_zeroed_elements(wts, zeroed).items()
     }
 
@@ -283,21 +291,22 @@ def get_formatted_element_weights(
         value_cell = html.Td(
             val,
             className="text-muted" if is_zeroed else None,
-            title=f"computed: {_format_weight(wts[key])}" if is_zeroed else None,
+            title=f"computed: {_format_weight(key, wts[key])}" if is_zeroed else None,
         )
         if key in SUMMARY_WEIGHT_KEYS:
             action_cell = html.Td()
         else:
+            # one button per row toggles the element: X zeroes it, the
+            # circular arrow restores the computed value
             action_cell = html.Td(
                 dbc.Button(
-                    "\u2715",
+                    RESTORE_SYMBOL if is_zeroed else ZERO_SYMBOL,
                     id=ids.zero_element_id(key),
                     n_clicks=0,
                     color="link",
                     size="sm",
-                    disabled=is_zeroed,
-                    title=f"Zero out {key}",
-                    className="p-0 text-danger",
+                    title=f"Restore {key}" if is_zeroed else f"Zero out {key}",
+                    className="p-0 text-primary" if is_zeroed else "p-0 text-danger",
                 ),
                 style={"width": "2rem", "textAlign": "center"},
             )

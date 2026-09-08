@@ -373,10 +373,11 @@ def update_zeroed_elements(_zero_clicks, _reset_clicks, zeroed_elements):
     if trigger_id == _dataExportIDS.resetweights:
         return []
 
+    # the row button toggles: X zeroes the element, the restore arrow un-zeroes it
     zeroed = list(zeroed_elements or [])
     element = trigger_id["index"]
     if element in zeroed:
-        return no_update
+        return [el for el in zeroed if el != element]
     return [*zeroed, element]
 
 
