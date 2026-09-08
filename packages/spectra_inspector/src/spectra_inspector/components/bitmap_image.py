@@ -68,7 +68,7 @@ def bitmap_image_layout(
     slider_stop: float = 15.0,
     slider_step: float = 0.1,
     init_element_id: int = 0,
-    colorscale: str = "reds",
+    colorscale: str = "turbo",
 ) -> tuple[dbc.Card, bitmapImageLayoutIDs]:
 
     imIDs = bitmapImageLayoutIDs(id_type_base=id_type_base, index=index)
