@@ -5,9 +5,11 @@ import pytest
 from fastapi.testclient import TestClient
 
 from spectra_inspector_server._testing import _on_disc_mock
+from spectra_inspector_server.calibration import element_energy_ranges_keV
 from spectra_inspector_server.main import app
 from spectra_inspector_server.model import (
     CombinedMetadata,
+    ElementEnergyRanges,
     MetadataModel,
     Spectrum1dDict,
     raveledImage,
@@ -16,6 +18,7 @@ from spectra_inspector_server.model import (
 _endpoints_keys = [
     ("info", ["app_name", "spectra_inspector_data_root"]),
     ("available-datasets", ["available_files"]),
+    ("element-energy-ranges", ["ranges_keV"]),
 ]
 
 
@@ -146,3 +149,12 @@ def test_image_data_summed_subset(app_client: TestClient) -> None:
     assert np.all(np.isreal(spectrum.shape))
 
     assert spectrum.shape == (3, 5)
+
+
+def test_element_energy_ranges(app_client: TestClient) -> None:
+    response = app_client.get("/element-energy-ranges")
+    assert response.status_code == 200
+    ranges = ElementEnergyRanges(**response.json())
+    assert ranges.ranges_keV == element_energy_ranges_keV
+    # the frontend relies on the order the server defines
+    assert list(ranges.ranges_keV) == list(element_energy_ranges_keV)

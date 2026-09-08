@@ -4,7 +4,11 @@ from spectra_inspector.components.bitmap_image import bitmap_image_layout
 from spectra_inspector.utilities.coerce import get_sequential_colorscales
 
 
-def test_bitmap_image_layout():
+def test_bitmap_image_layout(mocker):
+    mocker.patch(
+        "spectra_inspector.components.energy_range_slider.get_element_energy_ranges",
+        return_value={"Mg": (1.13, 1.34)},
+    )
 
     _, div_ids = bitmap_image_layout(0)
     for prop in div_ids.prop_names:

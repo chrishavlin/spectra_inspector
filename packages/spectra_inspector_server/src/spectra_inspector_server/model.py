@@ -363,6 +363,16 @@ class raveledImage(BaseModel):
     shape: tuple[int, int]
 
 
+class ElementEnergyRanges(BaseModel):
+    """The keV windows the server integrates each element's peak over.
+
+    Keys are element symbols in the order the server defines them; values are
+    ``(start, stop)`` in keV. The frontend builds its element presets from this.
+    """
+
+    ranges_keV: dict[str, tuple[float, float]]
+
+
 __all__ = [
     "EDS",
     "SEM",
@@ -374,6 +384,7 @@ __all__ = [
     "EDAX_axis",
     "EDAX_file_set",
     "EDAX_raw_ds",
+    "ElementEnergyRanges",
     "GeneralMetadata",
     "Info",
     "MetadataModel",

@@ -37,6 +37,20 @@ def test_available_datasets(mocker):
     assert len(available.available_files) == 3
 
 
+def test_get_element_energy_ranges(mocker):
+    mock_response = mocker.Mock()
+    mock_response.status_code = 200
+    mock_response.json.return_value = {
+        "ranges_keV": {"Mg": [1.13, 1.34], "Fe": [6.275, 6.54]}
+    }
+    get = mocker.patch("requests.Session.get", return_value=mock_response)
+
+    ranges = SpectraInspectorServerInterface().get_element_energy_ranges()
+
+    assert ranges.ranges_keV == {"Mg": (1.13, 1.34), "Fe": (6.275, 6.54)}
+    assert get.call_args.args[0].endswith("/element-energy-ranges")
+
+
 def test_get_image_spectrum(mocker):
 
     mock_response = mocker.Mock()

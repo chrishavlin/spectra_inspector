@@ -128,6 +128,13 @@ class SpectraInspectorServerInterface:
         _raise_for_status(r)
         return model.Info(**r.json())
 
+    def get_element_energy_ranges(self) -> model.ElementEnergyRanges:
+        """The keV windows the server integrates each element's peak over."""
+        uri = self._get_endpoint("element-energy-ranges")
+        r = self._get(uri)
+        _raise_for_status(r)
+        return model.ElementEnergyRanges(**r.json())
+
     def get_available_datasets(
         self,
         refresh_db: bool = False,

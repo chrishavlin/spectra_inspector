@@ -20,10 +20,12 @@ from spectra_inspector_server._file_tree_handling import EDAXPathHandler
 from spectra_inspector_server._logging import spectraLogger
 from spectra_inspector_server._testing import pytest_running
 from spectra_inspector_server._typing import LifespanGenerator, OptionalOpsReturnType
+from spectra_inspector_server.calibration import element_energy_ranges_keV
 from spectra_inspector_server.dependencies import get_database_session, get_settings
 from spectra_inspector_server.model import (
     AvailableDatasets,
     CombinedMetadata,
+    ElementEnergyRanges,
     Info,
     MetadataModel,
     Spectrum1d,
@@ -219,6 +221,11 @@ async def info(settings: Annotated[Settings, Depends(get_settings)]) -> Info:
         spectra_inspector_data_root=settings.data_root,
         desktop_mode=settings.desktop_mode,
     )
+
+
+@app.get("/element-energy-ranges")
+async def element_energy_ranges() -> ElementEnergyRanges:
+    return ElementEnergyRanges(ranges_keV=element_energy_ranges_keV)
 
 
 def _available_datasets_response(ph: EDAXPathHandler) -> AvailableDatasets:

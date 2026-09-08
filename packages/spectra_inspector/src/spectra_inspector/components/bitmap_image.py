@@ -67,7 +67,7 @@ def bitmap_image_layout(
     slider_start: float = 0.0,
     slider_stop: float = 15.0,
     slider_step: float = 0.1,
-    init_element_id: int = 0,
+    init_element: str | None = None,
     colorscale: str = "turbo",
 ) -> tuple[dbc.Card, bitmapImageLayoutIDs]:
 
@@ -103,7 +103,7 @@ def bitmap_image_layout(
         slider_start=slider_start,
         slider_stop=slider_stop,
         slider_step=slider_step,
-        init_element_id=init_element_id,
+        init_element=init_element,
     )
 
     _controls_row_1 = dbc.Row(

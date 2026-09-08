@@ -32,6 +32,17 @@ class EDS_1(BaseModel):
     live_time: float
 
 
+class ElementEnergyRanges(BaseModel):
+    """
+    The keV windows the server integrates each element's peak over.
+
+    Keys are element symbols in the order the server defines them; values are
+    ``(start, stop)`` in keV. The frontend builds its element presets from this.
+    """
+
+    ranges_keV: dict[str, tuple[float, float]]
+
+
 class GeneralMetadata(BaseModel):
     original_filename: str
     title: str
