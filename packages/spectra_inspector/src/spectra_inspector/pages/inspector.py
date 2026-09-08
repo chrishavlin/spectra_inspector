@@ -6,6 +6,7 @@ import numpy as np
 import numpy.typing as npt
 import pandas as pd
 import plotly.graph_objects as go
+import requests
 from dash import (
     ALL,
     Input,
@@ -51,7 +52,14 @@ from spectra_inspector.utilities.coerce import (
     plotly_im_trace_to_array,
     plotly_to_matplotlib,
 )
-from spectra_inspector.utilities.interface import SpectraInspectorServerInterface
+from spectra_inspector.utilities.export_metadata import (
+    build_export_metadata,
+    image_panel_metadata,
+)
+from spectra_inspector.utilities.interface import (
+    ServerRequestError,
+    SpectraInspectorServerInterface,
+)
 from spectra_inspector.utilities.peak_windows import (
     RANGES_KEY,
     apply_peak_windows,
@@ -864,6 +872,18 @@ def export_summary(
 
     s = summaryWriter()
     s.write_static_figures(figs_to_write)
+    s.set_export_metadata(
+        _export_metadata(
+            user_store,
+            shapes_store,
+            spectrum_only,
+            slider_range_list,
+            slider_range_labels,
+            colormaps,
+            zeroed_elements,
+            show_peak_windows,
+        )
+    )
 
     if export_summary_format == "PDF":
         return dcc.send_file(s.get_pdf_path(generate_pdf=True))
@@ -881,10 +901,61 @@ def export_summary(
             _ = s.write_element_weights(
                 data_export_panel.apply_zeroed_elements(wts, zeroed_elements or [])
             )
+        # last, so the README lists every other file in the zip
+        _ = s.write_metadata_files()
 
         return dcc.send_file(s.get_zip())
     msg = f"Unexpected value for format, {export_summary_format=}"
     raise ValueError(msg)
+
+
+def _export_metadata(
+    user_store: UserStore,
+    shapes_store: dict | None,
+    spectrum_only: bool,
+    slider_range_list: list,
+    slider_range_labels: list,
+    colormaps: list,
+    zeroed_elements: list[str] | None,
+    show_peak_windows: bool | None,
+) -> dict:
+    """The record written next to the exported files (issue #42): the sample
+    metadata as the data-selection accordion shows it, the box in index and
+    physical units, and what each image file holds.
+
+    The metadata normally sits in the user store; a fresh session landing on
+    the inspector URL has to fetch it, and that failing is logged rather than
+    losing the export."""
+    md: CombinedMetadata | None
+    try:
+        md = user_store.conditionally_fetch_metadata()
+    except (requests.exceptions.RequestException, ServerRequestError):
+        spectraLogger.exception("could not fetch the metadata for the export")
+        md = None
+
+    index_ranges = None
+    images = None
+    if not spectrum_only:
+        active_shapes = _active_shapes(shapes_store)
+        if active_shapes:
+            index_ranges = _index_range_from_shape(active_shapes[0])
+        images = image_panel_metadata(
+            slider_range_list,
+            slider_range_labels,
+            colormaps,
+            has_subset=index_ranges is not None,
+        )
+
+    return build_export_metadata(
+        dataset=user_store.selected_dataset,
+        md=md,
+        sample_metadata=user_store.sample_metadata,
+        spectrum_only=spectrum_only,
+        index_ranges=index_ranges,
+        images=images,
+        zeroed_elements=zeroed_elements,
+        show_peak_windows=show_peak_windows,
+    )
 
 
 def _image_figures_to_write(

@@ -162,7 +162,17 @@ Other things worth knowing:
   `SPECTRA_INSPECTOR_WRITE_DIR` and prunes oldest dirs past
   `SPECTRA_INSPECTOR_MAX_TMP_DIRS`; `plotly_to_matplotlib` in `coerce.py`
   re-renders figures for PDF output, and `utilities/msa_io.py` handles EMSA
-  `.msa`/`.csv` round-tripping.
+  `.msa`/`.csv` round-tripping. Every export also carries a metadata record
+  (issue #42) built by `utilities/export_metadata.build_export_metadata`: the
+  zip gets it as `metadata.json` plus a `README.txt` listing the files, the PDF
+  renders it as text pages. Its `sample` part is `sample_metadata_display_dict`,
+  the same dict the data-selection page's accordion shows (the combined metadata
+  dump plus the sample sheet record), so change one and the other follows;
+  `subselection` gives the box as half-open index ranges and as bounds in each
+  axis's own units (index 0 is the image rows). The record is built in the
+  export callback from `conditionally_fetch_metadata()`, and a fetch failure
+  leaves `sample` null rather than losing the export. Core PDF fonts are
+  latin-1, so `_pdf_safe` replaces what they cannot encode.
 - The element presets of the energy-range slider are the server's calibration
   windows (issue #116). The server keeps them as the _defaults_ of
   `calibration.ElementEnergyRanges`, which rides on the `/info` response so the

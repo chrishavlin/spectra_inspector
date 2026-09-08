@@ -24,6 +24,7 @@ from spectra_inspector.user_store_model import (
     updateDataStore,
 )
 from spectra_inspector.utilities.coerce import spaces_to_placeholder
+from spectra_inspector.utilities.export_metadata import sample_metadata_display_dict
 from spectra_inspector.utilities.interface import SpectraInspectorServerInterface
 from spectra_inspector.utilities.model import AvailableDatasets
 
@@ -138,16 +139,10 @@ def update_selected_dataset(
             input_value, directory_sync=dir_sync, spectrum_only=spectrum_only
         )
         meta_json_str = meta.model_dump_json()
-        meta_dict = meta.model_dump()
-
-        sample_data = new_user_data.get("sample_metadata", {})
-        if sample_data and input_value in sample_data.get("map_samples", {}):
-            sample_id = sample_data["map_samples"][input_value]
-            record = next(
-                (r for r in sample_data["records"] if r["sample_id"] == sample_id), None
-            )
-            if record:
-                meta_dict["Sample Information"] = record
+        # the same dict the summary export writes out (issue #42)
+        meta_dict = sample_metadata_display_dict(
+            meta, new_user_data.get("sample_metadata"), input_value
+        )
         md = html.Div([html.Hr(), nested_accordian(meta_dict)])
     else:
         md = html.Div()

@@ -1,9 +1,11 @@
+import json
 import zipfile
 from unittest.mock import patch
 
 import numpy as np
 import pandas as pd
 import pytest
+from pypdf import PdfReader
 
 from spectra_inspector.components.data_export_panel import get_element_weights
 from spectra_inspector.settings import Settings
@@ -86,6 +88,87 @@ def test_write_static_figures_writes_matplotlib_figure(writer):
     out_file = writer.full_file("bitmap.png")
     assert out_file.exists()
     assert out_file.stat().st_size > 0
+
+
+@pytest.fixture
+def export_record() -> dict:
+    return {
+        "generated_utc": "2026-01-02T00:00:00+00:00",
+        "dataset": "C-12",
+        "spectrum_only": False,
+        "sample": {
+            "data_shape": [4, 4, 10],
+            # outside latin-1: the PDF must replace it rather than fail
+            "Sample Information": {"sample_id": "S1", "description": "岩石 5 µm"},
+        },
+        "subselection": {
+            "shape": [2, 2],
+            "axes": {
+                "index0": {
+                    "name": "y",
+                    "index_range": [1, 3],
+                    "bounds": [1.5, 4.5],
+                    "units": "µm",
+                },
+                "index1": {
+                    "name": "x",
+                    "index_range": [0, 2],
+                    "bounds": [0.0, 4.0],
+                    "units": "µm",
+                },
+            },
+        },
+        "images": [],
+        "spectrum": {"zeroed_elements": [], "peak_windows_shown": True},
+    }
+
+
+class TestMetadataExport:
+    def test_metadata_files_require_a_record(self, writer):
+        with pytest.raises(RuntimeError, match="set_export_metadata"):
+            writer.write_metadata_files()
+
+    def test_zip_carries_json_and_readme(self, writer, metadata, export_record):
+        writer.write_MSA(metadata, file_type=".csv")
+        writer.set_export_metadata(export_record)
+        json_file, readme = writer.write_metadata_files()
+
+        with zipfile.ZipFile(writer.get_zip()) as zf:
+            names = set(zf.namelist())
+        assert {"metadata.json", "README.txt", "spectrum.csv"} <= names
+
+        assert json.loads(json_file.read_text(encoding="utf-8")) == export_record
+        text = readme.read_text(encoding="utf-8")
+        # every file in the zip is listed, this README included
+        for name in names:
+            assert name in text
+        assert "index0 (y): indices [1, 3), 1.5 to 4.5 µm" in text
+        assert "岩石 5 µm" in text
+
+    def test_pdf_writes_the_metadata_pages(self, writer, export_record):
+        fig = plt.figure()
+        fig.add_subplot(111).plot([0, 1], [0, 1])
+        writer.write_static_figures({"spectrum": fig})
+        writer.set_export_metadata(export_record)
+
+        pdf_path = writer.get_pdf_path()
+        assert pdf_path.is_file()
+        reader = PdfReader(pdf_path)
+        text = "\n".join(page.extract_text() for page in reader.pages)
+        assert "Sample metadata" in text
+        assert "dataset: C-12" in text
+        assert "sample_id: S1" in text
+        assert "Box subselection" in text
+        assert "1.5 to 4.5" in text
+
+    def test_pdf_without_a_record(self, writer):
+        fig = plt.figure()
+        fig.add_subplot(111).plot([0, 1], [0, 1])
+        writer.write_static_figures({"spectrum": fig})
+
+        pdf_path = writer.get_pdf_path()
+        text = "\n".join(page.extract_text() for page in PdfReader(pdf_path).pages)
+        assert "not available for this export" in text
 
 
 class TestElementWeightsExport:
