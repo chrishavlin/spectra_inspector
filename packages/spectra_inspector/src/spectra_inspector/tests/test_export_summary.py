@@ -102,6 +102,7 @@ def _export(inspector, image_figures, spectrum_figure, metadata, **kwargs):
         "export_summary_format": ".zip",
         "active_spectrum_metadata": metadata,
         "msafileformat": "XY",
+        "zeroed_elements": [],
     }
     args.update(kwargs)
     return inspector.export_summary(**args)
