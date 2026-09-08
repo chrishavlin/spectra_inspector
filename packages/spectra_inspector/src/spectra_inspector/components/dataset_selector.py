@@ -131,7 +131,7 @@ def dataset_selector(
                 ),
                 Row(
                     [
-                        Col(dropdown_label, width=7),
+                        Col(dropdown_label, width="auto"),
                         Col(
                             dbc.Switch(
                                 id=dataset_selector_IDS.get_id_with_index(
@@ -139,10 +139,14 @@ def dataset_selector(
                                 ),
                                 label=SPECTRUM_ONLY_LABEL,
                                 value=spectrum_only,
+                                style={"whiteSpace": "nowrap"},
                             ),
-                            width=5,
+                            width="auto",
+                            className="ms-auto",
                         ),
-                    ]
+                    ],
+                    align="center",
+                    className="g-0",
                 ),
                 Row(
                     [
@@ -157,7 +161,6 @@ def dataset_selector(
                                 # dark theme makes white too.
                                 style={"width": "100%", "color": "#212529"},
                             ),
-                            width=10,
                         ),
                         Col(
                             Button(
@@ -166,7 +169,7 @@ def dataset_selector(
                                 color="secondary",
                                 title="Refresh datasets",
                             ),
-                            width=2,
+                            width="auto",
                         ),
                     ],
                     align="center",
