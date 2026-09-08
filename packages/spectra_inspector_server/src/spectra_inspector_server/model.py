@@ -10,6 +10,7 @@ from pydantic import BaseModel
 from spectra_inspector_server._logging import spectraLogger
 from spectra_inspector_server.calibration import (
     CalibrationWeights,
+    ElementEnergyRanges,
     calculate_weights,
     integration_ranges_keV,
 )
@@ -276,6 +277,11 @@ class Info:
     app_name: str
     spectra_inspector_data_root: str
     desktop_mode: bool = False
+    # the calibration windows, so that they reach the frontend's generated
+    # models (issue #116); the server has one table, so this is never set.
+    element_energy_ranges_keV: ElementEnergyRanges = field(
+        default_factory=ElementEnergyRanges
+    )
 
 
 class directoryEntry(BaseModel):
@@ -380,6 +386,7 @@ __all__ = [
     "EDAX_axis",
     "EDAX_file_set",
     "EDAX_raw_ds",
+    "ElementEnergyRanges",
     "GeneralMetadata",
     "Info",
     "MetadataModel",

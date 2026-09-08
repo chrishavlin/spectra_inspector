@@ -2,7 +2,9 @@ import dash_bootstrap_components as dbc
 from dash import MATCH, Input, Output, State, callback, ctx, dcc, no_update
 
 from spectra_inspector.components.layout_ids import indexedLayoutIDMapper
-from spectra_inspector.utilities.element_energy_ranges import element_energy_ranges_keV
+from spectra_inspector.utilities.element_energy_ranges import (
+    get_element_energy_ranges,
+)
 
 
 class elementDropdownSliderIDS(indexedLayoutIDMapper):
@@ -47,22 +49,28 @@ def get_element_dropdown_and_slider(
     slider_start: float = 0.0,
     slider_stop: float = 15.0,
     slider_step: float = 0.1,
-    init_element_id: int = 0,
+    init_element: str | None = None,
 ) -> tuple[dbc.Container, elementDropdownSliderIDS]:
+    """``init_element`` picks the preset the panel starts on; when it is not
+    among the server's presets (or is None) the first preset is used."""
 
     layoutIDs = elementDropdownSliderIDS(id_type_base, index=index)
 
-    elements = list(element_energy_ranges_keV.keys())
+    element_ranges = get_element_energy_ranges()
+    elements = list(element_ranges)
+    elements.sort()
+    if init_element not in element_ranges:
+        init_element = elements[0]
     element_selector = dcc.Dropdown(
         ["none", *elements],
-        value=elements[init_element_id],
+        value=init_element,
         id=layoutIDs.get_id_with_index("dropdown"),
         className="text-info",
         searchable=False,
         clearable=False,
     )
 
-    slider_init_range = element_energy_ranges_keV[elements[init_element_id]]
+    slider_init_range = element_ranges[init_element]
 
     energy_marks = {val: val for val in range(0, 16, 3)}
 
@@ -164,7 +172,10 @@ def sync_element_selector_dropdown(
     if triggered_id["type"] == _imageSliderIds.dropdown:
         if element_name == "none" or element_name is None:
             return no_update, no_update
-        return element_energy_ranges_keV[element_name], no_update
+        element_range = get_element_energy_ranges().get(element_name)
+        if element_range is None:
+            return no_update, no_update
+        return element_range, no_update
     if triggered_id["type"] == _imageSliderIds.slider:
         return slider_range, "none"
     msg = "unexpected trigger."
