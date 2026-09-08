@@ -170,6 +170,12 @@ endpoints going through those two guards or they will be untestable.
 
 Dash multi-page app: `main.py` builds `Dash(use_pages=True)` with a fixed
 sidebar and theme switcher; `pages/*.py` self-register via `dash.register_page`.
+Page-chrome styling lives in `assets/layout.css` (served by Dash automatically
+from the directory next to `main.py`): the sidebar width is a CSS variable that
+steps from 16rem to 12rem below `xl`, and below `md` the sidebar is hidden in
+favour of a top bar with a hamburger that opens a `dbc.Offcanvas` copy of the
+nav (issue #124). Use Bootstrap's `--bs-*` variables rather than literal colours
+there so the `ThemeSwitchAIO` stylesheet swap keeps working.
 `pages/data_selection.py` is `/` (sample picker + map), `pages/inspector.py` is
 `/inspector/<sample_name>` and holds ~all the callback logic. `serve.py` is the
 entry point (`--debug/--host/--port`).
