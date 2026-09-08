@@ -65,7 +65,10 @@ client-side.
 
 `calibration.py` computes per-element peak weights over fixed keV windows plus
 the `DH_assessment` ratio; `Spectrum1d.get_weights()` attaches them to
-`/image-spectrum` responses when `include_weights=true`.
+`/image-spectrum` responses when `include_weights=true`, together with the
+windows themselves as `integration_ranges_keV` so the frontend draws the peaks
+the weights were actually summed over (issue #120). Both are null when the
+spectrum cannot be calibrated.
 
 ### Spectrum-only datasets (issue #115)
 
