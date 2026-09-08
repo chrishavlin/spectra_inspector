@@ -276,11 +276,7 @@ def layout(
             [
                 dbc.Row(
                     [
-                        dbc.Col(
-                            _data_selector,
-                            width=6,
-                            style={"minWidth": 0},
-                        ),
+                        dbc.Col(_data_selector, style={"minWidth": 0}),
                         dbc.Col(
                             dbc.Row(
                                 [
@@ -290,8 +286,9 @@ def layout(
                                             id=_IDS.add_image,
                                             n_clicks=0,
                                             color="secondary",
+                                            className="text-nowrap",
                                         ),
-                                        width=6,
+                                        width="auto",
                                     ),
                                     dbc.Col(
                                         dbc.Button(
@@ -299,38 +296,57 @@ def layout(
                                             id=_IDS.reset_all_axes,
                                             n_clicks=0,
                                             color="secondary",
+                                            className="text-nowrap",
                                         ),
-                                        width=6,
+                                        width="auto",
                                     ),
                                 ],
                                 id=_IDS.image_controls,
-                                className="g-4",
+                                className="g-3",
                                 style={"display": "none"} if spectrum_only_mode else {},
                             ),
-                            width=6,
+                            width="auto",
                         ),
                     ],
-                    align="top",
-                    className="g-4",
+                    align="end",
+                    className="g-3",
                 ),
             ]
         )
     )
 
-    _top_image_controls = html.Div(
-        [
-            image_control_card,
-            html.Div(
-                selected_sample_contents(sample_name), id=_IDS.sample_name, hidden=True
-            ),
-        ],
-        style={"width": "45%"},
+    _top_image_controls = dbc.Row(
+        dbc.Col(
+            [
+                image_control_card,
+                html.Div(
+                    selected_sample_contents(sample_name),
+                    id=_IDS.sample_name,
+                    hidden=True,
+                ),
+            ],
+            xs=12,
+            lg=7,
+            style={"maxWidth": "48rem"},
+        )
     )
 
     _layout_rows.append(_top_image_controls)
 
+    # a CSS grid rather than a bootstrap row: the breakpoints of dbc.Col are
+    # keyed on the viewport, not on the content area beside the sidebar, so a
+    # fixed column count leaves laptop-sized windows with panels too narrow to
+    # read. auto-fill sizes the columns by the container itself.
     im_container = dcc.Loading(
-        dbc.Row([], id=_IDS.image_container, className="gx-1 gy-1"),
+        html.Div(
+            [],
+            id=_IDS.image_container,
+            style={
+                "display": "grid",
+                "gridTemplateColumns": "repeat(auto-fill, minmax(420px, 1fr))",
+                "gap": "0.5rem",
+            },
+        ),
         id="full-im-container-loading",
         overlay_style={"visibility": "visible", "filter": "blur(2px)"},
         type="circle",
@@ -397,13 +413,7 @@ def layout(
         style={"margin-top": "1rem"},
     )
     _layout_rows.append(export_panel)
-    return html.Div(
-        _layout_rows,
-        className="container",
-        style={
-            "maxWidth": "6000px",
-        },
-    )
+    return dbc.Container(_layout_rows, fluid=True)
 
 
 @callback(
@@ -738,7 +748,7 @@ def add_or_delete_image(
                 id_type_base=_IDS.image_container_type,
                 init_element=init_element,
             )
-            patched_children.append(dbc.Col(new_image_div, width=4))
+            patched_children.append(new_image_div)
             new_div_id = imIDs.get_id_with_index("div")
             graph_id_store["active_div_ids"].append(new_div_id)
         return patched_children, graph_id_store

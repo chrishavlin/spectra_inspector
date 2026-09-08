@@ -18,6 +18,20 @@ there so the `ThemeSwitchAIO` stylesheet swap keeps working.
 `/inspector/<sample_name>` and holds ~all the callback logic. `serve.py` is the
 entry point (`--debug/--host/--port`).
 
+Layout widths are container-driven rather than viewport-driven: Bootstrap's
+`xs`/`lg` breakpoints key on the window, so with the sidebar taking a fixed
+slice a 1366px laptop is still `xl` and a fixed `dbc.Col(width=4)` gave three
+panels too narrow to read. The inspector's `image_container` is therefore a
+plain `html.Div` styled as a CSS grid (`repeat(auto-fill, minmax(420px, 1fr))`)
+and `add_or_delete_image` appends each panel card directly, no `Col` wrapper;
+the deletion path pops children by index so it does not care. Elsewhere prefer
+`width="auto"` columns next to one flexing column over fixed integer widths and
+empty spacer columns. Inside a panel the element dropdown, `Apply` and the
+delete `X` live in the `CardHeader`, and `energy_range_slider` exposes those
+pieces through `build_element_dropdown_and_slider` (an
+`elementDropdownSliderParts`); `get_element_dropdown_and_slider` still returns
+the one-block version for anything that wants it.
+
 `components/directory_selector.py` is the desktop-mode working-directory picker,
 embedded in both pages (index 0 on data selection, index 1 on the inspector) and
 rendered as an empty div unless `Settings().desktop_mode`. Its callbacks are

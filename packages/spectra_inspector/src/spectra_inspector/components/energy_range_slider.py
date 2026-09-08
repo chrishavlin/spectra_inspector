@@ -1,5 +1,8 @@
+from dataclasses import dataclass, field
+
 import dash_bootstrap_components as dbc
 from dash import MATCH, Input, Output, State, callback, ctx, dcc, no_update
+from dash.development.base_component import Component
 
 from spectra_inspector.components.layout_ids import indexedLayoutIDMapper
 from spectra_inspector.utilities.element_energy_ranges import (
@@ -43,14 +46,27 @@ class elementDropdownSliderIDS(indexedLayoutIDMapper):
         return self.full_id("-refreshbutton")
 
 
-def get_element_dropdown_and_slider(
+@dataclass
+class elementDropdownSliderParts:
+    """The pieces of the element/energy-range selector, so a panel can place
+    them in its own layout (the dropdown and Apply in a card header, the
+    collapse toggle beside other controls) rather than as one block."""
+
+    dropdown: dcc.Dropdown
+    apply_button: dbc.Button
+    collapse_button: dbc.Button
+    collapse: dbc.Collapse
+    tooltips: list[Component] = field(default_factory=list)
+
+
+def build_element_dropdown_and_slider(
     id_type_base: str = "element-dropdown-slider",
     index: int = 0,
     slider_start: float = 0.0,
     slider_stop: float = 15.0,
     slider_step: float = 0.1,
     init_element: str | None = None,
-) -> tuple[dbc.Container, elementDropdownSliderIDS]:
+) -> tuple[elementDropdownSliderParts, elementDropdownSliderIDS]:
     """``init_element`` picks the preset the panel starts on; when it is not
     among the server's presets (or is None) the first preset is used."""
 
@@ -68,6 +84,7 @@ def get_element_dropdown_and_slider(
         className="text-info",
         searchable=False,
         clearable=False,
+        style={"minWidth": "7rem"},
     )
 
     slider_init_range = element_ranges[init_element]
@@ -76,79 +93,103 @@ def get_element_dropdown_and_slider(
 
     energy_range = dbc.Card(
         dbc.CardBody(
-            [
-                dcc.RangeSlider(
-                    slider_start,
-                    slider_stop,
-                    step=slider_step,
-                    value=slider_init_range,
-                    id=layoutIDs.get_id_with_index("slider"),
-                    className="text-info",
-                    marks=energy_marks,
-                )
-            ]
+            dcc.RangeSlider(
+                slider_start,
+                slider_stop,
+                step=slider_step,
+                value=slider_init_range,
+                id=layoutIDs.get_id_with_index("slider"),
+                className="text-info",
+                marks=energy_marks,
+            ),
+            className="pb-1 pt-3 px-2",
         ),
         color="light",
+        className="mb-2",
     )
 
-    element_selector_row = dbc.Row(
-        [
-            dbc.Col(element_selector, width=4),
-            dbc.Col(width=4),
-            dbc.Col(
-                dbc.Button(
-                    "Apply",
-                    id=layoutIDs.get_id_with_index("refreshbutton"),
-                    color="secondary",
-                ),
-                width=2,
-            ),
-        ]
-    )
-
-    range_row = dbc.Row(
-        [
-            dbc.Col(energy_range, width=12),
-            dbc.Tooltip(
-                "Adjust endpoints to set energy bounds (keV)",
-                target=layoutIDs.get_id_with_index("slider"),
-            ),
-        ],
-        align="center",
+    apply_button = dbc.Button(
+        "Apply",
+        id=layoutIDs.get_id_with_index("refreshbutton"),
+        color="secondary",
     )
 
     collapse_button = dbc.Button(
         "Adjust energy bounds",
         id=layoutIDs.get_id_with_index("collapsebutton"),
-        className="mb-3",
         color="secondary",
         n_clicks=0,
+        className="text-nowrap",
     )
 
     slider_collapse = dbc.Collapse(
-        dbc.Card(dbc.CardBody(range_row)),
+        energy_range,
         id=layoutIDs.get_id_with_index("collapse"),
         is_open=False,
     )
 
-    cont = dbc.Container(
+    tooltips: list[Component] = [
+        dbc.Tooltip(
+            "Adjust endpoints to set energy bounds (keV)",
+            target=layoutIDs.get_id_with_index("slider"),
+        ),
+        dbc.Tooltip(
+            "Click to show or hide the manual energy range adjustment panel",
+            target=layoutIDs.get_id_with_index("collapsebutton"),
+        ),
+        dbc.Tooltip(
+            "Click to apply any changes in element or energy bounds range",
+            target=layoutIDs.get_id_with_index("refreshbutton"),
+        ),
+        dbc.Tooltip(
+            "Select an element map",
+            target=layoutIDs.get_id_with_index("dropdown"),
+        ),
+    ]
+
+    parts = elementDropdownSliderParts(
+        dropdown=element_selector,
+        apply_button=apply_button,
+        collapse_button=collapse_button,
+        collapse=slider_collapse,
+        tooltips=tooltips,
+    )
+    return parts, layoutIDs
+
+
+def get_element_dropdown_and_slider(
+    id_type_base: str = "element-dropdown-slider",
+    index: int = 0,
+    slider_start: float = 0.0,
+    slider_stop: float = 15.0,
+    slider_step: float = 0.1,
+    init_element: str | None = None,
+) -> tuple[dbc.Container, elementDropdownSliderIDS]:
+    """The selector as one self-contained block; see
+    `build_element_dropdown_and_slider` for the pieces."""
+
+    parts, layoutIDs = build_element_dropdown_and_slider(
+        id_type_base=id_type_base,
+        index=index,
+        slider_start=slider_start,
+        slider_stop=slider_stop,
+        slider_step=slider_step,
+        init_element=init_element,
+    )
+
+    element_selector_row = dbc.Row(
         [
-            element_selector_row,
-            collapse_button,
-            slider_collapse,
-            dbc.Tooltip(
-                "Click to show or hide the manual energy range adjustment panel",
-                target=layoutIDs.get_id_with_index("collapsebutton"),
-            ),
-            dbc.Tooltip(
-                "Click to apply any changes in element or energy bounds range",
-                target=layoutIDs.get_id_with_index("refreshbutton"),
-            ),
-            dbc.Tooltip(
-                "Select an element map",
-                target=layoutIDs.get_id_with_index("dropdown"),
-            ),
-        ]
+            dbc.Col(parts.dropdown, width="auto"),
+            dbc.Col(parts.apply_button, width="auto"),
+            dbc.Col(parts.collapse_button, width="auto"),
+        ],
+        align="center",
+        className="g-2 mb-2",
+    )
+
+    cont = dbc.Container(
+        [element_selector_row, parts.collapse, *parts.tooltips],
+        fluid=True,
     )
 
     return cont, layoutIDs
