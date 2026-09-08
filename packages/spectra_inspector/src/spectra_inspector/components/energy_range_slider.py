@@ -58,6 +58,7 @@ def get_element_dropdown_and_slider(
 
     element_ranges = get_element_energy_ranges()
     elements = list(element_ranges)
+    elements.sort()
     if init_element not in element_ranges:
         init_element = elements[0]
     element_selector = dcc.Dropdown(
