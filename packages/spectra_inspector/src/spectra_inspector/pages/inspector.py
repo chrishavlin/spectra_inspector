@@ -31,6 +31,7 @@ from spectra_inspector.components import (
     fetch_im_data_parallel,
     get_new_im,
 )
+from spectra_inspector.components.bitmap_image import graph_style
 from spectra_inspector.components.dataset_selector import (
     dataset_names,
     dropdown_options,
@@ -336,14 +337,15 @@ def layout(
     # a CSS grid rather than a bootstrap row: the breakpoints of dbc.Col are
     # keyed on the viewport, not on the content area beside the sidebar, so a
     # fixed column count leaves laptop-sized windows with panels too narrow to
-    # read. auto-fill sizes the columns by the container itself.
+    # read. auto-fit sizes the columns by the container itself and stretches
+    # the panels present across its full width.
     im_container = dcc.Loading(
         html.Div(
             [],
             id=_IDS.image_container,
             style={
                 "display": "grid",
-                "gridTemplateColumns": "repeat(auto-fill, minmax(420px, 1fr))",
+                "gridTemplateColumns": "repeat(auto-fit, minmax(420px, 1fr))",
                 "gap": "0.5rem",
             },
         ),
@@ -1070,6 +1072,7 @@ def update_graph_figure(
                 view=view,
                 shapes=shapes,
             )
+            set_props(graph_ids[pos], {"style": graph_style(im_array.shape)})
         processed_graph_store["initialized"] = True
         return new_figs, processed_graph_store, no_update
 

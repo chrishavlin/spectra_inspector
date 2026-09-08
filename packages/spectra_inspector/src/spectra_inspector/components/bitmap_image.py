@@ -60,6 +60,14 @@ class bitmapImageLayoutIDs(indexedLayoutIDMapper):
         return self.full_id("-loadingoverlay")
 
 
+def graph_style(im_shape: tuple[int, ...] | None = None) -> dict[str, str]:
+    """The graph's container style: full panel width, height following the
+    image's aspect ratio so a wider panel gets a taller image rather than a
+    letterboxed one. Square until the image shape is known."""
+    nrows, ncols = (im_shape[0], im_shape[1]) if im_shape is not None else (1, 1)
+    return {"width": "100%", "aspectRatio": f"{ncols} / {nrows}"}
+
+
 def bitmap_image_layout(
     index: int,
     id_type_base: str = "bitmap-image",
@@ -87,6 +95,8 @@ def bitmap_image_layout(
                 "displayModeBar": True,
                 "displaylogo": False,
             },
+            responsive=True,
+            style=graph_style(),
         ),
         id=imIDs.loadingoverlay,
         overlay_style={"visibility": "visible", "filter": "blur(2px)"},
