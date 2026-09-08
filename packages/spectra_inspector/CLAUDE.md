@@ -163,6 +163,12 @@ Other things worth knowing:
   `SPECTRA_INSPECTOR_MAX_TMP_DIRS`; `plotly_to_matplotlib` in `coerce.py`
   re-renders figures for PDF output, and `utilities/msa_io.py` handles EMSA
   `.msa`/`.csv` round-tripping.
-- `utilities/element_energy_ranges.py` (3 elements, drives the slider presets)
-  is separate from and narrower than the server's
-  `calibration.element_energy_ranges_keV` (9 elements).
+- The element presets of the energy-range slider are the server's calibration
+  windows (issue #116). The server keeps them as the _defaults_ of
+  `calibration.ElementEnergyRanges`, which rides on the `/info` response so the
+  model (defaults included) lands in the generated `utilities/model.py`;
+  `utilities/element_energy_ranges.get_element_energy_ranges` reads
+  `ElementEnergyRanges()` from there, no request involved. Changing a window on
+  the server therefore needs the codegen step. The inspector names the presets
+  its first three panels open on (`_INITIAL_PANEL_ELEMENTS`) rather than
+  indexing into the server order.

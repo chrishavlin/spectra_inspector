@@ -32,6 +32,27 @@ class EDS_1(BaseModel):
     live_time: float
 
 
+class ElementEnergyRanges(BaseModel):
+    """
+    The keV windows each element's peak is integrated over.
+
+    The defaults *are* the table: this model is part of the ``/info`` response
+    so that the values (and their order) reach the frontend through the
+    generated models rather than a request, and the frontend builds its element
+    presets from ``ElementEnergyRanges()``.
+    """
+
+    Na: tuple[float, float] | None = [0.96, 1.12]
+    Mg: tuple[float, float] | None = [1.13, 1.34]
+    Al: tuple[float, float] | None = [1.4, 1.61]
+    Si: tuple[float, float] | None = [1.645, 1.88]
+    P: tuple[float, float] | None = [1.905, 2.1]
+    K: tuple[float, float] | None = [3.235, 3.47]
+    Ca: tuple[float, float] | None = [3.57, 3.84]
+    Ti: tuple[float, float] | None = [4.415, 4.66]
+    Fe: tuple[float, float] | None = [6.275, 6.54]
+
+
 class GeneralMetadata(BaseModel):
     original_filename: str
     title: str
@@ -41,6 +62,7 @@ class Info(BaseModel):
     app_name: str
     spectra_inspector_data_root: str
     desktop_mode: bool | None = False
+    element_energy_ranges_keV: ElementEnergyRanges | None = None
 
 
 class Sample_1(BaseModel):
