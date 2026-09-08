@@ -63,6 +63,7 @@ def test_new_spectrum_figure_yaxis_type(scale, expected):
     assert fig.layout.yaxis.type == expected
     assert fig.layout.yaxis.title.text == "Intensity"
     assert fig.layout.xaxis.title.text == "Energy (keV)"
+    assert fig.layout.xaxis.showgrid is False
     assert fig.data[0].mode == "lines"
 
 

@@ -219,7 +219,10 @@ def new_spectrum_figure(
     fig.add_trace(
         go.Scatter(x=energy, y=intensity, mode="lines", name="Full energy range")
     )
-    fig.update_xaxes(title_text="Energy (keV)", autorangeoptions_maxallowed=8)
+    # no vertical grid: the peaks' dotted centre lines are the only verticals
+    fig.update_xaxes(
+        title_text="Energy (keV)", autorangeoptions_maxallowed=8, showgrid=False
+    )
     fig.update_yaxes(title_text="Intensity", type=_yaxis_type(yaxis_scale))
     windows = peak_windows(
         active_spectrum_metadata, show_peak_windows, zeroed_elements or []
