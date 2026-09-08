@@ -71,6 +71,15 @@ if missing:
     raise ValueError(msg)
 
 
+def integration_ranges_keV() -> dict[str, tuple[float, float]]:
+    """The energy window integrated for each calibration element, in keV.
+
+    Sent alongside the weights so the client can draw the windows the peak
+    areas were actually summed over rather than keeping its own copy.
+    """
+    return {el: element_energy_ranges_keV[el] for el in calibration_elements}
+
+
 def sum_in_range(
     intensity: npt.NDArray[np.int64],
     energy_keV: npt.NDArray[np.float64],

@@ -2,6 +2,10 @@ import dataclasses
 
 import numpy as np
 
+from spectra_inspector_server.calibration import (
+    calibration_elements,
+    element_energy_ranges_keV,
+)
 from spectra_inspector_server.model import Spectrum1d, sampleMetadataCSVrecord
 
 
@@ -39,6 +43,28 @@ def test_spectrum1d_weights_unavailable() -> None:
 
     s1d_dict = dataclasses.asdict(s1d.todict(include_weights=True))
     assert s1d_dict["weights"] is None
+    assert s1d_dict["integration_ranges_keV"] is None
+
+
+def test_spectrum1d_weights_carry_their_integration_ranges() -> None:
+    # 10 eV channels out to 40 keV span every calibration window, so the
+    # weights come with the windows they were summed over (issue #120).
+    energy = np.arange(4000).astype(float)
+    s1d = Spectrum1d(
+        energy=energy,
+        intensity=np.ones(energy.size, dtype=int),
+        energy_min=0.0,
+        energy_max=40.0,
+    )
+
+    s1d_dict = dataclasses.asdict(s1d.todict(include_weights=True))
+    assert s1d_dict["weights"] is not None
+    ranges = s1d_dict["integration_ranges_keV"]
+    assert set(ranges) == set(calibration_elements)
+    assert ranges["Si"] == element_energy_ranges_keV["Si"]
+    assert set(ranges) <= set(s1d_dict["weights"])
+
+    assert dataclasses.asdict(s1d.todict())["integration_ranges_keV"] is None
 
 
 def test_sampleMetadataCSVrecord() -> None:

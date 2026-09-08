@@ -73,6 +73,62 @@ def _table_rows(div):
     return div.children[1].children.children
 
 
+def test_swatch_is_muted_for_a_peak_that_is_not_drawn():
+    # a zero weight, computed or zeroed out by the user, hides the element's
+    # peak on the graph; its chip fades but keeps its colour so a reset is
+    # recognisable
+    metadata = {
+        "attrs": {
+            "weights": {"Si": 0.25, "Fe": 0.0},
+            "integration_ranges_keV": {"Si": [1.645, 1.88], "Fe": [6.275, 6.54]},
+        }
+    }
+    div = get_formatted_element_weights(metadata, ["Si"])
+    swatches = {
+        row.children[0].children[1]: row.children[0].children[0]
+        for row in _table_rows(div)
+    }
+    assert swatches["Si"].style["opacity"] == 0.25
+    assert swatches["Si"].title == "peak not drawn"
+    assert swatches["Fe"].style["opacity"] == 0.25
+
+    restored = get_formatted_element_weights(metadata, [])
+    si_swatch = _table_rows(restored)[0].children[0].children[0]
+    assert si_swatch.style["opacity"] == 1
+    assert si_swatch.style["backgroundColor"] == swatches["Si"].style["backgroundColor"]
+
+
+def test_formatted_element_weights_colour_coded_to_the_spectrum_windows():
+    # every element with an integration window gets the swatch the spectrum
+    # graph shades that window with; the summary rows stay plain (issue #120)
+    from spectra_inspector.utilities.peak_windows import spectrum_element_colors
+
+    metadata = {
+        "attrs": {
+            "weights": {"Si": 0.25, "Fe": 0.5, "total_count": 100.0},
+            "integration_ranges_keV": {"Si": [1.645, 1.88], "Fe": [6.275, 6.54]},
+        }
+    }
+    div = get_formatted_element_weights(metadata)
+    colors = spectrum_element_colors(metadata)
+    assert set(colors) == {"Si", "Fe"}
+
+    name_cells = [row.children[0] for row in _table_rows(div)]
+    swatch_si, key_si = name_cells[0].children
+    assert key_si == "Si"
+    assert swatch_si.style["backgroundColor"] == colors["Si"]
+    swatch_fe, key_fe = name_cells[1].children
+    assert key_fe == "Fe"
+    assert swatch_fe.style["backgroundColor"] == colors["Fe"]
+    assert swatch_fe.style["backgroundColor"] != swatch_si.style["backgroundColor"]
+    assert name_cells[2].children == "total_count"
+    assert swatch_si.style["opacity"] == 1
+    assert swatch_si.title is None
+
+    # the copied text is unchanged by the swatches
+    assert div.children[0].content == "Si\t0.25000000\nFe\t0.50000000\ntotal_count\t100"
+
+
 def test_formatted_element_weights_zeroed():
     # a zeroed element shows (and copies) as exactly zero, keeps the computed
     # value in its tooltip and its X becomes a restore arrow with the same id,

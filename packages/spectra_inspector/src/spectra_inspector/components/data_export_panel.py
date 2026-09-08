@@ -4,6 +4,11 @@ import dash_bootstrap_components as dbc
 from dash import Input, Output, State, callback, dcc, html
 
 from spectra_inspector.components.layout_ids import indexedLayoutIDMapper
+from spectra_inspector.utilities.peak_windows import (
+    element_swatch,
+    spectrum_element_colors,
+    visible_elements,
+)
 
 WEIGHTS_UNAVAILABLE_MSG = "Weights unavailable for this map"
 
@@ -280,6 +285,10 @@ def get_formatted_element_weights(
 
     ids = ids or _layoutIDs
     zeroed = set(zeroed_elements)
+    # the same colours the spectrum graph draws each element's peak with; the
+    # chip is muted for a peak that is not drawn (zero weight or zeroed out)
+    colors = spectrum_element_colors(active_spectrum_metadata)
+    drawn = set(visible_elements(active_spectrum_metadata, zeroed))
     formatted_data = {
         key: _format_weight(key, value)
         for key, value in apply_zeroed_elements(wts, zeroed).items()
@@ -310,11 +319,15 @@ def get_formatted_element_weights(
                 ),
                 style={"width": "2rem", "textAlign": "center"},
             )
-        table_rows.append(
-            html.Tr(
-                [html.Td(key, style={"font-weight": "500"}), value_cell, action_cell]
-            )
+        name_cell = html.Td(
+            (
+                [element_swatch(colors[key], muted=key not in drawn), key]
+                if key in colors
+                else key
+            ),
+            style={"font-weight": "500"},
         )
+        table_rows.append(html.Tr([name_cell, value_cell, action_cell]))
 
     # 2. Build the string using ONLY keys and values (no column headers)
     clipboard_text = "\n".join(f"{k}\t{v}" for k, v in formatted_data.items())

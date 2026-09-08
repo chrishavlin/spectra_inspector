@@ -78,6 +78,7 @@ def spectrum_metadata() -> dict:
             "metadata": metadata.model_dump(),
             "original_metadata": {},
             "weights": {"Fe": 0.5, "Si": 0.25},
+            "integration_ranges_keV": {"Fe": [6.275, 6.54], "Si": [1.645, 1.88]},
         },
     }
 
@@ -110,6 +111,63 @@ def _export(inspector, image_figures, spectrum_figure, metadata, **kwargs):
 
 
 SPECTRUM_FILES = {"spectrum.png", "spectrum.msa", "spectrum.csv", "ElementWeights.txt"}
+
+
+def test_spectrum_export_follows_the_peak_window_switch(
+    inspector, image_figures, spectrum_figure, spectrum_metadata, monkeypatch
+):
+    # the exported spectrum gets its windows from the switch and the active
+    # spectrum, not from whatever the page's figure happens to hold (issue #120)
+    seen = []
+    convert = inspector.plotly_to_matplotlib
+
+    def capture(fig, **kwargs):
+        if fig["data"][0]["type"] != "heatmap":
+            seen.append(fig)
+        return convert(fig, **kwargs)
+
+    monkeypatch.setattr(inspector, "plotly_to_matplotlib", capture)
+    for show in (True, False):
+        _export(
+            inspector,
+            image_figures,
+            spectrum_figure,
+            spectrum_metadata,
+            show_peak_windows=show,
+        )
+
+    shown, hidden = seen
+    assert {s["name"] for s in shown["layout"]["shapes"]} == {"Fe", "Si"}
+    assert [a["text"] for a in shown["layout"]["annotations"]] == ["Fe", "Si"]
+    assert hidden["layout"]["shapes"] == []
+    assert hidden["layout"]["annotations"] == []
+    assert len(hidden["data"]) == 1
+    assert "shapes" not in spectrum_figure["layout"]
+
+
+def test_spectrum_export_drops_zeroed_out_peaks(
+    inspector, image_figures, spectrum_figure, spectrum_metadata, monkeypatch
+):
+    seen = []
+    convert = inspector.plotly_to_matplotlib
+
+    def capture(fig, **kwargs):
+        if fig["data"][0]["type"] != "heatmap":
+            seen.append(fig)
+        return convert(fig, **kwargs)
+
+    monkeypatch.setattr(inspector, "plotly_to_matplotlib", capture)
+    _export(
+        inspector,
+        image_figures,
+        spectrum_figure,
+        spectrum_metadata,
+        zeroed_elements=["Fe"],
+    )
+
+    (fig,) = seen
+    assert [s["name"] for s in fig["layout"]["shapes"]] == ["Si"]
+    assert [a["text"] for a in fig["layout"]["annotations"]] == ["Si"]
 
 
 def test_map_zip_includes_every_panel(

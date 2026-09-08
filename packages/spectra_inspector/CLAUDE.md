@@ -172,3 +172,25 @@ Other things worth knowing:
   the server therefore needs the codegen step. The inspector names the presets
   its first three panels open on (`_INITIAL_PANEL_ELEMENTS`) rather than
   indexing into the server order.
+- Peak integration windows (issues #44, #120): the spectrum response carries
+  `integration_ranges_keV` next to `weights` (both absent when the server cannot
+  calibrate), stored in the spectrum's `attrs` like the weights.
+  `utilities/peak_windows.py` turns each visible window into a `fill="toself"`
+  scatter trace between the curve and a per-window baseline (the mean of the
+  first and last sample inside the window), tagged with `meta.peak_window` so
+  `apply_peak_windows` can strip and rebuild them, plus paper-anchored layout
+  `shapes` (a dotted centre line) and `annotations` (the element label on that
+  line, staggered over two rows when neighbours crowd). A peak is drawn only
+  while its element's weight is above zero after the zeroed-out elements are
+  applied, so `visible_elements` hides what the DH assessment found nothing for
+  and what the user has zeroed (reset restores it). The "peak windows" switch
+  and the `zeroed-elements` store both feed `toggle_peak_windows`, which returns
+  the whole figure (the fills live in `data`, out of `Patch`'s reach), and are
+  `State`s of `update_spectrum` and `export_summary`; the export rebuilds the
+  peaks from those rather than trusting the figure prop, and
+  `plotly_to_matplotlib` draws `toself` traces with `ax.fill` and the
+  paper-spanning shapes with `axvline`. Plotly shows a legend as soon as a
+  second trace exists, so the layout pins `showlegend=False`. The weights
+  table's swatches come from the same `spectrum_element_colors` (assigned in the
+  server's calibration order, so hiding a peak never shifts a colour) and are
+  muted for a peak not drawn.

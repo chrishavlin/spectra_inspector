@@ -12,6 +12,7 @@ from spectra_inspector_server.calibration import (
     CalibrationWeights,
     ElementEnergyRanges,
     calculate_weights,
+    integration_ranges_keV,
 )
 from spectra_inspector_server.processor.utilities import _get_nested_dict_element
 
@@ -44,6 +45,7 @@ class Spectrum1dDict:
     metadata: dict[str, Any] | None = None
     original_metadata: dict[str, Any] | None = None
     weights: dict[str, Any] | None = None
+    integration_ranges_keV: dict[str, tuple[float, float]] | None = None
 
 
 @dataclass
@@ -69,6 +71,7 @@ class Spectrum1d:
             weights = self.get_weights()
             if weights is not None:
                 extra["weights"] = weights.todict()
+                extra["integration_ranges_keV"] = integration_ranges_keV()
 
         return Spectrum1dDict(
             energy=self.energy.tolist(),
