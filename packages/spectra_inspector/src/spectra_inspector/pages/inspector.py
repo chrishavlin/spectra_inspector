@@ -301,13 +301,14 @@ def layout(sample_name: str | None = None, **kwargs):  # noqa: ARG001
         ],
         className="gx-1 gy-1",
         align="center",
+        justify="end",
     )
 
     spectrum_div = dbc.Card(
         dbc.CardBody(
             [
-                yaxis_scale_toggle,
                 dbc.Row(dbc.Col(spectrum_graph, width=12), className="gx-1 gy-1"),
+                yaxis_scale_toggle,
             ]
         ),
         # color="primary",
