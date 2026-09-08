@@ -26,9 +26,8 @@
 }
 
 .si-content {
-  margin-left: calc(var(--si-sidebar-width) + 2rem);
-  margin-right: 2rem;
-  padding: 2rem 1rem;
+  margin-left: var(--si-sidebar-width);
+  padding: 2rem 1.5rem;
 }
 
 .si-topbar {
