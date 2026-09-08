@@ -3,6 +3,7 @@ from typing import Any, Literal
 
 import numpy as np
 import numpy.typing as npt
+from pydantic import BaseModel, ConfigDict
 
 type CalibrationElement = Literal["Na", "Mg", "Al", "Si", "P", "K", "Ca", "Ti", "Fe"]
 
@@ -27,17 +28,29 @@ class CalibrationWeights:
         return asdict(self)
 
 
-element_energy_ranges_keV: dict[str, tuple[float, float]] = {
-    "Na": (0.96, 1.12),
-    "Mg": (1.13, 1.34),
-    "Al": (1.40, 1.61),
-    "Si": (1.645, 1.88),
-    "P": (1.905, 2.10),
-    "K": (3.235, 3.47),
-    "Ca": (3.57, 3.84),
-    "Ti": (4.415, 4.66),
-    "Fe": (6.275, 6.54),
-}
+class ElementEnergyRanges(BaseModel):
+    """The keV windows each element's peak is integrated over.
+
+    The defaults *are* the table: this model is part of the ``/info`` response
+    so that the values (and their order) reach the frontend through the
+    generated models rather than a request, and the frontend builds its element
+    presets from ``ElementEnergyRanges()``.
+    """
+
+    model_config = ConfigDict(frozen=True)
+
+    Na: tuple[float, float] = (0.96, 1.12)
+    Mg: tuple[float, float] = (1.13, 1.34)
+    Al: tuple[float, float] = (1.40, 1.61)
+    Si: tuple[float, float] = (1.645, 1.88)
+    P: tuple[float, float] = (1.905, 2.10)
+    K: tuple[float, float] = (3.235, 3.47)
+    Ca: tuple[float, float] = (3.57, 3.84)
+    Ti: tuple[float, float] = (4.415, 4.66)
+    Fe: tuple[float, float] = (6.275, 6.54)
+
+
+element_energy_ranges_keV: dict[str, tuple[float, float]] = dict(ElementEnergyRanges())
 
 calibration_elements: tuple[CalibrationElement, ...] = (
     "Na",

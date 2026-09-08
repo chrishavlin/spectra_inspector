@@ -159,6 +159,10 @@ _imageIDS = bitmapImageLayoutIDs()
 _imageSliderIds = elementDropdownSliderIDS()
 _dataExportIDS = data_export_panel.dataExportPanelIDS(index=0)
 
+# the element preset each of the first image panels opens on; panels added
+# past these start on the first one.
+_INITIAL_PANEL_ELEMENTS = ("Mg", "Al", "Si")
+
 
 def _get_div_store() -> html.Div:
     return html.Div(
@@ -652,14 +656,14 @@ def add_or_delete_image(
             new_index_1 = new_index_0 + 1
 
         for id_index in range(new_index_0, new_index_1):
-            if id_index <= 2:
-                init_element_id = id_index
+            if id_index < len(_INITIAL_PANEL_ELEMENTS):
+                init_element = _INITIAL_PANEL_ELEMENTS[id_index]
             else:
-                init_element_id = 0
+                init_element = _INITIAL_PANEL_ELEMENTS[0]
             new_image_div, imIDs = bitmap_image_layout(
                 id_index,
                 id_type_base=_IDS.image_container_type,
-                init_element_id=init_element_id,
+                init_element=init_element,
             )
             patched_children.append(dbc.Col(new_image_div, width=4))
             new_div_id = imIDs.get_id_with_index("div")
