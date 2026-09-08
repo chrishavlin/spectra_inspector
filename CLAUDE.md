@@ -248,7 +248,10 @@ per-sample request. Things that only show in the browser:
   `color` on the dropdown's `style` instead.
 - In spectrum-only mode the inspector hides the image buttons and the panel area
   (`inspectorIDs.image_controls` / `image_section`) and `initial_update` opens
-  no panels; only the spectrum and the export panel remain.
+  no panels; only the spectrum and the export panel remain. `export_summary`
+  resolves the mode the same way and, when it is on, never looks at the image
+  panels or the box store: the zip / PDF carry the spectrum files only
+  (`tests/test_export_summary.py`).
 
 ### Browser testing without EDAX data
 

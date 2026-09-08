@@ -632,6 +632,7 @@ def export_msa(
     State(_dataExportIDS.formatdropdown, "value"),
     State(_IDS.active_spectrum_metadata, "data"),
     State(_dataExportIDS.msafileformat, "value"),
+    State(selectorIDs.get_id_with_index("spectrumonly"), "value"),
     prevent_initial_call=True,
     running=[
         (Output(_dataExportIDS.exportsummary, "disabled"), True, False),
@@ -651,7 +652,11 @@ def export_summary(
     export_summary_format: Literal[".zip", "PDF"] | None,
     active_spectrum_metadata: dict | None,
     msafileformat: Literal["Y", "XY"] | None,
+    spectrum_only_switch: bool | None = False,
 ):
+    """Write the summary export: the spectrum plus, for a map, every image
+    panel (and its box subset). A spectrum-only dataset has no images, so the
+    panels are not consulted at all in that mode, whatever the page holds."""
 
     if export_clicks is None or export_clicks == 0:
         return None
@@ -659,15 +664,60 @@ def export_summary(
     if "selected_dataset" not in user_store_dict:
         user_store_dict["selected_dataset"] = sample_name
     user_store = UserStore(**user_store_dict)
+    spectrum_only = resolve_spectrum_only(user_store_dict, spectrum_only_switch)
 
-    # get individual image arrays
-    n_shapes = len(shapes_store["active_shapes"])
+    figs_to_write = {}
+    if not spectrum_only:
+        figs_to_write.update(
+            _image_figures_to_write(
+                user_store,
+                fig_list,
+                shapes_store,
+                slider_range_list,
+                slider_range_labels,
+                colormaps,
+            )
+        )
+    figs_to_write["spectrum"] = plotly_to_matplotlib(spectrum_figure)
+
+    s = summaryWriter()
+    s.write_static_figures(figs_to_write)
+
+    if export_summary_format == "PDF":
+        return dcc.send_file(s.get_pdf_path(generate_pdf=True))
+    if export_summary_format == ".zip" and active_spectrum_metadata is not None:
+        # include the MSA for the zip as .msa and .csv
+        _ = s.write_MSA(
+            active_spectrum_metadata, file_type=".msa", file_format=msafileformat
+        )
+        _ = s.write_MSA(active_spectrum_metadata, file_type=".csv")
+        wts = data_export_panel.get_element_weights(active_spectrum_metadata)
+        if wts is None:
+            # nothing to export: the weights file is simply left out of the zip
+            spectraLogger.info("no element weights available, skipping their export")
+        else:
+            _ = s.write_element_weights(wts)
+
+        return dcc.send_file(s.get_zip())
+    msg = f"Unexpected value for format, {export_summary_format=}"
+    raise ValueError(msg)
+
+
+def _image_figures_to_write(
+    user_store: UserStore,
+    fig_list: list,
+    shapes_store: dict | None,
+    slider_range_list: list,
+    slider_range_labels: list,
+    colormaps: list,
+) -> dict:
+    """Matplotlib versions of every image panel, plus the box subset of each
+    when a rectangle is drawn, keyed by output file stem."""
     index0_range = None
     index1_range = None
-    if n_shapes > 0:
-        # get image subests
-        shp = shapes_store["active_shapes"][0]
-        index0_range, index1_range = _index_range_from_shape(shp)
+    active_shapes = _active_shapes(shapes_store)
+    if active_shapes:
+        index0_range, index1_range = _index_range_from_shape(active_shapes[0])
 
     figs_to_write = {}
     for igraph in range(len(fig_list)):
@@ -701,29 +751,7 @@ def export_summary(
             im_name += "_subset"
             figs_to_write[im_name] = plotly_to_matplotlib(newfig, im_data=im, cmap=cmap)
 
-    figs_to_write["spectrum"] = plotly_to_matplotlib(spectrum_figure)
-
-    s = summaryWriter()
-    s.write_static_figures(figs_to_write)
-
-    if export_summary_format == "PDF":
-        return dcc.send_file(s.get_pdf_path(generate_pdf=True))
-    if export_summary_format == ".zip" and active_spectrum_metadata is not None:
-        # include the MSA for the zip as .msa and .csv
-        _ = s.write_MSA(
-            active_spectrum_metadata, file_type=".msa", file_format=msafileformat
-        )
-        _ = s.write_MSA(active_spectrum_metadata, file_type=".csv")
-        wts = data_export_panel.get_element_weights(active_spectrum_metadata)
-        if wts is None:
-            # nothing to export: the weights file is simply left out of the zip
-            spectraLogger.info("no element weights available, skipping their export")
-        else:
-            _ = s.write_element_weights(wts)
-
-        return dcc.send_file(s.get_zip())
-    msg = f"Unexpected value for format, {export_summary_format=}"
-    raise ValueError(msg)
+    return figs_to_write
 
 
 def _graph_dict(index: int) -> dict[str, str | int]:
