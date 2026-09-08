@@ -40,6 +40,17 @@ def test_spectrum_creation_reads_the_toggle(callbacks):
     assert TOGGLE in _dep_ids(spectrum_builders[0]["state"])
 
 
+def test_summary_export_reads_the_toggle(callbacks):
+    exporters = [
+        cb
+        for cb in callbacks
+        if any("data-export-panel" in str(dep.get("id")) for dep in cb["inputs"])
+        and SPECTRUM_GRAPH in _dep_ids(cb["state"])
+    ]
+    assert len(exporters) == 1
+    assert TOGGLE in _dep_ids(exporters[0]["state"])
+
+
 @pytest.mark.parametrize(
     ("scale", "expected"),
     [("linear", "linear"), ("log", "log"), (None, "linear"), ("bogus", "linear")],

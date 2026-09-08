@@ -288,7 +288,7 @@ def layout(sample_name: str | None = None, **kwargs):  # noqa: ARG001
 
     yaxis_scale_toggle = dbc.Row(
         [
-            dbc.Col(html.Label("y axis:", className="me-2"), width="auto"),
+            dbc.Col(html.Label("y scale:", className="me-2"), width="auto"),
             dbc.Col(
                 dbc.RadioItems(
                     options=[{"label": s, "value": s} for s in SPECTRUM_YAXIS_SCALES],
@@ -665,6 +665,7 @@ def export_msa(
     State(_IDS.active_spectrum_metadata, "data"),
     State(_dataExportIDS.msafileformat, "value"),
     State(_IDS.zeroed_elements_store, "data"),
+    State(_IDS.spectrum_yaxis_scale, "value"),
     prevent_initial_call=True,
     running=[
         (Output(_dataExportIDS.exportsummary, "disabled"), True, False),
@@ -685,6 +686,7 @@ def export_summary(
     active_spectrum_metadata: dict | None,
     msafileformat: Literal["Y", "XY"] | None,
     zeroed_elements: list[str] | None,
+    spectrum_yaxis_scale: str | None,
 ):
 
     if export_clicks is None or export_clicks == 0:
@@ -735,7 +737,9 @@ def export_summary(
             im_name += "_subset"
             figs_to_write[im_name] = plotly_to_matplotlib(newfig, im_data=im, cmap=cmap)
 
-    figs_to_write["spectrum"] = plotly_to_matplotlib(spectrum_figure)
+    figs_to_write["spectrum"] = plotly_to_matplotlib(
+        spectrum_figure, yaxis_scale=_yaxis_type(spectrum_yaxis_scale)
+    )
 
     s = summaryWriter()
     s.write_static_figures(figs_to_write)
