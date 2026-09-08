@@ -235,7 +235,7 @@ def test_map_zip_includes_every_panel(
 def test_zip_metadata_describes_the_sample_and_the_box(
     inspector, image_figures, spectrum_figure, spectrum_metadata, tmp_path
 ):
-    # issue #42: the zip carries what the data-selection accordion shows, the
+    # the zip carries what the data-selection accordion shows, the
     # box in index and physical units, and what each image file holds
     sample_sheet = {
         "records": [{"sample_id": "S1", "description": "a rock"}],

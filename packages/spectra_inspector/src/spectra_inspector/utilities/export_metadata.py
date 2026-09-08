@@ -1,4 +1,4 @@
-"""The metadata that rides along with a summary export (issue #42).
+"""The metadata that rides along with a summary export.
 
 Both formats carry the same record: the zip as ``metadata.json`` next to a
 ``README.txt`` describing the files, the PDF as text pages. The sample part is

@@ -139,7 +139,7 @@ def update_selected_dataset(
             input_value, directory_sync=dir_sync, spectrum_only=spectrum_only
         )
         meta_json_str = meta.model_dump_json()
-        # the same dict the summary export writes out (issue #42)
+        # the same dict the summary export writes out
         meta_dict = sample_metadata_display_dict(
             meta, new_user_data.get("sample_metadata"), input_value
         )

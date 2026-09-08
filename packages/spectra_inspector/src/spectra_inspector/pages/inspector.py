@@ -919,7 +919,7 @@ def _export_metadata(
     zeroed_elements: list[str] | None,
     show_peak_windows: bool | None,
 ) -> dict:
-    """The record written next to the exported files (issue #42): the sample
+    """The record written next to the exported files: the sample
     metadata as the data-selection accordion shows it, the box in index and
     physical units, and what each image file holds.
 
