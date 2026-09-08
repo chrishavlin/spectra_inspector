@@ -14,8 +14,10 @@ import dash_bootstrap_components as dbc
 from dash import ALL, MATCH, Input, Output, State, callback, ctx, dcc, html, no_update
 
 from spectra_inspector.components.dataset_selector import (
+    dataset_names,
     datasetSelectorLayoutIDs,
-    format_selections,
+    dropdown_options,
+    list_store_data,
 )
 from spectra_inspector.components.layout_ids import indexedLayoutIDMapper
 from spectra_inspector.logging import spectraLogger
@@ -340,7 +342,15 @@ def hydrate_browse_position(_div_id: dict, user_data: dict | None):
     return {"path": (user_data or {}).get("working_directory") or ""}
 
 
-def loaded_status(n_datasets: int, label: str, truncated: bool = False) -> html.Div:
+def _count_label(n: int, spectrum_only: bool = False) -> str:
+    if spectrum_only:
+        return f"{n} spectrum" if n == 1 else f"{n} spectra"
+    return f"{n} dataset" if n == 1 else f"{n} datasets"
+
+
+def loaded_status(
+    n_datasets: int, label: str, truncated: bool = False, spectrum_only: bool = False
+) -> html.Div:
     """The message shown for a directory that has been scanned into the server.
 
     A truncated scan is called out explicitly: the server stopped at its
@@ -349,15 +359,15 @@ def loaded_status(n_datasets: int, label: str, truncated: bool = False) -> html.
     a narrower directory.
     """
 
-    plural = "" if n_datasets == 1 else "s"
+    counted = _count_label(n_datasets, spectrum_only)
 
     if not truncated:
-        return html.Div(f"Loaded {n_datasets} dataset{plural} from {label}.")
+        return html.Div(f"Loaded {counted} from {label}.")
 
     return html.Div(
         [
             html.Div(
-                f"Showing the first {n_datasets} dataset{plural} in {label}.",
+                f"Showing the first {counted} in {label}.",
                 className="fw-bold",
             ),
             html.Div(
@@ -370,15 +380,16 @@ def loaded_status(n_datasets: int, label: str, truncated: bool = False) -> html.
     )
 
 
-def browse_status(n_datasets: int, has_subdirectories: bool) -> str:
+def browse_status(
+    n_datasets: int, has_subdirectories: bool, spectrum_only: bool = False
+) -> str:
     """What a directory that is only being browsed reports.
 
     The count is of this directory alone, which read as though it covered the
     whole subtree, so point at the button that does search the subtree -- but
     only where there is a subtree to search.
     """
-    plural = "" if n_datasets == 1 else "s"
-    status = f"{n_datasets} dataset{plural} in this directory."
+    status = f"{_count_label(n_datasets, spectrum_only)} in this directory."
     if has_subdirectories:
         status += ' Click "Use this directory" to search the subdirectories.'
     return status
@@ -395,13 +406,27 @@ def committed_status(path: str, user_data: dict | None, root: str) -> html.Div |
     it, which is everything the message needs.
     """
 
+    return committed_status_for_label(path, user_data, path_label(path, root=root))
+
+
+def committed_status_for_label(
+    path: str, user_data: dict | None, label: str
+) -> html.Div | None:
+    """`committed_status` with the directory label already rendered, counting
+    spectra or datasets according to the mode in the store."""
+
     store = UserStore(**(user_data or {}))
     if store.available_files is None or (store.working_directory or "") != path:
         return None
+    if store.spectrum_only:
+        n_loaded = len(store.available_spectra or [])
+    else:
+        n_loaded = len(store.available_files)
     return loaded_status(
-        len(store.available_files),
-        path_label(path, root=root),
+        n_loaded,
+        label,
         truncated=store.truncated,
+        spectrum_only=store.spectrum_only,
     )
 
 
@@ -444,8 +469,10 @@ def show_directory_listing(browse_data: dict | None, user_data: dict | None):
         spectraLogger.warning(f"Could not browse '{path}': {err}")
         return path_label(path, root=root), [], at_root, html.Div(str(err))
 
+    spectrum_only = UserStore(**(user_data or {})).spectrum_only
+    n_here = listing.spectrum_count if spectrum_only else listing.dataset_count
     status = committed_status(listing.path, user_data, root) or html.Div(
-        browse_status(listing.dataset_count, bool(listing.directories))
+        browse_status(n_here, bool(listing.directories), spectrum_only=spectrum_only)
     )
 
     return (
@@ -457,17 +484,55 @@ def show_directory_listing(browse_data: dict | None, user_data: dict | None):
 
 
 @callback(
+    Output({"type": _IDS.status, "index": MATCH}, "children", allow_duplicate=True),
+    Input(USER_STORE_DIV_ID, "data"),
+    Input({"type": _IDS.div, "index": MATCH}, "id"),
+    State({"type": _IDS.browsestore, "index": MATCH}, "data"),
+    State({"type": _IDS.path, "index": MATCH}, "children"),
+    prevent_initial_call=True,
+)
+def recount_committed_status(
+    user_data: dict | None,
+    _div_id: dict,
+    browse_data: dict | None,
+    path_children: str | None,
+):
+    """Keep the "Loaded N ..." line counting the kind of dataset the mode shows.
+
+    It listens to the user store rather than to the "Spectrum only" switch: the
+    switch's own callback is what writes the mode into the store, and a sibling
+    triggered by the switch would read the store before that write lands. The
+    div's static id is only there to anchor the MATCH. Nothing here needs the
+    server -- the counts and the rendered label are already on the page.
+    """
+
+    if browse_data is None or not isinstance(path_children, str):
+        return no_update
+    status = committed_status_for_label(
+        browse_data.get("path", ""), user_data, path_children
+    )
+    return status if status is not None else no_update
+
+
+@callback(
     Output(
         {"type": _datasetIDS.dropdown, "index": MATCH}, "options", allow_duplicate=True
     ),
     Output({"type": _IDS.status, "index": MATCH}, "children", allow_duplicate=True),
     Output({"type": _IDS.committedstore, "index": MATCH}, "data"),
+    Output({"type": _datasetIDS.liststore, "index": MATCH}, "data"),
     Input({"type": _IDS.use, "index": MATCH}, "n_clicks"),
     State({"type": _IDS.browsestore, "index": MATCH}, "data"),
     State({"type": _IDS.recursive, "index": MATCH}, "value"),
+    State({"type": _datasetIDS.spectrumonly, "index": MATCH}, "value"),
     prevent_initial_call=True,
 )
-def use_directory(n_clicks: int, browse_data: dict | None, recursive: bool):
+def use_directory(
+    n_clicks: int,
+    browse_data: dict | None,
+    recursive: bool,
+    spectrum_only: bool | None = False,
+):
     """Scan the browsed directory on the server and load what it holds into the
     sample dropdown sitting next to this component.
 
@@ -479,10 +544,14 @@ def use_directory(n_clicks: int, browse_data: dict | None, recursive: bool):
     This sets the dropdown's options but deliberately leaves its *value* alone;
     `store_working_directory` clears that, and the note there explains why the
     order matters.
+
+    The options follow the "Spectrum only" switch sitting in the same selector,
+    while both name lists go into the selector's list store so that flipping
+    the switch afterwards needs no rescan.
     """
 
     if not n_clicks:
-        return no_update, no_update, no_update
+        return no_update, no_update, no_update, no_update
 
     path = (browse_data or {}).get("path", "")
     sisi = SpectraInspectorServerInterface()
@@ -491,23 +560,36 @@ def use_directory(n_clicks: int, browse_data: dict | None, recursive: bool):
         available = sisi.get_datasets_in_directory(path, recursive=bool(recursive))
     except ServerRequestError as err:
         spectraLogger.warning(f"Could not scan '{path}': {err}")
-        return no_update, html.Div(str(err)), no_update
+        return no_update, html.Div(str(err)), no_update, no_update
 
-    available_files = available.available_files
-    spectraLogger.info(f"'{path}' provided {len(available_files)} datasets")
+    lists = list_store_data(available)
+    available_files = lists["available_files"]
+    available_spectra = lists["available_spectra"]
+    spectraLogger.info(
+        f"'{path}' provided {len(available_files)} datasets and "
+        f"{len(available_spectra)} spectra"
+    )
 
     label = path_label(path, root=data_root_label(sisi))
+    shown = dataset_names(lists, bool(spectrum_only))
 
     return (
-        format_selections(["none", *available_files]),
-        loaded_status(len(available_files), label, truncated=available.truncated),
+        dropdown_options(shown),
+        loaded_status(
+            len(shown),
+            label,
+            truncated=available.truncated,
+            spectrum_only=bool(spectrum_only),
+        ),
         {
             "path": path,
             "recursive": bool(recursive),
             "available_files": available_files,
+            "available_spectra": available_spectra,
             "sample_metadata": sample_metadata_for_store(available.sample_metadata),
             "truncated": available.truncated,
         },
+        lists,
     )
 
 
@@ -552,6 +634,9 @@ def store_working_directory(
     )
     new_user_data = updateDataStore(
         new_user_data, "available_files", payload.get("available_files") or []
+    )
+    new_user_data = updateDataStore(
+        new_user_data, "available_spectra", payload.get("available_spectra") or []
     )
     new_user_data = updateDataStore(
         new_user_data, "sample_metadata", payload.get("sample_metadata")

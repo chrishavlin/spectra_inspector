@@ -20,7 +20,7 @@ class EDAX_axis(BaseModel):
     index_in_array: int
     name: str
     scale: float
-    offset: int
+    offset: float
     units: str
     navigate: bool
 
@@ -92,6 +92,7 @@ class directoryListing(BaseModel):
     parent_path: str | None = None
     directories: list[directoryEntry] | None = Field([], validate_default=True)
     dataset_count: int | None = 0
+    spectrum_count: int | None = 0
 
 
 class raveledImage(BaseModel):
@@ -137,6 +138,7 @@ class AvailableDatasets(BaseModel):
     sample_metadata: sampleMetadata | None = None
     directory: str | None = None
     truncated: bool | None = False
+    available_spectra: list[str] | None = None
 
 
 class MetadataModel(BaseModel):
@@ -149,7 +151,7 @@ class MetadataModel(BaseModel):
 class CombinedMetadata(BaseModel):
     metadata: MetadataModel
     axes_by_index: dict[str, EDAX_axis]
-    data_shape: tuple[int, int, int]
+    data_shape: list[int]
 
 
 # These names collide with a field of the same name, so the generator
