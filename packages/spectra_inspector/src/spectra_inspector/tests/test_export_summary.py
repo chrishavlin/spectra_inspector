@@ -103,6 +103,7 @@ def _export(inspector, image_figures, spectrum_figure, metadata, **kwargs):
         "active_spectrum_metadata": metadata,
         "msafileformat": "XY",
         "zeroed_elements": [],
+        "spectrum_yaxis_scale": "linear",
     }
     args.update(kwargs)
     return inspector.export_summary(**args)
