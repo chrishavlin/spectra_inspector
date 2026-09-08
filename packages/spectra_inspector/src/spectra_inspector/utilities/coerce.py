@@ -10,6 +10,10 @@ from spectra_inspector.utilities.matplotib_importer import mpl_pyplot as plt
 
 _place_holder = "___"
 
+_PLOTLY_DASHES = {"solid": "-", "dash": "--", "dot": ":", "dashdot": "-."}
+_PLOTLY_HALIGN = {"left": "left", "center": "center", "right": "right"}
+_PLOTLY_VALIGN = {"top": "top", "middle": "center", "bottom": "bottom"}
+
 _mpl_cmaps_lower = {name.lower(): name for name in colormaps}
 
 
@@ -48,6 +52,60 @@ def plotly_im_trace_to_array(trace_data: dict) -> npt.NDArray:
         im_array[irow, :] = list(data_i.values())
 
     return im_array
+
+
+def _draw_paper_spanning_shapes(ax, layout: dict) -> None:
+    """Re-draw the shapes and labels that span the full plot height.
+
+    These are the spectrum's peak integration windows (``utilities/peak_windows``):
+    rectangles become ``axvspan``, lines ``axvline`` and the labels sit at the
+    same paper-relative height via the x-axis transform. Shapes anchored to
+    data on the y axis are not carried over.
+    """
+    for shape in layout.get("shapes", []) or []:
+        if shape.get("yref") != "paper":
+            continue
+        x0 = shape.get("x0")
+        x1 = shape.get("x1")
+        if x0 is None or x1 is None:
+            continue
+        if shape.get("type") == "rect":
+            ax.axvspan(
+                x0,
+                x1,
+                facecolor=shape.get("fillcolor", "gray"),
+                alpha=shape.get("opacity", 1.0),
+                linewidth=0,
+                zorder=0,
+            )
+        elif shape.get("type") == "line":
+            line = shape.get("line") or {}
+            ax.axvline(
+                x0,
+                color=line.get("color", "black"),
+                linewidth=line.get("width", 1),
+                linestyle=_PLOTLY_DASHES.get(line.get("dash", "solid"), "-"),
+                zorder=0,
+            )
+
+    for annotation in layout.get("annotations", []) or []:
+        if annotation.get("yref") != "paper" or annotation.get("xref") != "x":
+            continue
+        text = annotation.get("text")
+        x = annotation.get("x")
+        if not isinstance(text, str) or x is None:
+            continue
+        font = annotation.get("font") or {}
+        ax.text(
+            x,
+            annotation.get("y", 1.0),
+            text,
+            transform=ax.get_xaxis_transform(),
+            ha=_PLOTLY_HALIGN.get(annotation.get("xanchor"), "center"),
+            va=_PLOTLY_VALIGN.get(annotation.get("yanchor"), "bottom"),
+            color=font.get("color", "black"),
+            fontsize=font.get("size", 10),
+        )
 
 
 def plotly_to_matplotlib(
@@ -179,26 +237,37 @@ def plotly_to_matplotlib(
         return fig_mpl
 
     fig_mpl, ax = plt.subplots(figsize=(6, 4), dpi=150)
+    labelled = 0
     for trace in data:
         trace_type = trace.get("type", "scatter")
-        if trace_type in {"scatter", "line"}:
+        if trace_type in {"scatter", "line"} and trace.get("fill") == "toself":
+            # a filled polygon (the spectrum's peak areas), never in the legend
+            ax.fill(
+                trace.get("x", []),
+                trace.get("y", []),
+                facecolor=trace.get("fillcolor", "gray"),
+                alpha=trace.get("opacity", 1.0),
+                linewidth=0,
+                zorder=1,
+            )
+        elif trace_type in {"scatter", "line"}:
             x = trace.get("x", [])
             y = trace.get("y", [])
+            labelled += 1
             line_kwargs = {}
             if trace.get("line") and isinstance(trace["line"], dict):
                 line_style = trace["line"].get("dash")
                 if line_style:
-                    line_kwargs["linestyle"] = {
-                        "solid": "-",
-                        "dash": "--",
-                        "dot": ":",
-                        "dashdot": "-.",
-                    }.get(line_style, line_style)
+                    line_kwargs["linestyle"] = _PLOTLY_DASHES.get(
+                        line_style, line_style
+                    )
                 color = trace["line"].get("color")
                 if color:
                     line_kwargs["color"] = color
             ax.plot(x, y, label=trace.get("name"), **line_kwargs)
             ax.set_xlim(left=0, right=8)
+
+    _draw_paper_spanning_shapes(ax, layout)
 
     if isinstance(xaxis, dict):
         title_text = xaxis.get("title", {}).get("text")
@@ -227,6 +296,6 @@ def plotly_to_matplotlib(
         if title_text:
             ax.set_title(title_text, pad=8)
 
-    if len(data) > 1:
+    if labelled > 1:
         ax.legend(loc="best")
     return fig_mpl

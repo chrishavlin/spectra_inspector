@@ -52,6 +52,11 @@ from spectra_inspector.utilities.coerce import (
     plotly_to_matplotlib,
 )
 from spectra_inspector.utilities.interface import SpectraInspectorServerInterface
+from spectra_inspector.utilities.peak_windows import (
+    RANGES_KEY,
+    apply_peak_windows,
+    peak_windows,
+)
 from spectra_inspector.utilities.summary_writer import summaryWriter
 from spectra_inspector.utilities.view_sync import (
     apply_axes_to_patch,
@@ -119,6 +124,10 @@ def get_spectrum(
         attrs["original_metadata"] = spectrum.original_metadata
     if spectrum.weights is not None:
         attrs["weights"] = spectrum.weights
+    if spectrum.integration_ranges_keV is not None:
+        attrs[RANGES_KEY] = {
+            el: list(rng) for el, rng in spectrum.integration_ranges_keV.items()
+        }
     df.attrs = attrs
     return df
 
@@ -144,6 +153,7 @@ class inspectorIDs(BaseModel):
     image_section: str = "image-section"
     spectrum_container: str = "spectrum-container"
     spectrum_yaxis_scale: str = "spectrum-yaxis-scale"
+    spectrum_peak_windows: str = "spectrum-peak-windows"
     image_container_type: str = "bitmap-image"
     shapes_store: str = "active-shapes"
     view_store: str = "image-view-store"
@@ -198,7 +208,12 @@ SPECTRUM_YAXIS_SCALES = ("linear", "log")
 
 
 def new_spectrum_figure(
-    energy: list[float], intensity: list[float], yaxis_scale: str = "linear"
+    energy: list[float],
+    intensity: list[float],
+    yaxis_scale: str = "linear",
+    active_spectrum_metadata: dict | None = None,
+    show_peak_windows: bool | None = True,
+    zeroed_elements: list[str] | None = None,
 ) -> go.Figure:
     fig = go.Figure()
     fig.add_trace(
@@ -206,6 +221,13 @@ def new_spectrum_figure(
     )
     fig.update_xaxes(title_text="Energy (keV)", autorangeoptions_maxallowed=8)
     fig.update_yaxes(title_text="Intensity", type=_yaxis_type(yaxis_scale))
+    windows = peak_windows(
+        active_spectrum_metadata, show_peak_windows, zeroed_elements or []
+    )
+    fig.add_traces([go.Scatter(**trace) for trace in windows.traces])
+    fig.update_layout(
+        shapes=windows.shapes, annotations=windows.annotations, showlegend=False
+    )
     return fig
 
 
@@ -324,29 +346,34 @@ def layout(
         type="circle",
     )
 
-    yaxis_scale_toggle = dbc.Row(
+    spectrum_controls = html.Div(
         [
-            dbc.Col(html.Label("y scale:", className="me-2"), width="auto"),
-            dbc.Col(
-                dbc.RadioItems(
-                    options=[{"label": s, "value": s} for s in SPECTRUM_YAXIS_SCALES],
-                    value="linear",
-                    id=_IDS.spectrum_yaxis_scale,
-                    inline=True,
-                ),
-                width="auto",
+            dbc.Switch(
+                id=_IDS.spectrum_peak_windows,
+                label="peak windows",
+                value=True,
+                className="mb-0 me-3",
+                label_class_name="mb-0",
+            ),
+            html.Label("y scale:", className="mb-0 me-2"),
+            dbc.RadioItems(
+                options=[{"label": s, "value": s} for s in SPECTRUM_YAXIS_SCALES],
+                value="linear",
+                id=_IDS.spectrum_yaxis_scale,
+                inline=True,
+                className="d-flex align-items-center",
+                inputCheckedClassName="",
+                labelCheckedClassName="",
             ),
         ],
-        className="gx-1 gy-1",
-        align="center",
-        justify="end",
+        className="d-flex align-items-center justify-content-end",
     )
 
     spectrum_div = dbc.Card(
         dbc.CardBody(
             [
                 dbc.Row(dbc.Col(spectrum_graph, width=12), className="gx-1 gy-1"),
-                yaxis_scale_toggle,
+                spectrum_controls,
             ]
         ),
         # color="primary",
@@ -473,6 +500,8 @@ def update_zeroed_elements(_zero_clicks, _reset_clicks, zeroed_elements):
     State(_IDS.active_spectrum_metadata, "data"),
     State(USER_STORE_DIV_ID, "data"),
     State(_IDS.spectrum_yaxis_scale, "value"),
+    State(_IDS.spectrum_peak_windows, "value"),
+    State(_IDS.zeroed_elements_store, "data"),
     running=[
         (Output("spectrum-loading", "display"), "show", "hide"),
         (Output(_IDS.add_image, "disabled"), True, False),
@@ -487,6 +516,8 @@ def update_spectrum(
     active_spectrum_metadata: dict | None,
     user_store_dict: dict | None,
     yaxis_scale: str | None,
+    show_peak_windows: bool | None,
+    zeroed_elements: list[str] | None,
 ):
 
     spectraLogger.info(f"update_spectrum trigger: {ctx.triggered_id}")
@@ -497,10 +528,15 @@ def update_spectrum(
 
     if current_figure is None:
         # now we have data but no figure, create it
-        current_figure = new_spectrum_figure(
-            full_spectrum_store["energy"], full_spectrum_store["intensity"], yaxis_scale
-        )
         active_spectrum_metadata = full_spectrum_store.copy()
+        current_figure = new_spectrum_figure(
+            full_spectrum_store["energy"],
+            full_spectrum_store["intensity"],
+            yaxis_scale,
+            active_spectrum_metadata,
+            show_peak_windows,
+            zeroed_elements,
+        )
 
         return current_figure, active_spectrum_metadata
 
@@ -546,6 +582,14 @@ def update_spectrum(
         }
 
         current_figure["data"][0] = new_trace
+        # the peaks follow the new curve, and a spatial subset may have lost
+        # its calibration (and so its windows) altogether
+        current_figure = apply_peak_windows(
+            current_figure,
+            active_spectrum_metadata,
+            show_peak_windows,
+            zeroed_elements or [],
+        )
         return current_figure, active_spectrum_metadata
 
     return no_update, no_update
@@ -564,6 +608,32 @@ def set_spectrum_yaxis_scale(yaxis_scale: str | None, current_figure):
     patched = Patch()
     patched["layout"]["yaxis"]["type"] = _yaxis_type(yaxis_scale)
     return patched
+
+
+@callback(
+    Output(_IDS.spectrum_container, "figure", allow_duplicate=True),
+    Input(_IDS.spectrum_peak_windows, "value"),
+    Input(_IDS.zeroed_elements_store, "data"),
+    State(_IDS.spectrum_container, "figure"),
+    State(_IDS.active_spectrum_metadata, "data"),
+    prevent_initial_call=True,
+)
+def toggle_peak_windows(
+    show_peak_windows: bool | None,
+    zeroed_elements: list[str] | None,
+    current_figure,
+    active_spectrum_metadata: dict | None,
+):
+    """Redraw the peaks when the switch flips or an element is zeroed out or
+    restored in the weights table; the spectrum itself is not refetched."""
+    if current_figure is None or not current_figure.get("data"):
+        return no_update
+    return apply_peak_windows(
+        current_figure,
+        active_spectrum_metadata,
+        show_peak_windows,
+        zeroed_elements or [],
+    )
 
 
 @callback(
@@ -722,6 +792,7 @@ def export_msa(
     State(_dataExportIDS.msafileformat, "value"),
     State(_IDS.zeroed_elements_store, "data"),
     State(_IDS.spectrum_yaxis_scale, "value"),
+    State(_IDS.spectrum_peak_windows, "value"),
     State(selectorIDs.get_id_with_index("spectrumonly"), "value"),
     prevent_initial_call=True,
     running=[
@@ -744,11 +815,15 @@ def export_summary(
     msafileformat: Literal["Y", "XY"] | None,
     zeroed_elements: list[str] | None,
     spectrum_yaxis_scale: str | None,
+    show_peak_windows: bool | None = True,
     spectrum_only_switch: bool | None = False,
 ):
     """Write the summary export: the spectrum plus, for a map, every image
     panel (and its box subset). A spectrum-only dataset has no images, so the
-    panels are not consulted at all in that mode, whatever the page holds."""
+    panels are not consulted at all in that mode, whatever the page holds.
+
+    The spectrum carries its peaks into the export exactly as the page shows
+    them: the "peak windows" switch and the zeroed-out elements both apply."""
 
     if export_clicks is None or export_clicks == 0:
         return None
@@ -771,7 +846,13 @@ def export_summary(
             )
         )
     figs_to_write["spectrum"] = plotly_to_matplotlib(
-        spectrum_figure, yaxis_scale=_yaxis_type(spectrum_yaxis_scale)
+        apply_peak_windows(
+            spectrum_figure,
+            active_spectrum_metadata,
+            show_peak_windows,
+            zeroed_elements or [],
+        ),
+        yaxis_scale=_yaxis_type(spectrum_yaxis_scale),
     )
 
     s = summaryWriter()

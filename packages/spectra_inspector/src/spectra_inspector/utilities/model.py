@@ -59,6 +59,7 @@ class Spectrum1dDict(BaseModel):
     metadata: dict[str, Any] | None = None
     original_metadata: dict[str, Any] | None = None
     weights: dict[str, Any] | None = None
+    integration_ranges_keV: dict[str, tuple[float, float]] | None = None
 
 
 class Stage_1(BaseModel):
