@@ -133,6 +133,7 @@ class inspectorIDs(BaseModel):
     sample_name: str = "sample-name"
     image_container: str = "image-container"
     spectrum_container: str = "spectrum-container"
+    spectrum_yaxis_scale: str = "spectrum-yaxis-scale"
     image_container_type: str = "bitmap-image"
     shapes_store: str = "active-shapes"
     view_store: str = "image-view-store"
@@ -182,6 +183,24 @@ def _get_div_store() -> html.Div:
 
 
 selectorIDs = datasetSelectorLayoutIDs(index=1)
+
+SPECTRUM_YAXIS_SCALES = ("linear", "log")
+
+
+def new_spectrum_figure(
+    energy: list[float], intensity: list[float], yaxis_scale: str = "linear"
+) -> go.Figure:
+    fig = go.Figure()
+    fig.add_trace(
+        go.Scatter(x=energy, y=intensity, mode="lines", name="Full energy range")
+    )
+    fig.update_xaxes(title_text="Energy (keV)", autorangeoptions_maxallowed=8)
+    fig.update_yaxes(title_text="Intensity", type=_yaxis_type(yaxis_scale))
+    return fig
+
+
+def _yaxis_type(yaxis_scale: str | None) -> str:
+    return yaxis_scale if yaxis_scale in SPECTRUM_YAXIS_SCALES else "linear"
 
 
 def layout(sample_name: str | None = None, **kwargs):  # noqa: ARG001
@@ -267,8 +286,30 @@ def layout(sample_name: str | None = None, **kwargs):  # noqa: ARG001
         type="circle",
     )
 
+    yaxis_scale_toggle = dbc.Row(
+        [
+            dbc.Col(html.Label("y axis:", className="me-2"), width="auto"),
+            dbc.Col(
+                dbc.RadioItems(
+                    options=[{"label": s, "value": s} for s in SPECTRUM_YAXIS_SCALES],
+                    value="linear",
+                    id=_IDS.spectrum_yaxis_scale,
+                    inline=True,
+                ),
+                width="auto",
+            ),
+        ],
+        className="gx-1 gy-1",
+        align="center",
+    )
+
     spectrum_div = dbc.Card(
-        dbc.CardBody(dbc.Row(dbc.Col(spectrum_graph, width=12), className="gx-1 gy-1")),
+        dbc.CardBody(
+            [
+                yaxis_scale_toggle,
+                dbc.Row(dbc.Col(spectrum_graph, width=12), className="gx-1 gy-1"),
+            ]
+        ),
         # color="primary",
         style={"margin-top": "1rem"},
     )
@@ -390,6 +431,7 @@ def update_zeroed_elements(_zero_clicks, _reset_clicks, zeroed_elements):
     State(_IDS.spectrum_container, "figure"),
     State(_IDS.active_spectrum_metadata, "data"),
     State(USER_STORE_DIV_ID, "data"),
+    State(_IDS.spectrum_yaxis_scale, "value"),
     running=[
         (Output("spectrum-loading", "display"), "show", "hide"),
         (Output(_IDS.add_image, "disabled"), True, False),
@@ -403,6 +445,7 @@ def update_spectrum(
     current_figure,
     active_spectrum_metadata: dict | None,
     user_store_dict: dict | None,
+    yaxis_scale: str | None,
 ):
 
     spectraLogger.info(f"update_spectrum trigger: {ctx.triggered_id}")
@@ -413,22 +456,9 @@ def update_spectrum(
 
     if current_figure is None:
         # now we have data but no figure, create it
-        energy = full_spectrum_store["energy"]
-        intensity = full_spectrum_store["intensity"]
-        current_figure = go.Figure()
-        current_figure.add_trace(
-            go.Scatter(
-                x=energy,
-                y=intensity,
-                mode="lines",
-                name="Full energy range",
-            )
+        current_figure = new_spectrum_figure(
+            full_spectrum_store["energy"], full_spectrum_store["intensity"], yaxis_scale
         )
-
-        current_figure.update_xaxes(title_text="Energy (keV)")
-        current_figure.update_yaxes(title_text="Intensity")
-        current_figure.update_xaxes(autorangeoptions_maxallowed=8)
-
         active_spectrum_metadata = full_spectrum_store.copy()
 
         return current_figure, active_spectrum_metadata
@@ -476,6 +506,21 @@ def update_spectrum(
         return current_figure, active_spectrum_metadata
 
     return no_update, no_update
+
+
+@callback(
+    Output(_IDS.spectrum_container, "figure", allow_duplicate=True),
+    Input(_IDS.spectrum_yaxis_scale, "value"),
+    State(_IDS.spectrum_container, "figure"),
+    prevent_initial_call=True,
+)
+def set_spectrum_yaxis_scale(yaxis_scale: str | None, current_figure):
+    if current_figure is None:
+        # nothing drawn yet; the figure picks the scale up when it is created
+        return no_update
+    patched = Patch()
+    patched["layout"]["yaxis"]["type"] = _yaxis_type(yaxis_scale)
+    return patched
 
 
 @callback(

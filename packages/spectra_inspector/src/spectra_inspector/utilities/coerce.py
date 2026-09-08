@@ -205,6 +205,8 @@ def plotly_to_matplotlib(
             ax.set_xlabel("")
             ax.set_xticks([])
             ax.set_xticklabels([])
+        if xaxis.get("type") == "log":
+            ax.set_xscale("log")
     if isinstance(yaxis, dict):
         title_text = yaxis.get("title", {}).get("text")
         if title_text:
@@ -213,6 +215,8 @@ def plotly_to_matplotlib(
             ax.set_ylabel("")
             ax.set_yticks([])
             ax.set_yticklabels([])
+        if yaxis.get("type") == "log":
+            ax.set_yscale("log")
     if isinstance(title, dict):
         title_text = title.get("text")
         if title_text:

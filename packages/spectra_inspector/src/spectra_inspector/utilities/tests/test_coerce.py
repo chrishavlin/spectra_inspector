@@ -44,3 +44,24 @@ def test_plotly_to_matplotlib_preserves_heatmap_overlay_trace_and_annotation():
 
     assert len(ax.lines) == 1
     assert ax.texts[0].get_text() == "scale"
+
+
+def test_plotly_to_matplotlib_carries_log_yaxis_to_spectrum_export():
+    fig = {
+        "data": [{"type": "scatter", "x": [0, 1, 2], "y": [1, 10, 100]}],
+        "layout": {"yaxis": {"type": "log", "title": {"text": "Intensity"}}},
+    }
+
+    ax = plotly_to_matplotlib(fig).axes[0]
+
+    assert ax.get_yscale() == "log"
+    assert ax.get_xscale() == "linear"
+    assert ax.get_ylabel() == "Intensity"
+
+
+def test_plotly_to_matplotlib_defaults_to_linear_axes():
+    fig = {"data": [{"type": "scatter", "x": [0, 1], "y": [1, 2]}], "layout": {}}
+
+    ax = plotly_to_matplotlib(fig).axes[0]
+
+    assert ax.get_yscale() == "linear"
