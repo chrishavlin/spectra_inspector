@@ -127,9 +127,49 @@ def test_each_element_weight_matches_sum_in_range(
 ) -> None:
     e0, e1 = element_energy_ranges_keV[element]
 
-    expected = sum_in_range(intensity, energy, e0, e1) / intensity.sum()
+    expected = max(sum_in_range(intensity, energy, e0, e1) / intensity.sum(), 0.0)
 
     assert getattr(weights, element) == pytest.approx(expected)
+
+
+def _flat_spectrum_with_si_edges(
+    edge: int, interior: int
+) -> tuple[np.ndarray, np.ndarray]:
+    """A flat spectrum spanning every element window, with the Si window's edge
+    channels at `edge` counts and its interior at `interior`."""
+    energy = np.arange(0.0, 15.01, 0.005, dtype=np.float64)
+    intensity = np.ones_like(energy, dtype=np.int64)
+    e0, e1 = element_energy_ranges_keV["Si"]
+    in_si = (energy >= e0) & (energy <= e1)
+    intensity[in_si] = interior
+    edges = np.flatnonzero(in_si)[[0, -1]]
+    intensity[edges] = edge
+    return intensity, energy
+
+
+def test_negative_element_weight_clamps_to_zero() -> None:
+    # a window whose edge channels sit above its interior sums negative after
+    # the baseline shift; the weight is reported as exactly zero (issue #119).
+    intensity, energy = _flat_spectrum_with_si_edges(edge=50, interior=10)
+    e0, e1 = element_energy_ranges_keV["Si"]
+
+    assert sum_in_range(intensity, energy, e0, e1) < 0
+
+    weights = calculate_weights(intensity, energy)
+
+    assert weights.Si == 0.0
+    assert not np.signbit(weights.Si)
+
+
+def test_positive_element_weight_is_not_clamped() -> None:
+    intensity, energy = _flat_spectrum_with_si_edges(edge=10, interior=50)
+    e0, e1 = element_energy_ranges_keV["Si"]
+
+    weights = calculate_weights(intensity, energy)
+
+    expected = sum_in_range(intensity, energy, e0, e1) / intensity.sum()
+    assert expected > 0
+    assert weights.Si == pytest.approx(expected)
 
 
 def test_calibration_element_ranges_exist() -> None:

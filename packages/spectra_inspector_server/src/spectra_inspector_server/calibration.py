@@ -96,7 +96,10 @@ def calculate_weights(
 
     for el in calibration_elements:
         e0, e1 = element_energy_ranges_keV[el]
-        element_weights[el] = sum_in_range(intensity, energy_keV, e0, e1) / total_count
+        weight = sum_in_range(intensity, energy_keV, e0, e1) / total_count
+        # the baseline subtraction in sum_in_range leaves a small or negative
+        # sum for an element that is absent; report those as exactly zero.
+        element_weights[el] = weight if weight > 0 else 0.0
 
     return CalibrationWeights(
         Na=element_weights["Na"],
