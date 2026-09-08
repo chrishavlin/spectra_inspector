@@ -3,7 +3,7 @@
    Bootstrap's CSS variables so the ThemeSwitchAIO stylesheet swap applies. */
 
 :root {
-  --si-sidebar-width: 16rem;
+  --si-sidebar-width: 13.5rem;
 }
 
 .si-sidebar {
@@ -16,6 +16,13 @@
   border-right: 1px solid var(--bs-border-color);
   background-color: var(--bs-body-bg);
   overflow-y: auto;
+}
+
+/* The theme pads nav links 2rem either side, which pushes the widest label
+   past the sidebar's inner edge at the narrower width. */
+.si-sidebar .nav-link {
+  padding-left: 1rem;
+  padding-right: 1rem;
 }
 
 .si-content {
@@ -39,7 +46,7 @@
 
 @media (max-width: 1399.98px) {
   :root {
-    --si-sidebar-width: 12rem;
+    --si-sidebar-width: 11rem;
   }
   .si-sidebar h2 {
     font-size: 1.6rem;
