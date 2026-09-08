@@ -71,9 +71,10 @@ def layout(**kwargs) -> html.Div:  # noqa: ARG001
             html.Div(
                 dbc.Row(
                     [
-                        dbc.Col(left_panel, width=4),
-                        dbc.Col(base_map_card, width=8),
-                    ]
+                        dbc.Col(left_panel, xs=12, lg=4),
+                        dbc.Col(base_map_card, xs=12, lg=8),
+                    ],
+                    className="g-3",
                 ),
                 style={"width": "100%"},
             ),

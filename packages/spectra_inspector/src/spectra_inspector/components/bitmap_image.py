@@ -8,7 +8,7 @@ from dash import dcc, html
 from dash_bootstrap_components import Button
 
 from spectra_inspector.components.energy_range_slider import (
-    get_element_dropdown_and_slider,
+    build_element_dropdown_and_slider,
 )
 from spectra_inspector.components.layout_ids import indexedLayoutIDMapper
 from spectra_inspector.components.scalebar import scalebarHandler
@@ -60,6 +60,14 @@ class bitmapImageLayoutIDs(indexedLayoutIDMapper):
         return self.full_id("-loadingoverlay")
 
 
+def graph_style(im_shape: tuple[int, ...] | None = None) -> dict[str, str]:
+    """The graph's container style: full panel width, height following the
+    image's aspect ratio so a wider panel gets a taller image rather than a
+    letterboxed one. Square until the image shape is known."""
+    nrows, ncols = (im_shape[0], im_shape[1]) if im_shape is not None else (1, 1)
+    return {"width": "100%", "aspectRatio": f"{ncols} / {nrows}"}
+
+
 def bitmap_image_layout(
     index: int,
     id_type_base: str = "bitmap-image",
@@ -87,6 +95,8 @@ def bitmap_image_layout(
                 "displayModeBar": True,
                 "displaylogo": False,
             },
+            responsive=True,
+            style=graph_style(),
         ),
         id=imIDs.loadingoverlay,
         overlay_style={"visibility": "visible", "filter": "blur(2px)"},
@@ -98,7 +108,7 @@ def bitmap_image_layout(
         delay_hide=250,
     )
 
-    energy_range_selector, _ = get_element_dropdown_and_slider(
+    energy_parts, _ = build_element_dropdown_and_slider(
         index=index,
         slider_start=slider_start,
         slider_stop=slider_stop,
@@ -106,11 +116,25 @@ def bitmap_image_layout(
         init_element=init_element,
     )
 
-    _controls_row_1 = dbc.Row(
-        [
-            dbc.Col(energy_range_selector, width=12),
-        ],
-        align="center",
+    delete_button = Button(
+        delete_button_label,
+        id=imIDs.get_id_with_index("delete"),
+        color="secondary",
+    )
+
+    # element pick, Apply and delete share the header so the image starts as
+    # high up the panel as possible; the buttons right-align off ms-auto.
+    header = dbc.CardHeader(
+        dbc.Row(
+            [
+                dbc.Col(energy_parts.dropdown, width="auto"),
+                dbc.Col(energy_parts.apply_button, width="auto", className="ms-auto"),
+                dbc.Col(delete_button, width="auto"),
+            ],
+            align="center",
+            className="g-2",
+        ),
+        className="px-2 py-2",
     )
 
     colormap_dropdown = dcc.Dropdown(
@@ -122,52 +146,38 @@ def bitmap_image_layout(
         className="text-info",
     )
 
-    _controls_row_2 = dbc.Row(
+    _controls_row = dbc.Row(
         [
-            dbc.Col(dcc.Markdown("Colormap:"), width=4),
-            dbc.Col(colormap_dropdown, width=8),
+            dbc.Col(energy_parts.collapse_button, width="auto"),
+            dbc.Col(html.Span("Colormap:"), width="auto", className="ms-auto"),
+            dbc.Col(colormap_dropdown, style={"minWidth": "7rem"}),
         ],
         align="center",
-    )
-
-    _controls_row_3 = dbc.Row(
-        [
-            dbc.Col(
-                Button(
-                    delete_button_label,
-                    id=imIDs.get_id_with_index("delete"),
-                    color="secondary",
-                ),
-                width=1,
-            ),
-            dbc.Col([], width=11),
-        ],
-        class_name="g-0",
+        className="g-2 mb-2",
     )
 
     _primary_graph_div = dbc.Card(
-        dbc.CardBody(
-            [
-                html.Hr(),
-                _controls_row_1,
-                html.Hr(),
-                _controls_row_2,
-                html.Hr(),
-                dbc.Row(dbc.Col(fig_image), align="center"),
-                _controls_row_3,
-                dbc.Tooltip(
-                    "Delete bitmap image panel",
-                    target=imIDs.get_id_with_index("delete"),
-                ),
-                dbc.Tooltip(
-                    "Apply changes to energy bounds",
-                    target=imIDs.get_id_with_index("refresh"),
-                ),
-            ]
-        ),
+        [
+            header,
+            dbc.CardBody(
+                [
+                    _controls_row,
+                    energy_parts.collapse,
+                    fig_image,
+                    *energy_parts.tooltips,
+                    dbc.Tooltip(
+                        "Delete bitmap image panel",
+                        target=imIDs.get_id_with_index("delete"),
+                    ),
+                    dbc.Tooltip(
+                        "Apply changes to energy bounds",
+                        target=imIDs.get_id_with_index("refresh"),
+                    ),
+                ],
+                className="p-2",
+            ),
+        ],
         id=imIDs.get_id_with_index("div"),
-        # color="primary",
-        # inverse=True,
     )
 
     return _primary_graph_div, imIDs
