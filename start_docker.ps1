@@ -19,10 +19,13 @@ foreach ($envFile in $envFiles) {
 $compose = @("compose", "--env-file", $envFiles[0], "--env-file", $envFiles[1])
 
 if ($Mode -eq "prod") {
+    if (-not (Test-Path "proxy/Caddyfile")) {
+        Write-Error "missing proxy/Caddyfile: copy proxy/Caddyfile.example and edit"
+    }
     $compose += @("-f", "compose.yaml", "-f", "compose.prod.yaml")
     docker @compose up --build --detach
     docker @compose ps
-    Write-Host "frontend listening on 127.0.0.1:8050 (loopback only). stop: ./stop_docker.ps1 prod"
+    Write-Host "caddy listening on ports 80 and 443 for the site named in proxy/Caddyfile. stop: ./stop_docker.ps1 prod"
 } else {
     docker @compose up --build
 }

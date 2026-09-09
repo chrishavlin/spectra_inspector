@@ -2,16 +2,38 @@
 #   docker compose -f compose.yaml -f compose.prod.yaml up --detach
 # (which is what `./start_docker.sh prod` runs).
 #
-# The only host endpoint is the frontend on the loopback interface. A reverse
-# proxy on the host terminates TLS (and authentication, the app has none) and
-# forwards to http://127.0.0.1:8050. The backend is reachable only from the
-# frontend over the compose network. Both containers run as the image's
-# non-root user with the dash debugger off, and come back on their own after
-# a crash or a host reboot.
+# The only host endpoints are ports 80 and 443 of the caddy reverse proxy,
+# which obtains the Let's Encrypt certificate, restricts access (the app has
+# no authentication of its own) and forwards to the frontend over the compose
+# network. Its configuration is proxy/Caddyfile, copied from the .example next
+# to it; certificates persist in the caddy_data volume across `down`/`up`.
+# Neither app container publishes a port. Both run as the image's non-root
+# user with the dash debugger off, and every service comes back on its own
+# after a crash or a host reboot.
 services:
-  frontend:
+  caddy:
+    image: caddy:2-alpine
     ports:
-      - "127.0.0.1:8050:8050"
+      - "80:80"
+      - "443:443"
+      - "443:443/udp"
+    volumes:
+      - type: bind
+        source: ./proxy/Caddyfile
+        target: /etc/caddy/Caddyfile
+        read_only: true
+      - caddy_data:/data
+      - caddy_config:/config
+    depends_on:
+      - frontend
+    restart: unless-stopped
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+  frontend:
     restart: unless-stopped
     depends_on:
       fastapi:
@@ -44,3 +66,7 @@ services:
       options:
         max-size: "10m"
         max-file: "3"
+
+volumes:
+  caddy_data:
+  caddy_config:

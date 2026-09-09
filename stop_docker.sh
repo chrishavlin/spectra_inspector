@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
-# Stop and remove the containers started by start_docker.sh. Images and the
-# data directory are left alone.
+# Stop and remove the containers started by start_docker.sh. Images, the data
+# directory and the caddy volumes (the TLS certificate) are left alone.
 #
 #   ./stop_docker.sh          stop a development stack
 #   ./stop_docker.sh prod     stop a deployment stack

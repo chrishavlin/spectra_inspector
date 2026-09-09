@@ -167,7 +167,14 @@ On windows, you may need to go to http://127.0.0.1:8050 instead of `localhost`.
 ### Deployment mode
 
 `prod` layers `compose.prod.yaml` on `compose.yaml` instead and starts the stack
-detached:
+detached, with a [Caddy](https://caddyserver.com) reverse proxy in front:
+
+```sh
+cp proxy/Caddyfile.example proxy/Caddyfile   # then edit: email, host name, access
+./start_docker.sh prod
+```
+
+or, without the script,
 
 ```sh
 docker compose --env-file packages/spectra_inspector/.env \
@@ -175,21 +182,39 @@ docker compose --env-file packages/spectra_inspector/.env \
                -f compose.yaml -f compose.prod.yaml up --build --detach
 ```
 
-- The only host endpoint is the frontend on `127.0.0.1:8050`. The backend is not
-  published at all; the frontend reaches it over the compose network. A reverse
-  proxy on the host is expected to terminate TLS (and provide authentication,
-  the app has none) and forward to `http://127.0.0.1:8050`. Allow a proxy read
-  timeout of at least 180 s (backend operations may run for two minutes) and
-  request bodies of tens of MB (Dash callbacks upload the figure state).
+- The only host endpoints are ports 80 and 443 of the `caddy` service. Neither
+  app container publishes a port: caddy forwards to the frontend as
+  `frontend:8050` over the compose network, and the frontend reaches the backend
+  the same way. Caddy applies no response timeout and no request body limit,
+  which the frontend needs (backend operations may run for two minutes and Dash
+  callbacks upload the figure state).
+- `proxy/Caddyfile` is untracked and holds everything deployment-specific. The
+  template `proxy/Caddyfile.example` has three spots to edit: the e-mail address
+  Let's Encrypt sends expiry warnings to, the site's host name, and access
+  control. Access control is two layers, each removable on its own: an allowlist
+  of client address ranges (everything else gets `403`) and HTTP basic auth (one
+  `user hash` line per account;
+  `docker run --rm caddy:2-alpine caddy hash-password` prints a hash). An
+  `X-Robots-Tag: noindex` header and a deny-all `robots.txt` are served
+  regardless. Edits to the file take effect with `docker compose restart caddy`.
+- Caddy obtains the Let's Encrypt certificate for the host name on first start
+  and renews it on its own. This needs DNS for the host name pointing at the
+  machine and port 80 reachable from the internet, at renewal time too; the
+  challenge is answered ahead of the access rules. The certificate is stored in
+  the `caddy_data` volume, which `./stop_docker.sh prod` leaves in place, so a
+  restart does not re-issue. Let's Encrypt allows 5 certificates per week for
+  the same name, so while trying the setup out uncomment the staging `acme_ca`
+  line in the Caddyfile; its certificates are not trusted by browsers but do not
+  count against the limit.
 - The frontend is served by gunicorn (`SPECTRA_INSPECTOR_N_FRONTEND_WORKERS`
   worker processes, four threads each) rather than the flask development server
-  that `serve.py` and the development overlay use. Both containers run as the
-  image's non-root user, restart on failure and after a host reboot
-  (`restart: unless-stopped`; the docker daemon must itself be enabled at boot),
-  and cap their json log files.
+  that `serve.py` and the development overlay use. Both app containers run as
+  the image's non-root user. Every service restarts on failure and after a host
+  reboot (`restart: unless-stopped`; the docker daemon must itself be enabled at
+  boot), and caps its json log files.
 - The backend has a health check against `/info`; the frontend waits for it.
-  `docker compose ps` shows the state, `docker compose logs -f` follows both
-  services' logs.
+  `docker compose ps` shows the state, `docker compose logs -f` follows all
+  three services' logs.
 
 Set `SPECTRA_INSPECTOR_N_FASTAPI_WORKERS` in the backend `.env` to run more than
 one uvicorn worker.
