@@ -245,6 +245,21 @@ cd packages/spectra_inspector
 uv run python serve.py
 ```
 
+### Ways of serving the frontend
+
+The frontend can be started three ways, all serving the same Dash app:
+
+- `uv run python serve.py` for development. This is Flask's development server
+  with the Dash reloader (edits restart the app) and the Werkzeug debugger
+  (tracebacks shown in the browser) turned on.
+- `uv run python serve.py --debug 0` for a local install that is used rather
+  than worked on, such as a desktop-mode deployment on a lab PC. Same server,
+  reloader and debugger off. This is what `start_uv_local.bat` runs, and it is
+  the way to go on Windows.
+- gunicorn, inside the docker image only (see
+  [Deployment mode](#deployment-mode)). It does not run on Windows, so it is not
+  an option for a uv install there.
+
 ### Start both in the background (Windows)
 
 `start_uv_local.bat` starts both processes from a single Command Prompt. Each
