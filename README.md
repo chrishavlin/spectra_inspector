@@ -160,11 +160,9 @@ http://127.0.0.1:8000/docs (loopback only; the frontend does not use this port).
 ### Deployment mode
 
 `prod` layers `compose.prod.yaml` on `compose.yaml` instead and starts the stack
-detached behind a [Caddy](https://caddyserver.com) reverse proxy that terminates
-TLS and restricts access; ports 80 and 443 of caddy are the only host endpoints.
-It needs `proxy/Caddyfile`, copied from `proxy/Caddyfile.example` and edited.
-[DEPLOYMENT.md](DEPLOYMENT.md) covers the prerequisites, the certificate, and
-how to update a running deployment.
+detached behind a [Caddy](https://caddyserver.com) reverse proxy. 
+
+See [DEPLOYMENT.md](DEPLOYMENT.md) for more information.
 
 ## Running via uv
 
@@ -204,8 +202,7 @@ The frontend can be started three ways, all serving the same Dash app:
   reloader and debugger off. This is what `start_uv_local.bat` runs, and it is
   the way to go on Windows.
 - gunicorn, inside the docker image only (see
-  [Deployment mode](#deployment-mode)). It does not run on Windows, so it is not
-  an option for a uv install there.
+  [Deployment mode](#deployment-mode)). It does not run on Windows, use native uv for Windows.
 
 ### Start both in the background (Windows)
 
