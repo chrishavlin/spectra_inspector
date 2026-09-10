@@ -82,6 +82,10 @@ serves `spectra_inspector.main:server` (the Flask app) with gunicorn
 overlay's `command` swaps in `serve.py --debug 1`, the Flask development server
 with the reloader.
 
+`DEPLOYMENT.md` is the operator's document for `prod`: prerequisites, the
+Caddyfile, staging-then-production certificate issuance, and how to update a
+running deployment. Put deployment procedure there, not in the README.
+
 Note: `[tool.pytest]` in the server's `pyproject.toml` is not a table pytest
 reads (`[tool.pytest.ini_options]` is), so `testpaths`/`filterwarnings` there
 have no effect — always pass `src` explicitly.

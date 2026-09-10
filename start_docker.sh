@@ -11,7 +11,8 @@
 # Both packages' .env files must exist (README: "Initialize configuration").
 # They are passed to compose for ${...} interpolation and handed to the
 # containers, so editing one and re-running this script is enough to apply it.
-# Deployment also needs proxy/Caddyfile (copied from proxy/Caddyfile.example).
+# Deployment also needs proxy/Caddyfile (copied from proxy/Caddyfile.example);
+# see DEPLOYMENT.md.
 set -euo pipefail
 cd "$(dirname "$0")"
 
