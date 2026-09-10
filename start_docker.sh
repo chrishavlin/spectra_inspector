@@ -12,39 +12,26 @@
 # They are passed to compose for ${...} interpolation and handed to the
 # containers, so editing one and re-running this script is enough to apply it.
 # Deployment also needs proxy/Caddyfile (copied from proxy/Caddyfile.example);
-# see DEPLOYMENT.md.
+# see DEPLOYMENT.md. Any other compose command against either stack goes
+# through ./compose.sh [prod] ..., which supplies the same flags.
 set -euo pipefail
 cd "$(dirname "$0")"
 
 mode="${1:-dev}"
-frontend_env=packages/spectra_inspector/.env
-server_env=packages/spectra_inspector_server/.env
-
-for env_file in "$frontend_env" "$server_env"; do
-    if [ ! -f "$env_file" ]; then
-        echo "missing $env_file: copy the defaults.env next to it and edit" >&2
-        exit 1
-    fi
-done
-
-compose=(docker compose --env-file "$frontend_env" --env-file "$server_env")
 
 case "$mode" in
     dev)
-        "${compose[@]}" up --build
+        ./compose.sh up --build
         ;;
     prod)
         if [ ! -f proxy/Caddyfile ]; then
             echo "missing proxy/Caddyfile: copy proxy/Caddyfile.example and edit" >&2
             exit 1
         fi
-        compose+=(-f compose.yaml -f compose.prod.yaml)
-        "${compose[@]}" up --build --detach
-        "${compose[@]}" ps
+        ./compose.sh prod up --build --detach
+        ./compose.sh prod ps
         echo "caddy listening on ports 80 and 443 for the site named in proxy/Caddyfile."
-        echo "stop: ./stop_docker.sh prod"
-        echo "any other compose command needs the same flags, e.g. to follow the logs:"
-        echo "  ${compose[*]} logs -f"
+        echo "logs: ./compose.sh prod logs -f    stop: ./stop_docker.sh prod"
         ;;
     *)
         echo "usage: $0 [dev|prod]" >&2

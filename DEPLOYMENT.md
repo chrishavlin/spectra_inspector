@@ -53,21 +53,15 @@ detached:
 ## Running compose by hand
 
 `start_docker.sh` and `stop_docker.sh` pass both `.env` files and both compose
-files to `docker compose`. Every other compose command aimed at the deployment
-stack (`ps`, `logs -f`, `restart caddy`) needs those same `--env-file` and `-f`
-flags: the env files supply the `${...}` values in `compose.yaml`, and without
-them compose stops with
-`required variable SPECTRA_INSPECTOR_HOST_DATA_ROOT is missing a value`. A shell
-function saves the typing; the rest of this document assumes it:
+files to `docker compose`, and so does `compose.sh prod`, which takes any
+compose command. A bare `docker compose` lacks the `.env` files that supply the
+`${...}` values in `compose.yaml` and stops with
+`required variable SPECTRA_INSPECTOR_HOST_DATA_ROOT is missing a value`. The
+rest of this document uses the wrapper:
 
 ```sh
-compose() {
-  docker compose --env-file packages/spectra_inspector/.env \
-                 --env-file packages/spectra_inspector_server/.env \
-                 -f compose.yaml -f compose.prod.yaml "$@"
-}
-compose ps            # state of the three services
-compose logs -f caddy # or fastapi, frontend, or nothing for all three
+./compose.sh prod ps            # state of the three services
+./compose.sh prod logs -f caddy # or fastapi, frontend, or nothing for all three
 ```
 
 ## The Caddyfile
@@ -108,9 +102,9 @@ browsers do not trust but has generous limits:
 
 1. In `proxy/Caddyfile`, uncomment the `acme_ca` staging line. The basic auth
    placeholder can stay for this test.
-2. `./start_docker.sh prod`, then `compose logs -f caddy`. Within a minute you
-   want `certificate obtained successfully` with the staging issuer. Repeated
-   `challenge failed` errors mean DNS or port reachability.
+2. `./start_docker.sh prod`, then `./compose.sh prod logs -f caddy`. Within a
+   minute you want `certificate obtained successfully` with the staging issuer.
+   Repeated `challenge failed` errors mean DNS or port reachability.
 3. Open the site, click through the untrusted-issuer warning, log in as
    `spectra` / `change-me`, and check that data loads.
 4. Set the real basic auth line, comment the `acme_ca` line out again, validate,
@@ -122,7 +116,7 @@ browsers do not trust but has generous limits:
    docker volume ls | grep caddy          # spectra_inspector_caddy_data
    docker volume rm spectra_inspector_caddy_data
    ./start_docker.sh prod
-   compose logs -f caddy                  # issuer now acme-v02, not staging
+   ./compose.sh prod logs -f caddy        # issuer now acme-v02, not staging
    ```
 
 That last start is the one issuance that counts against the weekly limit.
@@ -144,7 +138,7 @@ frontend comes up behind it.
 git fetch --tags
 git checkout v0.1.0        # a release tag, or `main` and `git pull`
 ./start_docker.sh prod
-compose ps
+./compose.sh prod ps
 ```
 
 Pinning to a tag rather than `main` means a later merge does not change what the
@@ -163,13 +157,13 @@ exist and be readable first.
 ```sh
 docker run --rm -v ./proxy/Caddyfile:/etc/caddy/Caddyfile:ro caddy:2-alpine \
     caddy validate --config /etc/caddy/Caddyfile
-compose restart caddy
+./compose.sh prod restart caddy
 ```
 
 **More data.** Copy into the data root on the host, `chmod -R a+rX` it, then
-restart the backend so it rescans: `compose restart fastapi`. Alternatively set
-`SPECTRA_INSPECTOR_ALLOW_DB_REFRESH=true` and use the refresh button, at the
-cost of letting any logged-in user trigger a full rescan.
+restart the backend so it rescans: `./compose.sh prod restart fastapi`.
+Alternatively set `SPECTRA_INSPECTOR_ALLOW_DB_REFRESH=true` and use the refresh
+button, at the cost of letting any logged-in user trigger a full rescan.
 
 **Stopping.** `./stop_docker.sh prod` removes the containers and keeps the
 images, the data directory and the caddy volumes. The host reboot case needs

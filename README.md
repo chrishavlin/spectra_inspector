@@ -117,31 +117,26 @@ When serving as a desktop app:
 
 ## Running via Docker
 
-The repository includes OS-specific helper scripts that build the Docker Compose
-services and pass both `.env` files to Compose. Each takes an optional mode,
-`dev` (the default) or `prod`:
+Helper scripts build the Docker Compose services and pass both `.env` files to
+Compose. Each takes an optional mode, `dev` (the default) or `prod`:
 
-- macOS/Linux:
+```sh
+./start_docker.sh          # development
+./start_docker.sh prod     # deployment
+./stop_docker.sh [prod]    # stop and remove the containers
+```
 
-  ```sh
-  ./start_docker.sh          # development
-  ./start_docker.sh prod     # deployment
-  ./stop_docker.sh [prod]    # stop and remove the containers
-  ```
+The scripts are bash, for macOS and Linux. On Windows, run the app natively with
+uv instead ([Running via uv](#running-via-uv)).
 
-- Windows PowerShell:
+For any other compose command against a running stack, `compose.sh` supplies the
+same configuration; a bare `docker compose` cannot find the `.env` files and
+stops with `required variable ... is missing a value`:
 
-  ```powershell
-  ./start_docker.ps1 [prod]
-  ./stop_docker.ps1 [prod]
-  ```
-
-- Windows Command Prompt:
-
-  ```bat
-  start_docker.bat [prod]
-  stop_docker.bat [prod]
-  ```
+```sh
+./compose.sh ps                   # development stack
+./compose.sh prod logs -f caddy   # deployment stack
+```
 
 The `.env` files serve two purposes: Compose interpolates the `${...}`
 references in the compose files from them (the data-root bind mount), and it
@@ -161,8 +156,6 @@ are on, and `docker compose watch` syncs edits into the running containers. The
 app is available at http://localhost:8050 (published on every interface, so it
 can be checked from another device) and the API docs at
 http://127.0.0.1:8000/docs (loopback only; the frontend does not use this port).
-
-On windows, you may need to go to http://127.0.0.1:8050 instead of `localhost`.
 
 ### Deployment mode
 

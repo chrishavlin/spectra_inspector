@@ -8,21 +8,13 @@ set -euo pipefail
 cd "$(dirname "$0")"
 
 mode="${1:-dev}"
-compose=(
-    docker compose
-    --env-file packages/spectra_inspector/.env
-    --env-file packages/spectra_inspector_server/.env
-)
 
 case "$mode" in
-    dev) ;;
-    prod)
-        compose+=(-f compose.yaml -f compose.prod.yaml)
+    dev | prod)
+        ./compose.sh "$mode" down
         ;;
     *)
         echo "usage: $0 [dev|prod]" >&2
         exit 2
         ;;
 esac
-
-"${compose[@]}" down
