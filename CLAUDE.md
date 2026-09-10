@@ -152,6 +152,9 @@ package-specific detail there rather than in this file.
 
 ## Commit messages
 
+Keep them concise and terse: a short subject line, and at most two or three
+lines of body when the subject is not enough. No exhaustive rationale.
+
 Do **not** add `Co-Authored-By: Claude ...` (or any other AI co-authorship or
 "generated with" trailer) to commit messages, and do not add them to pull
 request bodies either. Commits are authored by the human running the tool. This
