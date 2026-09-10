@@ -182,6 +182,22 @@ docker compose --env-file packages/spectra_inspector/.env \
                -f compose.yaml -f compose.prod.yaml up --build --detach
 ```
 
+Every other `docker compose` command aimed at the deployment stack (`ps`,
+`logs -f`, `restart caddy`) needs those same `--env-file` and `-f` flags: the
+env files supply the `${...}` values in `compose.yaml`, and without them compose
+stops with
+`required variable SPECTRA_INSPECTOR_HOST_DATA_ROOT is missing a value`. A shell
+function saves the typing:
+
+```sh
+compose() {
+  docker compose --env-file packages/spectra_inspector/.env \
+                 --env-file packages/spectra_inspector_server/.env \
+                 -f compose.yaml -f compose.prod.yaml "$@"
+}
+compose logs -f caddy
+```
+
 - The only host endpoints are ports 80 and 443 of the `caddy` service. Neither
   app container publishes a port: caddy forwards to the frontend as
   `frontend:8050` over the compose network, and the frontend reaches the backend
@@ -194,9 +210,10 @@ docker compose --env-file packages/spectra_inspector/.env \
   control. Access control is two layers, each removable on its own: an allowlist
   of client address ranges (everything else gets `403`) and HTTP basic auth (one
   `user hash` line per account;
-  `docker run --rm caddy:2-alpine caddy hash-password` prints a hash). An
-  `X-Robots-Tag: noindex` header and a deny-all `robots.txt` are served
-  regardless. Edits to the file take effect with `docker compose restart caddy`.
+  `docker run --rm -it caddy:2-alpine caddy hash-password` prompts for a
+  password and prints its hash). An `X-Robots-Tag: noindex` header and a
+  deny-all `robots.txt` are served regardless. Edits to the file take effect
+  with `compose restart caddy` (the function above).
 - Caddy obtains the Let's Encrypt certificate for the host name on first start
   and renews it on its own. This needs DNS for the host name pointing at the
   machine and port 80 reachable from the internet, at renewal time too; the
@@ -213,8 +230,8 @@ docker compose --env-file packages/spectra_inspector/.env \
   reboot (`restart: unless-stopped`; the docker daemon must itself be enabled at
   boot), and caps its json log files.
 - The backend has a health check against `/info`; the frontend waits for it.
-  `docker compose ps` shows the state, `docker compose logs -f` follows all
-  three services' logs.
+  `compose ps` shows the state, `compose logs -f` follows all three services'
+  logs.
 
 Set `SPECTRA_INSPECTOR_N_FASTAPI_WORKERS` in the backend `.env` to run more than
 one uvicorn worker.

@@ -41,7 +41,9 @@ case "$mode" in
         "${compose[@]}" up --build --detach
         "${compose[@]}" ps
         echo "caddy listening on ports 80 and 443 for the site named in proxy/Caddyfile."
-        echo "logs: docker compose logs -f    stop: ./stop_docker.sh prod"
+        echo "stop: ./stop_docker.sh prod"
+        echo "any other compose command needs the same flags, e.g. to follow the logs:"
+        echo "  ${compose[*]} logs -f"
         ;;
     *)
         echo "usage: $0 [dev|prod]" >&2

@@ -27,6 +27,12 @@ spectra-inspector.example.edu {
 	# Tell well-behaved crawlers not to index anything, whatever the status.
 	header X-Robots-Tag "noindex, nofollow"
 
+	# Uncomment to log every request (as JSON, to the container log). Useful
+	# to check the `remote_ip` the allowlist below is matched against.
+	# log {
+	# 	output stdout
+	# }
+
 	handle /robots.txt {
 		respond <<TXT
 			User-agent: *
@@ -46,8 +52,10 @@ spectra-inspector.example.edu {
 	handle {
 		# 3b. Login. The browser asks for a username and password before any
 		#     page loads. One `user hash` line per account; make a hash with
-		#       docker run --rm caddy:2-alpine caddy hash-password
-		#     The placeholder below is the hash of "change-me".
+		#       docker run --rm -it caddy:2-alpine caddy hash-password
+		#     (it prompts for the password, so it needs the terminal; without
+		#     `-it` it exits with `Error: EOF`). The placeholder below is the
+		#     hash of "change-me".
 		basic_auth {
 			spectra $2a$14$Hr7OgO9MnAOV7Zh5VUBTQuIM03EQEKm2h8Rt8gxVQCfGeOtoaWhH6
 		}
