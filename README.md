@@ -34,6 +34,9 @@ need. Every frontend setting is read with a `SPECTRA_INSPECTOR_` prefix
   picker on the data selection and inspector pages. Defaults to `false`. The
   backend must be started with `SPECTRA_INSPECTOR_DESKTOP_MODE=true` as well;
   see [Configuration for local deployment](#configuration-for-local-deployment).
+- `SPECTRA_INSPECTOR_N_FRONTEND_WORKERS`: number of gunicorn worker processes
+  the docker image starts. Defaults to `2`. Only used by the docker deployment;
+  `serve.py` runs the flask development server instead.
 
 These names gained the `SPECTRA_INSPECTOR_` prefix in a later release; an
 existing `.env` still using the unprefixed spellings (`WRITE_DIR`,
@@ -78,10 +81,6 @@ setting is read with a `SPECTRA_INSPECTOR_` prefix:
   values are `DEBUG`, `INFO`, `WARNING`, `ERROR`, and `CRITICAL`; the default is
   `INFO`.
 
-`APP_NAME` gained the `SPECTRA_INSPECTOR_` prefix along with the frontend keys;
-the other backend names are unchanged. An existing `.env` still using an
-unprefixed spelling raises a startup error naming the key to rename.
-
 ### Configuration for local deployment
 
 When serving as a desktop app:
@@ -102,46 +101,54 @@ When serving as a desktop app:
   symlinks), and both return `403` when desktop mode is off, so the data root is
   still the boundary of what a client can reach.
 
-  Until a directory is picked, the backend reports no available datasets. The
-  scan replaces the previous working set, so the sample dropdown, the sample map
-  and the loadable sample names always describe the selected directory alone.
-  "Include subdirectories" controls whether the scan recurses; leave it on
-  unless a single directory holds everything you need.
-
-  Both packages read the setting independently: with it on in the frontend only,
-  the picker appears but every request it makes is refused; with it on in the
-  backend only, nothing scans and no picker is offered to select a directory.
-
 ## Running via Docker
 
-The repository includes OS-specific helper scripts that build the Docker Compose
-services and pass both `.env` files to Compose.
+Helper scripts build the Docker Compose services and pass both `.env` files to
+Compose. Each takes an optional mode, `dev` (the default) or `prod`:
 
-- macOS/Linux:
+```sh
+./start_docker.sh          # development
+./start_docker.sh prod     # deployment
+./stop_docker.sh [prod]    # stop and remove the containers
+```
 
-  ```sh
-  ./start_docker.sh
-  ```
+The scripts are bash, for macOS and Linux. On Windows, run the app natively with
+uv instead ([Running via uv](#running-via-uv)).
 
-- Windows PowerShell:
+For any other compose command against a running stack, `compose.sh` supplies the
+same configuration; a bare `docker compose` cannot find the `.env` files and
+stops with `required variable ... is missing a value`:
 
-  ```powershell
-  ./start_docker.ps1
-  ```
+```sh
+./compose.sh ps                   # development stack
+./compose.sh prod logs -f caddy   # deployment stack
+```
 
-- Windows Command Prompt:
+The `.env` files serve two purposes: Compose interpolates the `${...}`
+references in the compose files from them (the data-root bind mount), and it
+hands them to the containers as environment. They are not baked into the images,
+so a configuration change only needs the stack restarted, not rebuilt. Inside
+docker the frontend always reaches the backend by its service name over the
+compose network, so `SPECTRA_INSPECTOR_SERVER_HOST`/`_PORT` and
+`SPECTRA_INSPECTOR_WRITE_DIR` from the frontend `.env` are overridden. The data
+root is mounted read-only.
 
-  ```bat
-  start_docker.bat
-  ```
+### Development mode
 
-These scripts run `docker compose` with both environment files so the frontend
-and backend pick up the correct configuration. After startup, the app should be
-available at http://localhost:8050 and the API docs at
-http://localhost:8000/docs.
+`compose.yaml` holds the service definitions and `compose.override.yaml`, which
+`docker compose` loads automatically, adds the development settings: the
+containers run as root with the dev dependencies, the Dash debugger and reloader
+are on, and `docker compose watch` syncs edits into the running containers. The
+app is available at http://localhost:8050 (published on every interface, so it
+can be checked from another device) and the API docs at
+http://127.0.0.1:8000/docs (loopback only; the frontend does not use this port).
 
-On windows, you may need to go to http://127.0.0.1:8050 and
-http://127.0.0.1:8000/docs .
+### Deployment mode
+
+`prod` layers `compose.prod.yaml` on `compose.yaml` instead and starts the stack
+detached behind a [Caddy](https://caddyserver.com) reverse proxy.
+
+See [DEPLOYMENT.md](DEPLOYMENT.md) for more information.
 
 ## Running via uv
 
@@ -168,6 +175,21 @@ Terminal 2:
 cd packages/spectra_inspector
 uv run python serve.py
 ```
+
+### Ways of serving the frontend
+
+The frontend can be started three ways, all serving the same Dash app:
+
+- `uv run python serve.py` for development. This is Flask's development server
+  with the Dash reloader (edits restart the app) and the Werkzeug debugger
+  (tracebacks shown in the browser) turned on.
+- `uv run python serve.py --debug 0` for a local install that is used rather
+  than worked on, such as a desktop-mode deployment on a lab PC. Same server,
+  reloader and debugger off. This is what `start_uv_local.bat` runs, and it is
+  the way to go on Windows.
+- gunicorn, inside the docker image only (see
+  [Deployment mode](#deployment-mode)). It does not run on Windows, use native
+  uv for Windows.
 
 ### Start both in the background (Windows)
 

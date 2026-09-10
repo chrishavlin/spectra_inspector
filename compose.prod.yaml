@@ -1,0 +1,72 @@
+# Deployment overlay, used as
+#   docker compose -f compose.yaml -f compose.prod.yaml up --detach
+# (which is what `./start_docker.sh prod` runs).
+#
+# The only host endpoints are ports 80 and 443 of the caddy reverse proxy,
+# which obtains the Let's Encrypt certificate, restricts access (the app has
+# no authentication of its own) and forwards to the frontend over the compose
+# network. Its configuration is proxy/Caddyfile, copied from the .example next
+# to it; certificates persist in the caddy_data volume across `down`/`up`.
+# Neither app container publishes a port. Both run as the image's non-root
+# user with the dash debugger off, and every service comes back on its own
+# after a crash or a host reboot.
+services:
+  caddy:
+    image: caddy:2-alpine
+    ports:
+      - "80:80"
+      - "443:443"
+      - "443:443/udp"
+    volumes:
+      - type: bind
+        source: ./proxy/Caddyfile
+        target: /etc/caddy/Caddyfile
+        read_only: true
+      - caddy_data:/data
+      - caddy_config:/config
+    depends_on:
+      - frontend
+    restart: unless-stopped
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+  frontend:
+    restart: unless-stopped
+    depends_on:
+      fastapi:
+        condition: service_healthy
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+  fastapi:
+    restart: unless-stopped
+    healthcheck:
+      # /info answers inline, without the processing queue
+      test:
+        [
+          "CMD",
+          "python",
+          "-c",
+          "import urllib.request;
+          urllib.request.urlopen('http://127.0.0.1:8000/info', timeout=5)",
+        ]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      # the startup scan of the data root can take a while on a large tree
+      start_period: 120s
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+volumes:
+  caddy_data:
+  caddy_config:

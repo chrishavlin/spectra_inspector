@@ -51,11 +51,10 @@ ENV SPECTRA_INSPECTOR_N_FASTAPI_WORKERS=1
 # Use the non-root user to run our application
 USER nonroot
 
-# Run the FastAPI application by default
-# Uses `uv run` to sync dependencies on startup, respecting UV_NO_DEV
-# Uses `fastapi dev` to enable hot-reloading when the `watch` sync occurs
-# Uses `--host 0.0.0.0` to allow access from outside the container
-# Note in production, you should use `fastapi run` instead
-RUN ls
-# `sh -c` so the worker count is expanded at container start
-CMD ["sh", "-c", "uv run fastapi run --workers ${SPECTRA_INSPECTOR_N_FASTAPI_WORKERS} --host 0.0.0.0 src/spectra_inspector_server/main.py"]
+# Run the FastAPI application by default. The venv's bin is on PATH, so call
+# `fastapi` directly rather than through `uv run`: `uv run` re-syncs the
+# environment on every start, which fails as the non-root user because the venv
+# is owned by root. `--host 0.0.0.0` allows access from outside the container.
+# `sh -c` so the worker count is expanded at container start; `exec` so the
+# server is PID 1 and receives compose's stop signal.
+CMD ["sh", "-c", "exec fastapi run --workers ${SPECTRA_INSPECTOR_N_FASTAPI_WORKERS} --host 0.0.0.0 src/spectra_inspector_server/main.py"]

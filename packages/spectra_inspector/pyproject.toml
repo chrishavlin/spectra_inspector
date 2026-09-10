@@ -10,6 +10,7 @@ dependencies = [
   "dash-bootstrap-components>=2.0.4",
   "dash-bootstrap-templates>=2.1.0",
   "fpdf2>=2.8.7",
+  "gunicorn>=26.2.0",
   "kaleido>=1.2.0",
   "matplotlib>=3.11.0",
   "pandas>=3.0.1",

@@ -1,0 +1,67 @@
+# Reverse proxy for the deployment stack (compose.prod.yaml). Copy this file
+# to proxy/Caddyfile (untracked) and edit the three numbered spots below.
+#
+# Caddy obtains the Let's Encrypt certificate for the site address on first
+# start and renews it in the background. It uses the HTTP-01 challenge, so
+# port 80 must be reachable from the internet, for renewals as well as for the
+# first issuance. The challenge is answered before any of the rules below run,
+# so the access restrictions do not interfere with it. Certificates live in the
+# caddy_data volume, which survives `docker compose down`; deleting it forces a
+# re-issue and counts against Let's Encrypt's rate limit (5 per week).
+#
+# Format check after editing:
+#   docker run --rm -v ./proxy/Caddyfile:/etc/caddy/Caddyfile:ro caddy:2-alpine \
+#       caddy validate --config /etc/caddy/Caddyfile
+{
+	# 1. Address for certificate expiry warnings.
+	email you@example.edu
+
+	# While trying the setup out, uncomment this to use the staging CA: it
+	# issues certificates browsers do not trust but has generous rate limits.
+	# Comment it out again and remove the caddy_data volume before going live.
+	# acme_ca https://acme-staging-v02.api.letsencrypt.org/directory
+}
+
+# 2. The host name IT assigned to the machine.
+spectra-inspector.example.edu {
+	# Tell well-behaved crawlers not to index anything, whatever the status.
+	header X-Robots-Tag "noindex, nofollow"
+
+	# Uncomment to log every request (as JSON, to the container log). Useful
+	# to check the `remote_ip` the allowlist below is matched against.
+	# log {
+	# 	output stdout
+	# }
+
+	handle /robots.txt {
+		respond <<TXT
+			User-agent: *
+			Disallow: /
+			TXT
+	}
+
+	# 3a. On-campus only: anything not from these address ranges gets 403
+	#     before reaching the app. Ask IT for the authoritative campus and VPN
+	#     ranges; remove this block (or the `not`) to open up to everyone.
+	#     The two ranges below are documentation placeholders (RFC 5737).
+	@offcampus not remote_ip 203.0.113.0/24 198.51.100.0/24
+	handle @offcampus {
+		respond 403
+	}
+
+	handle {
+		# 3b. Login. The browser asks for a username and password before any
+		#     page loads. One `user hash` line per account; make a hash with
+		#       docker run --rm -it caddy:2-alpine caddy hash-password
+		#     (it prompts for the password, so it needs the terminal; without
+		#     `-it` it exits with `Error: EOF`). The placeholder below is the
+		#     hash of "change-me".
+		basic_auth {
+			spectra $2a$14$Hr7OgO9MnAOV7Zh5VUBTQuIM03EQEKm2h8Rt8gxVQCfGeOtoaWhH6
+		}
+
+		# No response timeout and no body size limit by default, which the
+		# frontend needs (callbacks can run for minutes and post tens of MB).
+		reverse_proxy frontend:8050
+	}
+}

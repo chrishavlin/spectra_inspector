@@ -169,10 +169,12 @@ uv run ty check
 
 ### Deployment
 
-To build and run (and load env vars from `.env`)
+To build and run with docker compose (loading env vars from both packages'
+`.env` files), from the repository root:
 
 ```
-$ ./compose_build_and_up.sh
+$ ./start_docker.sh          # development
+$ ./start_docker.sh prod     # deployment, see the root README
 ```
 
 Env vars:

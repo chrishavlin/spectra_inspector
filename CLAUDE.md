@@ -63,8 +63,32 @@ cd packages/spectra_inspector_server && uv run fastapi run src/spectra_inspector
 cd packages/spectra_inspector           && uv run python serve.py                                # :8050
 ```
 
-Docker: `./start_docker.sh` (or `.ps1`/`.bat`) wraps `docker compose` and passes
-both packages' `.env` files.
+Docker: `./start_docker.sh [dev|prod]` (`stop_docker.sh` tears down) wraps
+`docker compose` and passes both packages' `.env` files, which compose both
+interpolates (`${...}` in the compose files) and hands to the containers via
+`env_file` -- the images carry no configuration (`.dockerignore` excludes
+`.env`). `./compose.sh [prod] <args>` runs any other compose command with the
+same flags, and the start/stop scripts call it; a bare `docker compose` fails
+interpolation. All three are bash only; Windows users run the app natively with
+uv (the README's `start_uv_local.bat`). `compose.yaml` is the shared base with
+no published ports; `compose.override.yaml` (auto-loaded, dev) adds root user,
+dev deps, the Dash debugger, watch sync, and publishes 8050 on all interfaces
+plus 8000 on loopback; `compose.prod.yaml` adds a `caddy` reverse-proxy service
+that is the only thing published (80/443; Let's Encrypt, campus IP allowlist and
+basic auth all live in `proxy/Caddyfile`, untracked, copied from
+`proxy/Caddyfile.example`) plus restart policies, a `/info` health check and log
+rotation. The frontend reaches the backend by service name
+(`SPECTRA_INSPECTOR_SERVER_HOST=fastapi` set in `compose.yaml`), so the backend
+never needs a host port, and caddy reaches the frontend the same way
+(`frontend:8050`). The frontend Dockerfile's `CMD` serves
+`spectra_inspector.main:server` (the Flask app) with gunicorn
+(`SPECTRA_INSPECTOR_N_FRONTEND_WORKERS` gthread workers, 180 s timeout); the dev
+overlay's `command` swaps in `serve.py --debug 1`, the Flask development server
+with the reloader.
+
+`DEPLOYMENT.md` is the operator's document for `prod`: prerequisites, the
+Caddyfile, staging-then-production certificate issuance, and how to update a
+running deployment. Put deployment procedure there, not in the README.
 
 Note: `[tool.pytest]` in the server's `pyproject.toml` is not a table pytest
 reads (`[tool.pytest.ini_options]` is), so `testpaths`/`filterwarnings` there
@@ -127,6 +151,9 @@ package-specific detail there rather than in this file.
   `.pre-commit-config.yaml` for the exact spellings it bans.
 
 ## Commit messages
+
+Keep them concise and terse: a short subject line, and at most two or three
+lines of body when the subject is not enough. No exhaustive rationale.
 
 Do **not** add `Co-Authored-By: Claude ...` (or any other AI co-authorship or
 "generated with" trailer) to commit messages, and do not add them to pull
