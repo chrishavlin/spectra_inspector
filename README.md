@@ -81,10 +81,6 @@ setting is read with a `SPECTRA_INSPECTOR_` prefix:
   values are `DEBUG`, `INFO`, `WARNING`, `ERROR`, and `CRITICAL`; the default is
   `INFO`.
 
-`APP_NAME` gained the `SPECTRA_INSPECTOR_` prefix along with the frontend keys;
-the other backend names are unchanged. An existing `.env` still using an
-unprefixed spelling raises a startup error naming the key to rename.
-
 ### Configuration for local deployment
 
 When serving as a desktop app:
@@ -104,16 +100,6 @@ When serving as a desktop app:
   path that resolves outside of `SPECTRA_INSPECTOR_DATA_ROOT` (including via
   symlinks), and both return `403` when desktop mode is off, so the data root is
   still the boundary of what a client can reach.
-
-  Until a directory is picked, the backend reports no available datasets. The
-  scan replaces the previous working set, so the sample dropdown, the sample map
-  and the loadable sample names always describe the selected directory alone.
-  "Include subdirectories" controls whether the scan recurses; leave it on
-  unless a single directory holds everything you need.
-
-  Both packages read the setting independently: with it on in the frontend only,
-  the picker appears but every request it makes is refused; with it on in the
-  backend only, nothing scans and no picker is offered to select a directory.
 
 ## Running via Docker
 
@@ -160,7 +146,7 @@ http://127.0.0.1:8000/docs (loopback only; the frontend does not use this port).
 ### Deployment mode
 
 `prod` layers `compose.prod.yaml` on `compose.yaml` instead and starts the stack
-detached behind a [Caddy](https://caddyserver.com) reverse proxy. 
+detached behind a [Caddy](https://caddyserver.com) reverse proxy.
 
 See [DEPLOYMENT.md](DEPLOYMENT.md) for more information.
 
@@ -202,7 +188,8 @@ The frontend can be started three ways, all serving the same Dash app:
   reloader and debugger off. This is what `start_uv_local.bat` runs, and it is
   the way to go on Windows.
 - gunicorn, inside the docker image only (see
-  [Deployment mode](#deployment-mode)). It does not run on Windows, use native uv for Windows.
+  [Deployment mode](#deployment-mode)). It does not run on Windows, use native
+  uv for Windows.
 
 ### Start both in the background (Windows)
 
