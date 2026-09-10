@@ -55,5 +55,9 @@ USER nonroot
 # backend over HTTP, so threads per worker cover the browser's parallel image
 # fetches; the timeout outlasts the backend's two minute operation limit.
 # compose.override.yaml replaces this with the flask development server for
-# development. `sh -c` so the worker count is expanded at container start.
-CMD ["sh", "-c", "uv run gunicorn --workers ${SPECTRA_INSPECTOR_N_FRONTEND_WORKERS} --threads 4 --worker-class gthread --timeout 180 --bind 0.0.0.0:8050 --access-logfile - spectra_inspector.main:server"]
+# development. The venv's bin is on PATH, so call `gunicorn` directly rather
+# than through `uv run`, which re-syncs the environment on every start and
+# fails as the non-root user because the venv is owned by root. `sh -c` so the
+# worker count is expanded at container start; `exec` so gunicorn is PID 1 and
+# receives compose's stop signal.
+CMD ["sh", "-c", "exec gunicorn --workers ${SPECTRA_INSPECTOR_N_FRONTEND_WORKERS} --threads 4 --worker-class gthread --timeout 180 --bind 0.0.0.0:8050 --access-logfile - spectra_inspector.main:server"]
