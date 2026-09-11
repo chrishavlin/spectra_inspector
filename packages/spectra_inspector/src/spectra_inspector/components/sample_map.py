@@ -245,6 +245,48 @@ def _validate_sample_name(sample_id: str | None):
     return sample_id.split(" ")[0]
 
 
+def sample_id_from_click_data(click_data: dict | None) -> str | None:
+    """The sample id of the point in a `dcc.Graph` `clickData` payload."""
+    if not click_data:
+        return None
+    points = click_data.get("points") or []
+    if not points:
+        return None
+    custom = points[0].get("customdata")
+    if custom is None:
+        return None
+    return _sample_id_from_customdata(custom)
+
+
+def dataset_for_sample(
+    sample_id: str | None, options: list[dict] | None, current_value: str | None
+) -> str | None:
+    """The dropdown value to select for a sample clicked on the map.
+
+    A sample can carry several datasets ("C-29 Map 1", "C-29 Map 2") while
+    the map shows only the sample id ("C-29"). The current selection wins when
+    it already belongs to the sample; otherwise the first matching option in
+    dropdown order. None when nothing matches.
+    """
+    if sample_id is None:
+        return None
+    values = [
+        opt.get("value") if isinstance(opt, dict) else opt for opt in options or []
+    ]
+    matches = [
+        v
+        for v in values
+        if isinstance(v, str)
+        and v != "none"
+        and _validate_sample_name(v) == str(sample_id)
+    ]
+    if not matches:
+        return None
+    if current_value in matches:
+        return current_value
+    return matches[0]
+
+
 def highlight_selected_point_in_figure(
     figure: dict | go.Figure, sample_id: str | None, metadata: dict | None = None
 ):
