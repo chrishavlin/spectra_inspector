@@ -1,6 +1,6 @@
 import dash
 import dash_bootstrap_components as dbc
-from dash import Input, Output, State, callback, ctx, html, no_update
+from dash import Input, Output, State, callback, ctx, html, no_update, set_props
 
 from spectra_inspector.components import (
     dataset_selector,
@@ -251,3 +251,33 @@ def update_map_figure(
 
     current_figure.setdefault("layout", {}).setdefault("map", {})["style"] = valid_style
     return current_figure
+
+
+@callback(
+    Output(selectorIDs.get_id_with_index("dropdown"), "value", allow_duplicate=True),
+    Input({"type": _basemapIDs.samplemap, "index": 0}, "clickData"),
+    State(selectorIDs.get_id_with_index("dropdown"), "options"),
+    State(selectorIDs.get_id_with_index("dropdown"), "value"),
+    prevent_initial_call=True,
+)
+def select_dataset_from_map_click(
+    click_data: dict | None, options: list[dict] | None, current_value: str | None
+):
+    """Clicking a sample on the map picks it in the dataset dropdown.
+
+    The dropdown value is an input of `update_selected_dataset`, which then
+    writes the user store and, through it, highlights the point. Dash only
+    fires on a changed prop and clicking the same point twice yields the same
+    `clickData`, so it is cleared once read (a side update, which does not
+    re-trigger anything) and the next click on that point fires again.
+    """
+    if not click_data:
+        return no_update
+
+    set_props({"type": _basemapIDs.samplemap, "index": 0}, {"clickData": None})
+
+    sample_id = sample_map.sample_id_from_click_data(click_data)
+    new_value = sample_map.dataset_for_sample(sample_id, options, current_value)
+    if new_value is None or new_value == current_value:
+        return no_update
+    return new_value
