@@ -135,6 +135,17 @@ Several Dash/plotly behaviours here are not visible from the python side:
   several entries); a real click or dropdown pick reports one.
 - The per-panel `dcc.Loading` uses `delay_show` so quick layout patches never
   raise its overlay, which blocks the mouse while visible.
+- A colormap pick is answered by `recolor_image` alone. px.imshow keeps the
+  scale on `layout.coloraxis.colorscale`, so `bitmap_image.colorscale_patch`
+  sends the named scale's colour list as a layout `Patch` and the image data
+  never leaves the browser. The dropdowns are `State`s of `update_graph_figure`
+  (new and refreshed panels still need them), not inputs: every `State` is
+  uploaded whichever input fired, and that callback reads the full figures.
+- `add_or_delete_image` never declares the container's children as a `State`.
+  dash-renderer serves `State`s from its layout store, so that value carries
+  every panel's current figure, image included. Adding appends to a `Patch`,
+  deleting `del`s by index on one, with the position taken from
+  `graph-id-store`.
 - Dash fires a callback only when a prop's value actually changes, and plotly
   reports every double click as the same `{"xaxis.autorange": true, ...}` (a
   re-picked tool likewise). `sync_image_views` therefore clears the triggering

@@ -4,8 +4,9 @@ import dash_bootstrap_components as dbc
 import numpy as np
 import numpy.typing as npt
 import plotly.express as px
-from dash import dcc, html
+from dash import Patch, dcc, html
 from dash_bootstrap_components import Button
+from plotly.colors import get_colorscale
 
 from spectra_inspector.components.energy_range_slider import (
     build_element_dropdown_and_slider,
@@ -293,3 +294,14 @@ def get_new_im(
         scalebar_handler.add_to_or_update_figure(fig, md)
 
     return fig
+
+
+def colorscale_patch(color_scale: str) -> Patch:
+    """A figure patch swapping the colormap of an image built by ``get_new_im``.
+
+    px.imshow puts the scale on the layout's ``coloraxis``, so a layout patch is
+    all it takes and the image data never leaves the browser.
+    """
+    patch = Patch()
+    patch["layout"]["coloraxis"]["colorscale"] = get_colorscale(color_scale)
+    return patch
