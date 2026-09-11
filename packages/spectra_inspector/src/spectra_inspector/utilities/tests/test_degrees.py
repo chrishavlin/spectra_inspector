@@ -12,6 +12,30 @@ def test_decimal_degrees_roundtrip(dec_deg: float) -> None:
     )
 
 
+@pytest.mark.parametrize(
+    ("dec_deg", "cardinal_str", "expected"),
+    [
+        (-50.9, "N", "-50\N{DEGREE SIGN}54'00.0\"N"),
+        (50.9, "N", "50\N{DEGREE SIGN}54'00.0\"N"),
+        (50.9, "S", "50\N{DEGREE SIGN}54'00.0\"S"),
+        (-72.9, "E", "-72\N{DEGREE SIGN}54'00.0\"E"),
+    ],
+)
+def test_to_str_rolls_over_seconds(
+    dec_deg: float, cardinal_str: str, expected: str
+) -> None:
+    cls = deg.Latitude if cardinal_str in ("N", "S") else deg.Longitude
+    assert cls(dec_deg, cardinal_str).to_str() == expected
+
+
+def test_to_str_rolls_over_minutes() -> None:
+    assert deg.DegreesMinsSecs(50, 59, 59.999).to_str() == "51\N{DEGREE SIGN}00'00.0\""
+    assert (
+        deg.DegreesMinsSecs(-50, 59, 59.999).to_str() == "-51\N{DEGREE SIGN}00'00.0\""
+    )
+    assert deg.DegreesMinsSecs(50, 58, 59.999).to_str() == "50\N{DEGREE SIGN}59'00.0\""
+
+
 def test_bad_cases() -> None:
 
     with pytest.raises(
