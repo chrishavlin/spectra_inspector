@@ -29,10 +29,22 @@ class DegreesMinsSecs:
 
     def to_str(self) -> str:
         # looks like: 50°56'07.2"S or 72°59'40.9"W
-        s = np.round(self.sec, self.sec_precision)
+        degs, mins, sec = self._rounded_components()
         card = self.cardinal_str or ""
-        s_str = str(s).zfill(4)
-        return f"{self.degs}\N{DEGREE SIGN}{str(self.mins).zfill(2)}'{s_str}\"{card}"
+        s_str = str(sec).zfill(4)
+        return f"{degs}\N{DEGREE SIGN}{str(mins).zfill(2)}'{s_str}\"{card}"
+
+    def _rounded_components(self) -> tuple[int, int, float]:
+        """Round seconds for display, carrying 60 s into minutes and 60 min into degrees."""
+        degs, mins = self.degs, self.mins
+        sec = float(np.round(self.sec, self.sec_precision))
+        if sec >= 60:
+            sec -= 60
+            mins += 1
+        if mins >= 60:
+            mins -= 60
+            degs += 1 if degs >= 0 else -1
+        return degs, mins, sec
 
     @staticmethod
     def from_decimal(
