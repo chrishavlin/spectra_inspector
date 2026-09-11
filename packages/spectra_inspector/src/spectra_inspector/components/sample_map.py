@@ -1,13 +1,13 @@
 from dataclasses import dataclass
 
 import dash_bootstrap_components as dbc
+import numpy as np
 import pandas as pd
 import plotly.express as px
 import plotly.graph_objects as go
 from dash import dcc
 
 from spectra_inspector.components.layout_ids import indexedLayoutIDMapper
-from spectra_inspector.logging import spectraLogger
 from spectra_inspector.utilities.degrees import Latitude, Longitude
 from spectra_inspector.utilities.model import AvailableDatasets
 
@@ -91,6 +91,20 @@ class sampleMapLayoutIDs(indexedLayoutIDMapper):
         return self.full_id("-dropdown")
 
 
+def _default_center(df: pd.DataFrame | None) -> dict[str, float]:
+    """Mean of the finite lat/lon values, falling back to the mapSettings default."""
+    ms = mapSettings()
+    center = {"lat": ms.center_lat, "lon": ms.center_lon}
+    if df is None:
+        return center
+    for key in ("lat", "lon"):
+        if key in df:
+            mean_val = pd.to_numeric(df[key], errors="coerce").mean()
+            if pd.notna(mean_val):
+                center[key] = float(mean_val)
+    return center
+
+
 def get_map(
     map_style: str, available_data: AvailableDatasets | None = None
 ) -> go.Figure:
@@ -109,8 +123,8 @@ def get_map(
                 "group_name": "0",
             },
         ]
-
         df = pd.DataFrame(recs)
+        center = _default_center(None)
         hd_cols = ["group_name", "lat", "lon", "elevation"]
 
     else:
@@ -146,6 +160,8 @@ def get_map(
             "elevation": True,
             "marker_size": False,
         }
+
+        center = _default_center(df)
 
     # https://plotly.github.io/plotly.py-docs/generated/plotly.express.scatter_map.html
     fig = px.scatter_map(
@@ -184,10 +200,7 @@ def get_map(
 
     map_dict = {
         "bearing": 0,
-        "center": go.layout.map.Center(
-            lat=ms.center_lat,
-            lon=ms.center_lon,
-        ),
+        "center": go.layout.map.Center(**center),
         "pitch": 0,
         "zoom": ms.init_zoom_level,
     }
@@ -199,21 +212,30 @@ def get_map(
         map=map_dict,
     )
 
-    # attach `customdata` with sample ids to each trace so callbacks can
-    # identify points across traces (Plotly/px may create multiple traces
-    # when coloring by group).
-    sample_ids = df["sample_id"].astype(str).tolist()
+    # px stores the hover_data columns in `customdata` and references them
+    # from `hovertemplate` by index, so the sample ids are appended as an
+    # extra trailing column rather than replacing the array.
+    sample_ids = df["sample_id"].astype(str).to_numpy(dtype=object)
 
     for trace in fig.data:
-        # determine number of points in this trace (scattermapbox traces
-        # expose `lat`/`lon` arrays)
-        if "lat" in trace:
-            n_pts = len(trace["lat"])
+        n_pts = len(trace.lat) if trace.lat is not None else 0
+        ids = sample_ids[:n_pts, np.newaxis]
+        if trace.customdata is None:
+            trace.customdata = ids
         else:
-            n_pts = 0
-        trace["customdata"] = sample_ids[:n_pts]
+            existing = np.asarray(trace.customdata, dtype=object)
+            trace.customdata = np.column_stack([existing, ids])
 
     return fig
+
+
+def _sample_id_from_customdata(point_data) -> str | None:
+    """Return the sample id stored as the last `customdata` column for a point."""
+    if isinstance(point_data, (list, tuple, np.ndarray)):
+        if len(point_data) == 0:
+            return None
+        return str(point_data[-1])
+    return str(point_data)
 
 
 def _validate_sample_name(sample_id: str | None):
@@ -224,13 +246,15 @@ def _validate_sample_name(sample_id: str | None):
 
 
 def highlight_selected_point_in_figure(
-    figure: dict | go.Figure, sample_id: str | None, metadata: list[dict] | None = None
+    figure: dict | go.Figure, sample_id: str | None, metadata: dict | None = None
 ):
     """Return a modified figure with the point matching `sample_id` selected.
 
-    The function looks for traces that include `customdata` (set to sample ids)
-    and sets `trace['selectedpoints']` to the index of the matching point.
-    If no match is found, any existing `selectedpoints` entries are cleared.
+    The function looks for traces that include `customdata` (whose last column
+    holds sample ids) and sets `trace['selectedpoints']` to the index of the
+    matching point, centering the map on it. If no match is found, every
+    selection is cleared and the map recenters on the default location (see
+    `_default_center`).
     """
 
     if figure is None:
@@ -243,46 +267,49 @@ def highlight_selected_point_in_figure(
         fig = dict(figure)
 
     valid_sample_id = _validate_sample_name(sample_id)
-    lat: None | float = None
-    lon: None | float = None
-    if metadata is not None:
-        df = pd.DataFrame(metadata["records"])
-        df_id = df[df.sample_id == valid_sample_id]
-        if len(df_id) == 1:
-            lat = float(df_id.iloc[0].lat)
-            lon = float(df_id.iloc[0].lon)
 
-    # Track a new center if we find a selected point
-    new_center = None
+    records_df: pd.DataFrame | None = None
+    if metadata is not None and metadata.get("records"):
+        records_df = pd.DataFrame(metadata["records"])
+
+    selected_center: dict[str, float] | None = None
+    if records_df is not None and "sample_id" in records_df:
+        df_id = records_df[records_df.sample_id == valid_sample_id]
+        if len(df_id) == 1:
+            lat = pd.to_numeric(df_id.iloc[0].get("lat"), errors="coerce")
+            lon = pd.to_numeric(df_id.iloc[0].get("lon"), errors="coerce")
+            if pd.notna(lat) and pd.notna(lon):
+                selected_center = {"lat": float(lat), "lon": float(lon)}
+
+    matched = False
     for trace in fig.get("data", []):
         custom = trace.get("customdata", []) or []
         sel_idx = None
         if valid_sample_id not in (None, "none"):
             for i, v in enumerate(custom):
-                if str(v) == str(valid_sample_id):
+                if _sample_id_from_customdata(v) == str(valid_sample_id):
                     sel_idx = i
                     break
 
         if sel_idx is not None:
+            matched = True
             trace["selectedpoints"] = [sel_idx]
-            try:
-                if lat is not None and lon is not None:
-                    new_center = {"lat": lat, "lon": lon}
-            except RuntimeError:
-                spectraLogger.exception("Failed to extract lat/lon for selected point")
-        # clear selection for this trace
-        elif "selectedpoints" in trace:
+        else:
+            # an empty list is an explicit "nothing selected" for plotly,
+            # which un-highlights whatever was selected before
             trace["selectedpoints"] = []
 
     # ensure selection persists sensibly across updates
     fig.setdefault("layout", {})
     fig["layout"].setdefault("uirevision", "samplemap-selection")
 
-    # If we found a center from a selected point, update the map center
-    if new_center:
-        fig["layout"].setdefault("map", {})
-        # keep other map settings (zoom/bearing) intact if present
-        fig["layout"]["map"]["center"] = new_center
+    if matched and selected_center is not None:
+        new_center = selected_center
+    else:
+        new_center = _default_center(records_df)
+
+    # keep other map settings (zoom/bearing/style) intact if present
+    fig["layout"].setdefault("map", {})["center"] = new_center
 
     return fig
 
