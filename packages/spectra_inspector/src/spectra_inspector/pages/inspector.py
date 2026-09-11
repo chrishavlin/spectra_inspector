@@ -32,7 +32,7 @@ from spectra_inspector.components import (
     fetch_im_data_parallel,
     get_new_im,
 )
-from spectra_inspector.components.bitmap_image import graph_style
+from spectra_inspector.components.bitmap_image import colorscale_patch, graph_style
 from spectra_inspector.components.dataset_selector import (
     dataset_names,
     dropdown_options,
@@ -716,7 +716,6 @@ def _index_range_from_shape(shp):
     Output(_IDS.graph_id_store, "data", allow_duplicate=True),
     Input(_IDS.add_image, "n_clicks"),
     Input({"type": _imageIDS.delete, "index": ALL}, "n_clicks"),
-    State(_IDS.image_container, "children"),
     State(_IDS.graph_id_store, "data"),
     running=[
         (Output(_IDS.add_image, "disabled"), True, False),
@@ -726,10 +725,14 @@ def _index_range_from_shape(shp):
 def add_or_delete_image(
     n_clicks: int | None,
     n_clicks_delete: list[int | None],
-    current_children: list[html.Div | None],
     graph_id_store: dict,
 ):
+    """Append a panel card or drop one, as a patch on the container's children.
 
+    The container is never read back: its children carry every panel's figure,
+    image data included, and a State is uploaded with the request whichever
+    button fired. The position of the card to drop comes from the id store.
+    """
     button_clicked = ctx.triggered_id
     spectraLogger.info(f"add_or_delete_image button: {button_clicked}")
     n_deletes = sum([n for n in n_clicks_delete if n is not None])
@@ -766,11 +769,12 @@ def add_or_delete_image(
         pop_id = _find_id_in_list(
             _imageIDS.div, button_clicked["index"], graph_id_store["active_div_ids"]
         )
-        if pop_id is not None:
-            _ = current_children.pop(pop_id)
-            _ = graph_id_store["active_div_ids"].pop(pop_id)
-
-        return current_children, graph_id_store
+        if pop_id is None:
+            return no_update, graph_id_store
+        patched_children = Patch()
+        del patched_children[pop_id]
+        graph_id_store["active_div_ids"].pop(pop_id)
+        return patched_children, graph_id_store
 
     return no_update, graph_id_store
 
@@ -1034,8 +1038,8 @@ def _active_shapes(shapes_store: dict | None) -> list[dict]:
     Output(_IDS.processed_graph_id_store, "data"),
     Output(_IDS.view_store, "data", allow_duplicate=True),
     Input({"type": _imageSliderIds.refreshbutton, "index": ALL}, "n_clicks"),
-    Input({"type": _imageIDS.colorscale, "index": ALL}, "value"),
     Input(_IDS.reset_all_axes, "n_clicks"),
+    State({"type": _imageIDS.colorscale, "index": ALL}, "value"),
     State(_IDS.graph_id_store, "data"),
     State({"type": _imageSliderIds.slider, "index": ALL}, "value"),
     State({"type": _imageIDS.graph, "index": ALL}, "id"),
@@ -1056,8 +1060,8 @@ def _active_shapes(shapes_store: dict | None) -> list[dict]:
 )
 def update_graph_figure(
     n_clicks: list[int | None],  # noqa: ARG001
-    colormap_choices: list[str | None],
     reset_nclicks: int | None,
+    colormap_choices: list[str | None],
     graph_id_store: dict,
     slider_range_list: list[tuple[float, float]],
     graph_ids: list[dict[str, str | int]],
@@ -1068,14 +1072,14 @@ def update_graph_figure(
     view_store: dict | None,
     shapes_store: dict | None,
 ):
-    """Build image figures: new panels, a refreshed panel, a colormap change,
-    or a reset of the shared view.
+    """Build image figures: new panels, a refreshed panel, or a reset of the
+    shared view.
 
-    Zooms, tool changes and box annotations are deliberately *not* inputs here:
-    every call ships the full figures (image data included) to the server and
-    back, so those go through the lightweight ``sync_image_views`` instead.
-    Whatever is built here is put into the shared view so it lands in step
-    with the other panels.
+    Zooms, tool changes, box annotations and colormap picks are deliberately
+    *not* inputs here: every call ships the full figures (image data included)
+    to the server and back, so those go through the lightweight
+    ``sync_image_views`` and ``recolor_image`` instead. Whatever is built here
+    is put into the shared view so it lands in step with the other panels.
     """
 
     if "graph_ids" not in processed_graph_store:
@@ -1093,8 +1097,8 @@ def update_graph_figure(
         return no_updates, processed_graph_store, no_update
 
     # Panels in the layout without a figure yet. Inserting a panel fires this
-    # callback (its colorscale and refresh button are inputs), but which of the
-    # new inputs ctx reports as the trigger is not worth relying on.
+    # callback (its refresh button is an input), but which of the new inputs
+    # ctx reports as the trigger is not worth relying on.
     new_positions: list[int] = []
     for active_div in graph_id_store.get("active_div_ids", []):
         pos = _find_id_in_list(_imageIDS.graph, active_div["index"], graph_ids)
@@ -1159,7 +1163,7 @@ def update_graph_figure(
         return patches, processed_graph_store, view
 
     # Removing a panel also fires this callback, with every remaining panel's
-    # inputs reported as triggered. A click or a colormap pick reports one.
+    # inputs reported as triggered. A refresh click reports one.
     if not isinstance(triggered_id, dict) or len(ctx.triggered_prop_ids) != 1:
         return no_updates, processed_graph_store, no_update
 
@@ -1172,24 +1176,56 @@ def update_graph_figure(
     colormap = colormap_choices[pos]
     assert isinstance(colormap, str)
 
-    refresh = triggered_id["type"] == _imageSliderIds.refreshbutton
-    spectraLogger.info(
-        f"{'refreshing' if refresh else 'recoloring'} panel {triggered_id}"
-    )
-    # a colormap change redraws from the image already in the figure; a refresh
-    # fetches the image for the panel's (possibly new) energy range.
-    im_data = None if refresh else plotly_im_trace_to_array(fig_list[pos]["data"][0])
+    # fetch the image for the panel's (possibly new) energy range
+    spectraLogger.info(f"refreshing panel {triggered_id}")
     new_figs = list(no_updates)
     new_figs[pos] = get_new_im(
         user_store,
         slider_range_list[pos],
         colormap,
-        im_data=im_data,
         scalebar_handler=scalebar_handler,
         view=view,
         shapes=shapes,
     )
     return new_figs, processed_graph_store, no_update
+
+
+@callback(
+    Output({"type": _imageIDS.graph, "index": ALL}, "figure", allow_duplicate=True),
+    Input({"type": _imageIDS.colorscale, "index": ALL}, "value"),
+    State({"type": _imageIDS.graph, "index": ALL}, "id"),
+    State(_IDS.processed_graph_id_store, "data"),
+    prevent_initial_call=True,
+)
+def recolor_image(
+    colormap_choices: list[str | None],
+    graph_ids: list[dict[str, str | int]],
+    processed_graph_store: dict,
+):
+    """Swap the colormap of one panel as a layout patch.
+
+    Nothing but the dropdown values comes in, so the image stays in the
+    browser. Inserting or removing a panel fires this too (a removal reports
+    every remaining dropdown as triggered); a pick reports one, on a panel that
+    already has a figure.
+    """
+    no_updates = [no_update] * len(graph_ids)
+
+    triggered_id = ctx.triggered_id
+    if not isinstance(triggered_id, dict) or len(ctx.triggered_prop_ids) != 1:
+        return no_updates
+    pos = _find_id_in_list(_imageIDS.graph, triggered_id["index"], graph_ids)
+    processed = processed_graph_store.get("graph_ids", [])
+    if pos is None or _graph_dict(triggered_id["index"]) not in processed:
+        return no_updates
+    colormap = colormap_choices[pos]
+    if not isinstance(colormap, str):
+        return no_updates
+
+    spectraLogger.info(f"recoloring panel {triggered_id}")
+    patches = list(no_updates)
+    patches[pos] = colorscale_patch(colormap)
+    return patches
 
 
 def _view_patch(view: dict, md: "CombinedMetadata | None") -> Patch:
