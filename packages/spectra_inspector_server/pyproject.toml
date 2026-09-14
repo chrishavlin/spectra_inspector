@@ -1,6 +1,6 @@
 [project]
 name = "spectra_inspector_server"
-version = "0.1.0"
+version = "0.1.1"
 authors = [{ name = "Chris Havlin", email = "chris.havlin@gmail.com" }]
 description = "backend server for the spectra_inspector"
 readme = "README.md"
