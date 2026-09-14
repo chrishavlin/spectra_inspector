@@ -15,9 +15,11 @@ from spectra_inspector.utilities.view_sync import (
     apply_view_to_figure,
     empty_view,
     ensure_view,
+    image_axis_range,
     shapes_from_relayout,
     sorted_axis_range,
     update_view_from_relayout,
+    zoom_view,
 )
 
 ZOOM = {
@@ -197,3 +199,34 @@ def test_apply_axes_to_patch_default_drops_ranges():
         "layout.yaxis.autorange": "reversed",
         "layout.yaxis.range": "Delete",
     }
+
+
+def test_image_axis_range_matches_imshow():
+    # px.imshow centres pixels on integers and runs y downwards
+    assert image_axis_range("xaxis", (4, 6)) == [-0.5, 5.5]
+    assert image_axis_range("yaxis", (4, 6)) == [3.5, -0.5]
+
+
+def test_zoom_view_in_from_the_default_halves_the_image_about_its_centre():
+    view = zoom_view(empty_view(), 0.5, (4, 6))
+    assert view["xaxis"] == {"range": [1.0, 4.0]}
+    assert view["yaxis"] == {"range": [2.5, 0.5]}
+    assert view["dragmode"] is None
+
+
+def test_zoom_view_out_undoes_zoom_in():
+    zoomed_in = zoom_view({"dragmode": "pan"}, 0.5, (4, 6))
+    back = zoom_view(zoomed_in, 2.0, (4, 6))
+    assert back["xaxis"] == {"range": image_axis_range("xaxis", (4, 6))}
+    assert back["yaxis"] == {"range": image_axis_range("yaxis", (4, 6))}
+    assert back["dragmode"] == "pan"
+
+
+def test_zoom_view_keeps_the_centre_of_a_dragged_zoom():
+    view, _, _ = update_view_from_relayout(empty_view(), ZOOM)
+    zoomed = zoom_view(view, 0.5, (512, 512))
+    x0, x1 = zoomed["xaxis"]["range"]
+    assert (x0 + x1) / 2 == pytest.approx((153.06 + 306.71) / 2)
+    assert x1 - x0 == pytest.approx((306.71 - 153.06) / 2)
+    # the input is left alone
+    assert view["xaxis"] == {"range": [153.06, 306.71]}
