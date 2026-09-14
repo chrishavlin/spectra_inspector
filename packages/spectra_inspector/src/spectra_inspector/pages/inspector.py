@@ -31,6 +31,8 @@ from spectra_inspector.components import (
     directory_selector,
     fetch_im_data_parallel,
     get_new_im,
+    image_toolbox_layout,
+    imageToolboxLayoutIDs,
 )
 from spectra_inspector.components.bitmap_image import colorscale_patch, graph_style
 from spectra_inspector.components.dataset_selector import (
@@ -40,6 +42,11 @@ from spectra_inspector.components.dataset_selector import (
     resolve_spectrum_only,
 )
 from spectra_inspector.components.energy_range_slider import elementDropdownSliderIDS
+from spectra_inspector.components.image_toolbox import (
+    TOOL_IDS,
+    ZOOM_FACTORS,
+    tool_button_states,
+)
 from spectra_inspector.components.scalebar import scalebarHandler
 from spectra_inspector.logging import spectraLogger
 from spectra_inspector.user_store_model import (
@@ -66,6 +73,7 @@ from spectra_inspector.utilities.peak_windows import (
     apply_peak_windows,
     peak_windows,
 )
+from spectra_inspector.utilities.scaling import get_image_shape
 from spectra_inspector.utilities.summary_writer import summaryWriter
 from spectra_inspector.utilities.view_sync import (
     apply_axes_to_patch,
@@ -74,6 +82,7 @@ from spectra_inspector.utilities.view_sync import (
     shapes_from_relayout,
     sorted_axis_range,
     update_view_from_relayout,
+    zoom_view,
 )
 
 if TYPE_CHECKING:
@@ -176,6 +185,7 @@ class inspectorIDs(BaseModel):
 _IDS = inspectorIDs()
 _imageIDS = bitmapImageLayoutIDs()
 _imageSliderIds = elementDropdownSliderIDS()
+_toolboxIDS = imageToolboxLayoutIDs()
 _dataExportIDS = data_export_panel.dataExportPanelIDS(index=0)
 
 # the element preset each of the first image panels opens on; panels added
@@ -361,8 +371,14 @@ def layout(
         overlay_style={"visibility": "visible", "filter": "blur(2px)"},
         type="circle",
     )
+    # the toolbox sits with the panels so spectrum-only mode hides both
+    toolbox_card, _ = image_toolbox_layout()
     _layout_rows.append(
-        html.Div(im_container, id=_IDS.image_section, hidden=spectrum_only_mode)
+        html.Div(
+            [toolbox_card, im_container],
+            id=_IDS.image_section,
+            hidden=spectrum_only_mode,
+        )
     )
 
     spectrum_graph = dcc.Loading(
@@ -1318,6 +1334,156 @@ def sync_image_views(
         patches,
         view if (axes_changed or dragmode_changed) else no_update,
         {"active_shapes": shapes} if shapes_changed else no_update,
+    )
+
+
+def _clicked_index(triggered_id, id_type: str) -> str | None:
+    """The ``index`` of the pattern-matched button that fired, or None when
+    the trigger is not a real click on a button of that type (a wildcard
+    callback also fires when its inputs are inserted with the page)."""
+    if not isinstance(triggered_id, dict) or triggered_id.get("type") != id_type:
+        return None
+    if len(ctx.triggered_prop_ids) != 1 or not ctx.triggered[0]["value"]:
+        return None
+    index = triggered_id.get("index")
+    return index if isinstance(index, str) else None
+
+
+def _processed_positions(
+    graph_ids: list[dict[str, str | int]], processed_graph_store: dict
+) -> list[int]:
+    processed = processed_graph_store.get("graph_ids", [])
+    return [
+        pos
+        for pos, graph_id in enumerate(graph_ids)
+        if _graph_dict(graph_id["index"]) in processed
+    ]
+
+
+def tool_patches(
+    tool: str, view: dict | None, graph_ids: list, processed_graph_store: dict
+) -> tuple[list, dict]:
+    """Put a tool on every panel: the dragmode patches and the updated view."""
+    view = ensure_view(view)
+    view["dragmode"] = tool
+    patches: list = [no_update] * len(graph_ids)
+    for pos in _processed_positions(graph_ids, processed_graph_store):
+        patch = Patch()
+        patch["layout"]["dragmode"] = tool
+        patches[pos] = patch
+    return patches, view
+
+
+def action_results(
+    action: str,
+    view: dict | None,
+    shapes_store: dict | None,
+    graph_ids: list,
+    processed_graph_store: dict,
+    md: "CombinedMetadata",
+) -> tuple[list, object, object]:
+    """The figure patches, view and shapes an action leaves behind (the last
+    two ``no_update`` when untouched)."""
+    no_updates: list = [no_update] * len(graph_ids)
+    positions = _processed_positions(graph_ids, processed_graph_store)
+    nothing = (no_updates, no_update, no_update)
+    if not positions:
+        return nothing
+
+    if action == "eraseshape":
+        if not _active_shapes(shapes_store):
+            return nothing
+        patches = list(no_updates)
+        for pos in positions:
+            patch = Patch()
+            patch["layout"]["shapes"] = []
+            patches[pos] = patch
+        return patches, no_update, {"active_shapes": []}
+
+    if action in ZOOM_FACTORS:
+        zoomed = zoom_view(ensure_view(view), ZOOM_FACTORS[action], get_image_shape(md))
+        patches = list(no_updates)
+        for pos in positions:
+            patches[pos] = _view_patch(zoomed, md)
+        return patches, zoomed, no_update
+
+    return nothing
+
+
+@callback(
+    Output({"type": _imageIDS.graph, "index": ALL}, "figure", allow_duplicate=True),
+    Output(_IDS.view_store, "data", allow_duplicate=True),
+    Input({"type": _toolboxIDS.tool, "index": ALL}, "n_clicks"),
+    State({"type": _imageIDS.graph, "index": ALL}, "id"),
+    State(_IDS.processed_graph_id_store, "data"),
+    State(_IDS.view_store, "data"),
+    prevent_initial_call=True,
+)
+def select_image_tool(
+    _n_clicks: list[int | None],
+    graph_ids: list[dict[str, str | int]],
+    processed_graph_store: dict,
+    view_store: dict | None,
+):
+    """A toolbox tool sets the dragmode of every panel, as a layout patch, and
+    is remembered in the shared view so new panels open with it too."""
+    tool = _clicked_index(ctx.triggered_id, _toolboxIDS.tool)
+    if tool not in TOOL_IDS or ensure_view(view_store)["dragmode"] == tool:
+        return [no_update] * len(graph_ids), no_update
+    spectraLogger.info(f"image tool: {tool}")
+    return tool_patches(tool, view_store, graph_ids, processed_graph_store)
+
+
+@callback(
+    Output({"type": _toolboxIDS.tool, "index": ALL}, "active"),
+    Input(_IDS.view_store, "data"),
+    State({"type": _toolboxIDS.tool, "index": ALL}, "id"),
+)
+def highlight_image_tool(view_store: dict | None, button_ids: list[dict]):
+    """The pressed tool button follows the shared view, so it is right however
+    the view got there (a click, a reset, a new dataset)."""
+    states = dict(zip(TOOL_IDS, tool_button_states(view_store), strict=True))
+    return [states.get(button_id["index"], False) for button_id in button_ids]
+
+
+@callback(
+    Output({"type": _imageIDS.graph, "index": ALL}, "figure", allow_duplicate=True),
+    Output(_IDS.view_store, "data", allow_duplicate=True),
+    Output(_IDS.shapes_store, "data", allow_duplicate=True),
+    Input({"type": _toolboxIDS.action, "index": ALL}, "n_clicks"),
+    State({"type": _imageIDS.graph, "index": ALL}, "id"),
+    State(_IDS.processed_graph_id_store, "data"),
+    State(_IDS.view_store, "data"),
+    State(_IDS.shapes_store, "data"),
+    State(USER_STORE_DIV_ID, "data"),
+    State("sample-name", "children"),
+    prevent_initial_call=True,
+)
+def run_image_action(
+    _n_clicks: list[int | None],
+    graph_ids: list[dict[str, str | int]],
+    processed_graph_store: dict,
+    view_store: dict | None,
+    shapes_store: dict | None,
+    user_store_dict: dict,
+    sample_name: str,
+):
+    """Zoom in, zoom out or erase the box on every panel at once.
+
+    Like ``sync_image_views`` this only ever sends layout patches: a zoom step
+    is computed on the shared view (an un-zoomed axis spans the whole image,
+    whose shape the metadata gives) and the box is simply dropped.
+    """
+    action = _clicked_index(ctx.triggered_id, _toolboxIDS.action)
+    if action is None:
+        return [no_update] * len(graph_ids), no_update, no_update
+    spectraLogger.info(f"image action: {action}")
+    if "selected_dataset" not in user_store_dict:
+        user_store_dict["selected_dataset"] = sample_name
+    md = UserStore(**user_store_dict).conditionally_fetch_metadata()
+    assert md is not None
+    return action_results(
+        action, view_store, shapes_store, graph_ids, processed_graph_store, md
     )
 
 

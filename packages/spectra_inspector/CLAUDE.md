@@ -107,9 +107,11 @@ in a browser. A headless setup that needs no data:
   `p.chromium.launch(channel="chrome")` uses the installed Google Chrome, no
   browser download. Read a panel's state from
   `document.querySelectorAll('.js-plotly-plot')[i]._fullLayout` (ranges,
-  dragmode, shapes), click tools via `.modebar-btn[data-title="Zoom"]`, and drag
-  on the panel's `.nsewdrag` rect. Compare `_fullLayout` across panels rather
-  than the Dash `figure` prop.
+  dragmode, shapes), click tools in the toolbox card (the panels have no
+  modebar) via their pattern ids,
+  `[id='{"index":"zoom","type":"image-toolbox-tool"}']`, and drag on the panel's
+  `.nsewdrag` rect. Compare `_fullLayout` across panels rather than the Dash
+  `figure` prop.
 - While a `dcc.Loading` overlay is showing, the panel swallows mouse events:
   wait for `.dash-spinner` to disappear before dragging.
 
@@ -151,6 +153,24 @@ Several Dash/plotly behaviours here are not visible from the python side:
   re-picked tool likewise). `sync_image_views` therefore clears the triggering
   graph's `relayoutData` with `dash.set_props` once it has read it; a side
   update like that does not re-trigger callbacks, so it costs nothing.
+- The panels' plotly modebars are off (`displayModeBar: False`); the tools live
+  in `components/image_toolbox.py`, one card above the panels (inside
+  `image_section`, so spectrum-only mode hides it too). A _tool_ is a plotly
+  dragmode (`drawrect`, `zoom`, `pan`) and the **active tool is the view store's
+  `dragmode`** -- there is no separate tool store: `select_image_tool` patches
+  `layout.dragmode` on every built panel and writes the view,
+  `highlight_image_tool` sets the buttons' `active` from the view store (so a
+  reset or a dataset switch, which empties the view, presses the default again),
+  and new panels pick the tool up through `apply_view_to_figure`. An _action_
+  (`zoomin`, `zoomout`, `eraseshape`) is answered by `run_image_action` with
+  layout patches only: a zoom step is `view_sync.zoom_view` about the centre (an
+  un-zoomed axis spans the full image, whose shape comes from the metadata via
+  `scaling.get_image_shape`), and erasing writes an empty `active-shapes` so the
+  spectrum reloads. Buttons are pattern ids
+  `{"type": "image-toolbox-tool"|"image-toolbox-action", "index": <id>}` over
+  `ALL`; add a tool or action to `TOOLS` / `ACTIONS`, and an action to
+  `action_results`. Plotly's per-panel PNG download went with the modebar; the
+  export panel covers images.
 
 All cross-callback state lives in a single `dcc.Store` with id
 `USER_STORE_DIV_ID` (`"user-mem-store"`), whose dict is the `UserStore`
@@ -181,8 +201,9 @@ Other things worth knowing:
 - Sample names may contain spaces but appear in URL paths, so
   `utilities/coerce.py` swaps them with the `___` placeholder
   (`spaces_to_placeholder` / `placeholder_to_spaces`).
-- Figures are Plotly `px.imshow` with `dragmode="drawrect"`; user rectangles
-  come back through `relayoutData` and become index ranges sent to the backend.
+- Figures are Plotly `px.imshow` with `dragmode="drawrect"` (the toolbox's
+  default tool); user rectangles come back through `relayoutData` and become
+  index ranges sent to the backend.
 - Export: `utilities/summary_writer.py` writes into a uuid subdirectory under
   `SPECTRA_INSPECTOR_WRITE_DIR` and prunes oldest dirs past
   `SPECTRA_INSPECTOR_MAX_TMP_DIRS`; `plotly_to_matplotlib` in `coerce.py`
