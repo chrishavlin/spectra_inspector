@@ -1,5 +1,6 @@
 import json
-from typing import TYPE_CHECKING, Literal
+from dataclasses import dataclass
+from typing import TYPE_CHECKING, Any, Literal
 
 import dash
 import dash_bootstrap_components as dbc
@@ -37,6 +38,15 @@ from spectra_inspector.components import (
     image_toolbox_layout,
 )
 from spectra_inspector.components.bitmap_image import colorscale_patch, graph_style
+from spectra_inspector.components.composite_image import (
+    channel_selector_ids,
+    channel_specs_from_states,
+    composite_figure,
+    composite_image_layout,
+    compositeChannelLayoutIDs,
+    compositeImageLayoutIDs,
+    get_composite_im,
+)
 from spectra_inspector.components.dataset_selector import (
     dataset_names,
     dropdown_options,
@@ -61,11 +71,14 @@ from spectra_inspector.user_store_model import (
 from spectra_inspector.utilities.coerce import (
     placeholder_to_spaces,
     plotly_im_trace_to_array,
+    plotly_image_trace_to_array,
     plotly_to_matplotlib,
 )
+from spectra_inspector.utilities.composite import compositeChannel
 from spectra_inspector.utilities.export_metadata import (
     build_export_metadata,
-    image_panel_metadata,
+    composite_image_metadata,
+    single_image_metadata,
 )
 from spectra_inspector.utilities.interface import (
     ServerRequestError,
@@ -175,6 +188,7 @@ class inspectorIDs(BaseModel):
     # the spectrum toolbox's tool, and where its clientside actions report
     spectrum_view_store: str = "spectrum-view"
     spectrum_action_sink: str = "spectrum-action-sink"
+    image_mode: str = "image-mode"
     image_container_type: str = "bitmap-image"
     shapes_store: str = "active-shapes"
     view_store: str = "image-view-store"
@@ -193,11 +207,22 @@ _ADD_IMAGE_ID = _toolboxIDS.button_id(ADD_IMAGE.id)
 _RESET_IMAGES_ID = _toolboxIDS.button_id(RESET_EXTENT.id)
 _spectrumToolboxIDS = SPECTRUM_TOOLBOX.ids
 _SPECTRUM_RESET_ID = _spectrumToolboxIDS.button_id(RESET_EXTENT.id)
+_compositeIDS = compositeImageLayoutIDs()
+_channelIDS = compositeChannelLayoutIDs()
 _dataExportIDS = data_export_panel.dataExportPanelIDS(index=0)
 
 # the element preset each of the first image panels opens on; panels added
 # past these start on the first one.
 _INITIAL_PANEL_ELEMENTS = ("Mg", "Al", "Si")
+
+# the two kinds of image panel: one element map per panel, or one panel
+# blending up to three maps. Switching kinds replaces every panel.
+IMAGE_MODE_SINGLE = "single"
+IMAGE_MODE_MULTI = "multi"
+IMAGE_MODES = (
+    {"label": "single channel", "value": IMAGE_MODE_SINGLE},
+    {"label": "multi-channel", "value": IMAGE_MODE_MULTI},
+)
 
 
 def _get_div_store() -> html.Div:
@@ -370,7 +395,16 @@ def layout(
         type="circle",
     )
     # the toolbox sits with the panels so spectrum-only mode hides both
-    toolbox_card, _ = image_toolbox_layout()
+    mode_switch = dbc.RadioItems(
+        id=_IDS.image_mode,
+        options=list(IMAGE_MODES),
+        value=IMAGE_MODE_SINGLE,
+        className="btn-group btn-group-sm",
+        inputClassName="btn-check",
+        labelClassName="btn btn-outline-secondary text-nowrap",
+        labelCheckedClassName="active",
+    )
+    toolbox_card, _ = image_toolbox_layout([mode_switch])
     _layout_rows.append(
         html.Div(
             [toolbox_card, im_container],
@@ -738,12 +772,38 @@ def _index_range_from_shape(shp):
     return index0_range, index1_range
 
 
+def _new_panel(mode: str | None, index: int) -> tuple[dbc.Card, dict[str, str | int]]:
+    """A panel card of the current kind and its div id."""
+    if mode == IMAGE_MODE_MULTI:
+        card, imIDs = composite_image_layout(
+            index, id_type_base=_IDS.image_container_type
+        )
+    else:
+        if index < len(_INITIAL_PANEL_ELEMENTS):
+            init_element = _INITIAL_PANEL_ELEMENTS[index]
+        else:
+            init_element = _INITIAL_PANEL_ELEMENTS[0]
+        card, imIDs = bitmap_image_layout(
+            index,
+            id_type_base=_IDS.image_container_type,
+            init_element=init_element,
+        )
+    return card, imIDs.get_id_with_index("div")
+
+
+def _initial_panel_count(mode: str | None, n_clicks: int) -> int:
+    """How many panels a fresh page opens with: the usual three element maps,
+    or a single composite."""
+    return 1 if mode == IMAGE_MODE_MULTI else n_clicks
+
+
 @callback(
     Output(_IDS.image_container, "children", allow_duplicate=True),
     Output(_IDS.graph_id_store, "data", allow_duplicate=True),
     Input(_ADD_IMAGE_ID, "n_clicks"),
     Input({"type": _imageIDS.delete, "index": ALL}, "n_clicks"),
     State(_IDS.graph_id_store, "data"),
+    State(_IDS.image_mode, "value"),
     running=[
         (Output(_ADD_IMAGE_ID, "disabled"), True, False),
     ],
@@ -753,12 +813,15 @@ def add_or_delete_image(
     n_clicks: int | None,
     n_clicks_delete: list[int | None],
     graph_id_store: dict,
+    image_mode: str | None,
 ):
     """Append a panel card or drop one, as a patch on the container's children.
 
     The container is never read back: its children carry every panel's figure,
     image data included, and a State is uploaded with the request whichever
-    button fired. The position of the card to drop comes from the id store.
+    button fired. The position of the card to drop comes from the id store,
+    which also hands out panel indices (``next_index``) so a panel never
+    reuses the index of one that was removed or replaced.
     """
     button_clicked = ctx.triggered_id
     spectraLogger.info(f"add_or_delete_image button: {button_clicked}")
@@ -771,26 +834,17 @@ def add_or_delete_image(
         patched_children = Patch()
 
         if graph_id_store["initialized"] is False:
-            new_index_0 = 0
-            new_index_1 = new_index_0 + n_clicks
+            n_new = _initial_panel_count(image_mode, n_clicks)
             graph_id_store["initialized"] = True
         else:
-            new_index_0 = n_clicks - 1
-            new_index_1 = new_index_0 + 1
+            n_new = 1
 
-        for id_index in range(new_index_0, new_index_1):
-            if id_index < len(_INITIAL_PANEL_ELEMENTS):
-                init_element = _INITIAL_PANEL_ELEMENTS[id_index]
-            else:
-                init_element = _INITIAL_PANEL_ELEMENTS[0]
-            new_image_div, imIDs = bitmap_image_layout(
-                id_index,
-                id_type_base=_IDS.image_container_type,
-                init_element=init_element,
-            )
+        start = graph_id_store.get("next_index", 0)
+        for id_index in range(start, start + n_new):
+            new_image_div, new_div_id = _new_panel(image_mode, id_index)
             patched_children.append(new_image_div)
-            new_div_id = imIDs.get_id_with_index("div")
             graph_id_store["active_div_ids"].append(new_div_id)
+        graph_id_store["next_index"] = start + n_new
         return patched_children, graph_id_store
     if button_clicked is not None and n_deletes > 0:
         pop_id = _find_id_in_list(
@@ -804,6 +858,49 @@ def add_or_delete_image(
         return patched_children, graph_id_store
 
     return no_update, graph_id_store
+
+
+@callback(
+    Output(_IDS.image_container, "children", allow_duplicate=True),
+    Output(_IDS.graph_id_store, "data", allow_duplicate=True),
+    Output(_IDS.processed_graph_id_store, "data", allow_duplicate=True),
+    Input(_IDS.image_mode, "value"),
+    State(_IDS.sample_name, "children"),
+    State(USER_STORE_DIV_ID, "data"),
+    State(selectorIDs.get_id_with_index("spectrumonly"), "value"),
+    running=[
+        (Output(_ADD_IMAGE_ID, "disabled"), True, False),
+    ],
+    prevent_initial_call=True,
+)
+def switch_image_mode(
+    image_mode: str | None,
+    sample_name: str | None,
+    user_store_dict: dict | None,
+    spectrum_only_switch: bool | None = False,
+):
+    """Replace every panel with the other kind: three element maps, or one
+    composite. The panels are rebuilt from scratch, so the processed-id store
+    is emptied and the figure callbacks fetch the new panels' images (into the
+    shared view and box, which are kept)."""
+    if resolve_spectrum_only(user_store_dict, spectrum_only_switch):
+        return no_update, no_update, no_update
+    if not _valid_sample_name(sample_name):
+        return no_update, no_update, no_update
+
+    n_new = _initial_panel_count(image_mode, NUMBER_OF_INITIAL_FIGURES)
+    children = []
+    active_div_ids = []
+    for index in range(n_new):
+        card, div_id = _new_panel(image_mode, index)
+        children.append(card)
+        active_div_ids.append(div_id)
+    graph_id_store = {
+        "initialized": True,
+        "active_div_ids": active_div_ids,
+        "next_index": n_new,
+    }
+    return children, graph_id_store, {"initialized": False}
 
 
 @callback(
@@ -852,6 +949,17 @@ def export_msa(
     State(_IDS.spectrum_yaxis_scale, "value"),
     State(_IDS.spectrum_peak_windows, "value"),
     State(selectorIDs.get_id_with_index("spectrumonly"), "value"),
+    State({"type": _imageIDS.graph, "index": ALL}, "id"),
+    State({"type": _imageSliderIds.slider, "index": ALL}, "id"),
+    State({"type": _compositeIDS.apply, "index": ALL}, "id"),
+    State({"type": channel_selector_ids.dropdown, "index": ALL}, "value"),
+    State({"type": channel_selector_ids.dropdown, "index": ALL}, "id"),
+    State({"type": channel_selector_ids.slider, "index": ALL}, "value"),
+    State({"type": channel_selector_ids.slider, "index": ALL}, "id"),
+    State({"type": _channelIDS.color, "index": ALL}, "value"),
+    State({"type": _channelIDS.color, "index": ALL}, "id"),
+    State({"type": _channelIDS.stretch, "index": ALL}, "value"),
+    State({"type": _channelIDS.stretch, "index": ALL}, "id"),
     prevent_initial_call=True,
     running=[
         (Output(_dataExportIDS.exportsummary, "disabled"), True, False),
@@ -875,6 +983,17 @@ def export_summary(
     spectrum_yaxis_scale: str | None,
     show_peak_windows: bool | None = True,
     spectrum_only_switch: bool | None = False,
+    graph_ids: list[dict] | None = None,
+    slider_ids: list[dict] | None = None,
+    composite_apply_ids: list[dict] | None = None,
+    channel_elements: list | None = None,
+    channel_element_ids: list[dict] | None = None,
+    channel_ranges: list | None = None,
+    channel_range_ids: list[dict] | None = None,
+    channel_colors: list | None = None,
+    channel_color_ids: list[dict] | None = None,
+    channel_stretches: list | None = None,
+    channel_stretch_ids: list[dict] | None = None,
 ):
     """Write the summary export: the spectrum plus, for a map, every image
     panel (and its box subset). A spectrum-only dataset has no images, so the
@@ -891,18 +1010,31 @@ def export_summary(
     user_store = UserStore(**user_store_dict)
     spectrum_only = resolve_spectrum_only(user_store_dict, spectrum_only_switch)
 
+    composite_specs: dict[int, list[compositeChannel]] = {}
+    if composite_apply_ids:
+        composite_specs = channel_specs_from_states(
+            channel_elements or [],
+            channel_element_ids or [],
+            channel_ranges or [],
+            channel_range_ids or [],
+            channel_colors or [],
+            channel_color_ids or [],
+            channel_stretches or [],
+            channel_stretch_ids or [],
+        )
+    panels = _panel_exports(
+        fig_list,
+        graph_ids,
+        slider_range_list,
+        slider_range_labels,
+        colormaps,
+        slider_ids,
+        composite_specs,
+    )
+
     figs_to_write = {}
     if not spectrum_only:
-        figs_to_write.update(
-            _image_figures_to_write(
-                user_store,
-                fig_list,
-                shapes_store,
-                slider_range_list,
-                slider_range_labels,
-                colormaps,
-            )
-        )
+        figs_to_write.update(_image_figures_to_write(user_store, panels, shapes_store))
     figs_to_write["spectrum"] = plotly_to_matplotlib(
         apply_peak_windows(
             spectrum_figure,
@@ -920,9 +1052,7 @@ def export_summary(
             user_store,
             shapes_store,
             spectrum_only,
-            slider_range_list,
-            slider_range_labels,
-            colormaps,
+            panels,
             zeroed_elements,
             show_peak_windows,
         )
@@ -952,13 +1082,90 @@ def export_summary(
     raise ValueError(msg)
 
 
+@dataclass
+class panelExport:
+    """What the export needs to know about one image panel: the file stem it
+    writes to, its figure and either the single map's settings or the
+    composite's channels."""
+
+    stem: str
+    figure: dict
+    energy_range: tuple[float, float] | None = None
+    element_label: str | None = None
+    colormap: str | None = None
+    channels: list[compositeChannel] | None = None
+
+    @property
+    def composite(self) -> bool:
+        return self.channels is not None
+
+    def metadata(self, has_subset: bool) -> dict[str, Any]:
+        if self.channels is not None:
+            return composite_image_metadata(
+                self.stem, [ch.metadata() for ch in self.channels], has_subset
+            )
+        assert self.energy_range is not None
+        return single_image_metadata(
+            self.stem,
+            self.energy_range,
+            self.element_label,
+            self.colormap,
+            has_subset,
+        )
+
+
+def _panel_exports(
+    fig_list: list,
+    graph_ids: list[dict] | None,
+    slider_range_list: list,
+    slider_range_labels: list,
+    colormaps: list,
+    slider_ids: list[dict] | None,
+    composite_specs: dict[int, list[compositeChannel]],
+) -> list[panelExport]:
+    """One record per panel, in page order.
+
+    A panel whose graph index has composite channels is a composite; any other
+    is a single map whose slider, label and colormap are found by graph index
+    when the ids are known, by position otherwise (the lists are then 1:1
+    with the panels)."""
+    slider_pos = {str(id_["index"]): pos for pos, id_ in enumerate(slider_ids or [])}
+    panels = []
+    for igraph, fig in enumerate(fig_list):
+        stem = f"bitmap_{str(igraph).zfill(2)}"
+        index = graph_ids[igraph]["index"] if graph_ids else None
+        if index is not None and index in composite_specs:
+            channels = composite_specs[index]
+            stem += "_composite"
+            elements = [
+                ch.element for ch in channels if ch.active and ch.element == ch.label
+            ]
+            if elements:
+                stem += "_" + "-".join(elements)
+            panels.append(panelExport(stem, fig, channels=channels))
+            continue
+
+        pos = slider_pos.get(str(index), igraph) if index is not None else igraph
+        label = slider_range_labels[pos]
+        if label != "none":
+            stem += f"_{label}"
+        panels.append(
+            panelExport(
+                stem,
+                fig,
+                energy_range=tuple(slider_range_list[pos]),
+                element_label=label,
+                colormap=colormaps[pos],
+            )
+        )
+    return panels
+
+
 def _export_metadata(
     user_store: UserStore,
     shapes_store: dict | None,
     spectrum_only: bool,
-    slider_range_list: list,
-    slider_range_labels: list,
-    colormaps: list,
+    panels: list[panelExport],
     zeroed_elements: list[str] | None,
     show_peak_windows: bool | None,
 ) -> dict:
@@ -982,12 +1189,7 @@ def _export_metadata(
         active_shapes = _active_shapes(shapes_store)
         if active_shapes:
             index_ranges = _index_range_from_shape(active_shapes[0])
-        images = image_panel_metadata(
-            slider_range_list,
-            slider_range_labels,
-            colormaps,
-            has_subset=index_ranges is not None,
-        )
+        images = [panel.metadata(index_ranges is not None) for panel in panels]
 
     return build_export_metadata(
         dataset=user_store.selected_dataset,
@@ -1003,11 +1205,8 @@ def _export_metadata(
 
 def _image_figures_to_write(
     user_store: UserStore,
-    fig_list: list,
+    panels: list[panelExport],
     shapes_store: dict | None,
-    slider_range_list: list,
-    slider_range_labels: list,
-    colormaps: list,
 ) -> dict:
     """Matplotlib versions of every image panel, plus the box subset of each
     when a rectangle is drawn, keyed by output file stem."""
@@ -1018,36 +1217,51 @@ def _image_figures_to_write(
         index0_range, index1_range = _index_range_from_shape(active_shapes[0])
 
     figs_to_write = {}
-    for igraph in range(len(fig_list)):
-        cmap = colormaps[igraph]
-        energy_range = slider_range_list[igraph]
-        energy_label = slider_range_labels[igraph]
+    md: CombinedMetadata | None = None
+    for panel in panels:
+        figs_to_write[panel.stem] = plotly_to_matplotlib(
+            panel.figure, cmap=panel.colormap
+        )
+        if not (index0_range and index1_range):
+            continue
 
-        im_name = f"bitmap_{str(igraph).zfill(2)}"
-        if energy_label != "none":
-            im_name += f"_{energy_label}"
-        figs_to_write[im_name] = plotly_to_matplotlib(fig_list[igraph], cmap=cmap)
-
-        if index0_range and index1_range:
-            im = plotly_im_trace_to_array(fig_list[igraph]["data"][0])
-            zmin, zmax = np.min(im), np.max(im)
-            im = im[
+        subset_name = f"{panel.stem}_subset"
+        if panel.composite:
+            assert panel.channels is not None
+            # the blend is already in the pixels: crop them and redraw
+            rgb = plotly_image_trace_to_array(panel.figure["data"][0])
+            rgb = rgb[
                 index0_range[0] : index0_range[1],
                 index1_range[0] : index1_range[1],
             ]
-
-            newfig = get_new_im(
-                user_store,
-                energy_range,
-                cmap,
-                im,
-                scalebar_handler=scalebar_handler,
-                zmin=zmin,
-                zmax=zmax,
+            if md is None:
+                md = user_store.conditionally_fetch_metadata()
+            assert md is not None
+            newfig = composite_figure(
+                rgb, panel.channels, md, scalebar_handler=scalebar_handler
             )
+            figs_to_write[subset_name] = plotly_to_matplotlib(newfig, im_data=rgb)
+            continue
 
-            im_name += "_subset"
-            figs_to_write[im_name] = plotly_to_matplotlib(newfig, im_data=im, cmap=cmap)
+        im = plotly_im_trace_to_array(panel.figure["data"][0])
+        zmin, zmax = np.min(im), np.max(im)
+        im = im[
+            index0_range[0] : index0_range[1],
+            index1_range[0] : index1_range[1],
+        ]
+        assert panel.energy_range is not None
+        newfig = get_new_im(
+            user_store,
+            panel.energy_range,
+            panel.colormap,
+            im,
+            scalebar_handler=scalebar_handler,
+            zmin=zmin,
+            zmax=zmax,
+        )
+        figs_to_write[subset_name] = plotly_to_matplotlib(
+            newfig, im_data=im, cmap=panel.colormap
+        )
 
     return figs_to_write
 
@@ -1066,6 +1280,7 @@ def _active_shapes(shapes_store: dict | None) -> list[dict]:
     Output(_IDS.view_store, "data", allow_duplicate=True),
     Input({"type": _imageSliderIds.refreshbutton, "index": ALL}, "n_clicks"),
     Input(_RESET_IMAGES_ID, "n_clicks"),
+    State({"type": _imageSliderIds.refreshbutton, "index": ALL}, "id"),
     State({"type": _imageIDS.colorscale, "index": ALL}, "value"),
     State(_IDS.graph_id_store, "data"),
     State({"type": _imageSliderIds.slider, "index": ALL}, "value"),
@@ -1088,6 +1303,7 @@ def _active_shapes(shapes_store: dict | None) -> list[dict]:
 def update_graph_figure(
     n_clicks: list[int | None],  # noqa: ARG001
     reset_nclicks: int | None,
+    refresh_ids: list[dict[str, str | int]],
     colormap_choices: list[str | None],
     graph_id_store: dict,
     slider_range_list: list[tuple[float, float]],
@@ -1107,6 +1323,12 @@ def update_graph_figure(
     to the server and back, so those go through the lightweight
     ``sync_image_views`` and ``recolor_image`` instead. Whatever is built here
     is put into the shared view so it lands in step with the other panels.
+
+    Only single-channel panels (those with an element Apply button) are
+    built here; a composite panel is ``update_composite_figure``'s. The reset
+    applies to every panel with a figure, whichever kind. The processed-id
+    store is only returned when this call added to it, since the composite
+    callback writes the same store and may be running at the same time.
     """
 
     if "graph_ids" not in processed_graph_store:
@@ -1121,16 +1343,18 @@ def update_graph_figure(
     triggered_id = ctx.triggered_id
     spectraLogger.info(f"update_graph_figure triggered by {ctx.triggered_prop_ids}")
     if triggered_id is None or not _valid_sample_name(sample_name):
-        return no_updates, processed_graph_store, no_update
+        return no_updates, no_update, no_update
 
     # Panels in the layout without a figure yet. Inserting a panel fires this
     # callback (its refresh button is an input), but which of the new inputs
     # ctx reports as the trigger is not worth relying on.
+    single_indices = {refresh_id["index"] for refresh_id in refresh_ids}
     new_positions: list[int] = []
     for active_div in graph_id_store.get("active_div_ids", []):
         pos = _find_id_in_list(_imageIDS.graph, active_div["index"], graph_ids)
         if (
             pos is not None
+            and active_div["index"] in single_indices
             and _graph_dict(active_div["index"])
             not in processed_graph_store["graph_ids"]
         ):
@@ -1187,19 +1411,19 @@ def update_graph_figure(
         for pos, graph_id in enumerate(graph_ids):
             if _graph_dict(graph_id["index"]) in processed_graph_store["graph_ids"]:
                 patches[pos] = _view_patch(view, md)
-        return patches, processed_graph_store, view
+        return patches, no_update, view
 
     # Removing a panel also fires this callback, with every remaining panel's
     # inputs reported as triggered. A refresh click reports one.
     if not isinstance(triggered_id, dict) or len(ctx.triggered_prop_ids) != 1:
-        return no_updates, processed_graph_store, no_update
+        return no_updates, no_update, no_update
 
     pos = _find_id_in_list(_imageIDS.graph, triggered_id["index"], graph_ids)
     if (
         pos is None
         or _graph_dict(triggered_id["index"]) not in processed_graph_store["graph_ids"]
     ):
-        return no_updates, processed_graph_store, no_update
+        return no_updates, no_update, no_update
     colormap = colormap_choices[pos]
     assert isinstance(colormap, str)
 
@@ -1214,7 +1438,155 @@ def update_graph_figure(
         view=view,
         shapes=shapes,
     )
-    return new_figs, processed_graph_store, no_update
+    return new_figs, no_update, no_update
+
+
+@callback(
+    Output({"type": _imageIDS.graph, "index": ALL}, "figure", allow_duplicate=True),
+    Output(_IDS.processed_graph_id_store, "data", allow_duplicate=True),
+    Input({"type": _compositeIDS.apply, "index": ALL}, "n_clicks"),
+    State({"type": _compositeIDS.apply, "index": ALL}, "id"),
+    State({"type": channel_selector_ids.dropdown, "index": ALL}, "value"),
+    State({"type": channel_selector_ids.dropdown, "index": ALL}, "id"),
+    State({"type": channel_selector_ids.slider, "index": ALL}, "value"),
+    State({"type": channel_selector_ids.slider, "index": ALL}, "id"),
+    State({"type": _channelIDS.color, "index": ALL}, "value"),
+    State({"type": _channelIDS.color, "index": ALL}, "id"),
+    State({"type": _channelIDS.stretch, "index": ALL}, "value"),
+    State({"type": _channelIDS.stretch, "index": ALL}, "id"),
+    State(_IDS.graph_id_store, "data"),
+    State({"type": _imageIDS.graph, "index": ALL}, "id"),
+    State(USER_STORE_DIV_ID, "data"),
+    State(_IDS.processed_graph_id_store, "data"),
+    State("sample-name", "children"),
+    State(_IDS.view_store, "data"),
+    State(_IDS.shapes_store, "data"),
+    running=[
+        (Output("full-im-container-loading", "display"), "show", "hide"),
+        (Output(_ADD_IMAGE_ID, "disabled"), True, False),
+        (Output(_RESET_IMAGES_ID, "disabled"), True, False),
+        (Output(_dataExportIDS.exportsummary, "disabled"), True, False),
+        (Output(_dataExportIDS.exportmsa, "disabled"), True, False),
+    ],
+    prevent_initial_call=True,
+)
+def update_composite_figure(
+    n_clicks: list[int | None],  # noqa: ARG001
+    apply_ids: list[dict[str, Any]],
+    channel_elements: list[str | None],
+    channel_element_ids: list[dict[str, Any]],
+    channel_ranges: list[list[float] | None],
+    channel_range_ids: list[dict[str, Any]],
+    channel_colors: list[str | None],
+    channel_color_ids: list[dict[str, Any]],
+    channel_stretches: list[list[float] | None],
+    channel_stretch_ids: list[dict[str, Any]],
+    graph_id_store: dict,
+    graph_ids: list[dict[str, str | int]],
+    user_store_dict: dict,
+    processed_graph_store: dict,
+    sample_name: str,
+    view_store: dict | None,
+    shapes_store: dict | None,
+):
+    """Build composite figures: every new composite panel, or the one whose
+    Apply was clicked.
+
+    The channel controls arrive as flat ``ALL`` lists and are regrouped per
+    panel by ``channel_specs_from_states``. Each active channel's map is
+    fetched (all panels' channels concurrently), blended and drawn into the
+    shared view. Nothing here reads the existing figures: a composite always
+    fetches its own channels.
+    """
+    no_updates = [no_update] * len(graph_ids)
+    if not _valid_sample_name(sample_name):
+        return no_updates, no_update
+
+    composite_indices = {apply_id["index"] for apply_id in apply_ids}
+    processed = list(processed_graph_store.get("graph_ids", []))
+
+    new_indices = [
+        active_div["index"]
+        for active_div in graph_id_store.get("active_div_ids", [])
+        if active_div["index"] in composite_indices
+        and _graph_dict(active_div["index"]) not in processed
+        and _find_id_in_list(_imageIDS.graph, active_div["index"], graph_ids)
+        is not None
+    ]
+    if new_indices:
+        targets = new_indices
+    else:
+        # a removal reports every remaining Apply as triggered; a click, one
+        triggered_id = ctx.triggered_id
+        if (
+            not isinstance(triggered_id, dict)
+            or len(ctx.triggered_prop_ids) != 1
+            or triggered_id["index"] not in composite_indices
+            or _graph_dict(triggered_id["index"]) not in processed
+        ):
+            return no_updates, no_update
+        targets = [triggered_id["index"]]
+    spectraLogger.info(f"building composite figures for panels {targets}")
+
+    if "selected_dataset" not in user_store_dict:
+        user_store_dict["selected_dataset"] = sample_name
+    user_store = UserStore(**user_store_dict)
+    md = user_store.conditionally_fetch_metadata()
+    assert md is not None
+    view = ensure_view(view_store)
+    shapes = _active_shapes(shapes_store)
+
+    specs = channel_specs_from_states(
+        channel_elements,
+        channel_element_ids,
+        channel_ranges,
+        channel_range_ids,
+        channel_colors,
+        channel_color_ids,
+        channel_stretches,
+        channel_stretch_ids,
+    )
+    jobs = [
+        (index, channel)
+        for index in targets
+        for channel in specs.get(index, [])
+        if channel.active
+    ]
+    arrays: list[npt.NDArray] = []
+    if jobs:
+        arrays = list(
+            fetch_im_data_parallel(
+                user_store, [channel.energy_range for _, channel in jobs], md
+            )
+        )
+
+    new_figs = list(no_updates)
+    for index in targets:
+        pos = _find_id_in_list(_imageIDS.graph, index, graph_ids)
+        assert pos is not None
+        panel_arrays = [
+            im
+            for (job_index, _), im in zip(jobs, arrays, strict=True)
+            if job_index == index
+        ]
+        fig = get_composite_im(
+            specs.get(index, []),
+            panel_arrays,
+            md,
+            scalebar_handler=scalebar_handler,
+            view=view,
+            shapes=shapes,
+        )
+        new_figs[pos] = fig
+        set_props(graph_ids[pos], {"style": graph_style(tuple(md.data_shape[:2]))})
+        if _graph_dict(index) not in processed:
+            processed.append(_graph_dict(index))
+
+    if new_indices:
+        processed_graph_store["graph_ids"] = processed
+        processed_graph_store["initialized"] = True
+        return new_figs, processed_graph_store
+    return new_figs, no_update
 
 
 @callback(

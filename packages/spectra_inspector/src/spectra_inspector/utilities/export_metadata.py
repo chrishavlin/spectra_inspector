@@ -73,31 +73,79 @@ def subselection_metadata(
     }
 
 
+def _image_files(stem: str, has_subset: bool) -> dict[str, Any]:
+    return {
+        "file": f"{stem}.png",
+        "subset_file": f"{stem}_subset.png" if has_subset else None,
+    }
+
+
+def single_image_metadata(
+    stem: str,
+    energy_range: list[float] | tuple[float, float],
+    element_label: str | None,
+    colormap: str | None,
+    has_subset: bool,
+) -> dict[str, Any]:
+    """The record of one element-map panel, keyed by the files it produced."""
+    element = element_label if element_label and element_label != "none" else None
+    return {
+        **_image_files(stem, has_subset),
+        "element": element,
+        "energy_range_keV": [float(e) for e in energy_range],
+        "colormap": colormap,
+    }
+
+
+def composite_image_metadata(
+    stem: str, channels: list[dict[str, Any]], has_subset: bool
+) -> dict[str, Any]:
+    """The record of one composite panel: no element or colormap of its own,
+    but one entry per channel (see ``composite.compositeChannel.metadata``),
+    channels that are off included so the numbering matches the page."""
+    return {
+        **_image_files(stem, has_subset),
+        "element": None,
+        "colormap": None,
+        "channels": list(channels),
+    }
+
+
 def image_panel_metadata(
     energy_ranges: list[list[float] | tuple[float, float]],
     element_labels: list[str | None],
     colormaps: list[str | None],
     has_subset: bool,
 ) -> list[dict[str, Any]]:
-    """One entry per exported image panel, keyed by the files it produced."""
+    """One entry per exported element-map panel, in page order."""
     panels = []
     for igraph, (energy_range, label, cmap) in enumerate(
         zip(energy_ranges, element_labels, colormaps, strict=True)
     ):
         stem = f"bitmap_{str(igraph).zfill(2)}"
-        element = label if label and label != "none" else None
-        if element is not None:
-            stem += f"_{element}"
+        if label and label != "none":
+            stem += f"_{label}"
         panels.append(
-            {
-                "file": f"{stem}.png",
-                "subset_file": f"{stem}_subset.png" if has_subset else None,
-                "element": element,
-                "energy_range_keV": [float(e) for e in energy_range],
-                "colormap": cmap,
-            }
+            single_image_metadata(stem, energy_range, label, cmap, has_subset)
         )
     return panels
+
+
+def image_description(image: dict[str, Any]) -> str:
+    """One line saying what an exported image file holds."""
+    channels = image.get("channels")
+    if channels is not None:
+        parts = []
+        for channel in channels:
+            if not channel.get("active", True):
+                continue
+            element = channel.get("element") or "custom range"
+            window = _fmt(channel["energy_range_keV"])
+            parts.append(f"{element} ({window} keV) in {channel['color']}")
+        return "composite of " + "; ".join(parts) if parts else "composite, no channels"
+    window = _fmt(image["energy_range_keV"])
+    element = image["element"] or "custom range"
+    return f"map of the {element} window, {window} keV, colormap {image['colormap']}"
 
 
 def build_export_metadata(
@@ -199,11 +247,7 @@ def readme_text(metadata: dict[str, Any], files: list[str]) -> str:
     ]
     described = dict(_FIXED_FILE_DESCRIPTIONS)
     for image in metadata.get("images") or []:
-        window = _fmt(image["energy_range_keV"])
-        element = image["element"] or "custom range"
-        described[image["file"]] = (
-            f"map of the {element} window, {window} keV, colormap {image['colormap']}"
-        )
+        described[image["file"]] = image_description(image)
         if image["subset_file"]:
             described[image["subset_file"]] = f"the box region of {image['file']}"
     for f in sorted(files):

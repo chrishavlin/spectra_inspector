@@ -4,6 +4,7 @@ import dash_bootstrap_components as dbc
 import numpy as np
 import numpy.typing as npt
 import plotly.express as px
+import plotly.graph_objects as go
 from dash import Patch, dcc, html
 from dash_bootstrap_components import Button
 from plotly.colors import get_colorscale
@@ -258,6 +259,18 @@ def get_new_im(
         zmin=zmin,
         zmax=zmax,
     )
+    return finish_image_figure(fig, md, scalebar_handler, view, shapes)
+
+
+def finish_image_figure(
+    fig: go.Figure,
+    md: CombinedMetadata,
+    scalebar_handler: scalebarHandler | None = None,
+    view: dict | None = None,
+    shapes: list[dict] | None = None,
+) -> go.Figure:
+    """Style a ``px.imshow`` figure as an image panel: no axes or colorbar,
+    the box tool active, the shared view applied and the scalebar drawn."""
     fig.update_layout(
         coloraxis_showscale=False,
         margin_b=5,
