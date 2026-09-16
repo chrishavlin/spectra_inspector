@@ -168,13 +168,31 @@ Several Dash/plotly behaviours here are not visible from the python side:
   `scaling.get_image_shape`), and erasing writes an empty `active-shapes` so the
   spectrum reloads. Buttons are pattern ids
   `{"type": "image-toolbox-tool"|"image-toolbox-action", "index": <id>}` over
-  `ALL`; add a tool or action to `TOOLS` / `ACTIONS`, an action to
-  `action_results`, and the new button to a group of a `ROWS` entry, which is
-  the card's layout (labelled rows of button groups). `Add Image` and
-  `Reset Extent` share the card but are plain ids (`imageToolboxLayoutIDs.add` /
-  `.reset`) answered by `add_or_delete_image` and `update_graph_figure`.
-  Plotly's per-panel PNG download went with the modebar; the export panel covers
-  images.
+  `ALL`; add a tool or action to the `toolboxSpec` in `image_toolbox.py`
+  (`IMAGE_TOOLBOX`: the buttons plus the labelled rows they sit in, validated at
+  import), and an action to `action_results`. `Add Image` and `Reset Extent`
+  share the card but are plain ids (`ids.button_id("add")` /
+  `ids.button_id("reset")`) answered by `add_or_delete_image` and
+  `update_graph_figure`. Plotly's per-panel PNG download went with the modebar;
+  the export panel covers images.
+- `components/toolbox.py` holds what the two toolboxes share: the button and row
+  dataclasses, the view-control specs, the id mapper, the card builder
+  (`toolbox_card`, whose `extras` slot ready-made components into a row) and the
+  collapse wrapper. It is configuration, not a class hierarchy: the callbacks
+  are each toolbox's own.
+- The spectrum's modebar is off too. `components/spectrum_toolbox.py` folds
+  "Spectrum Plot Tools" under the plot behind a `Plot tools` toggle (closed on
+  load, flipped by the `toggleCollapse` clientside function in
+  `assets/toolbox.js`), with the peak-windows switch and the y-scale radio in
+  its Display row. Only the tool goes through the server: `select_spectrum_tool`
+  patches `layout.dragmode` and writes the `spectrum-view` store,
+  `highlight_spectrum_tool` reads it, and the callbacks that replace the
+  spectrum figure (`update_spectrum`, `toggle_peak_windows`) put the stored
+  dragmode on what they return so the pressed button survives a rebuild. Zoom
+  in, zoom out and reset are the `spectrumAction` clientside function: the
+  spectrum's live ranges exist only in the browser, so it reads `gd._fullLayout`
+  and calls `Plotly.relayout`, scaling the energy axis only and reporting into
+  the `spectrum-action-sink` store.
 
 All cross-callback state lives in a single `dcc.Store` with id
 `USER_STORE_DIV_ID` (`"user-mem-store"`), whose dict is the `UserStore`

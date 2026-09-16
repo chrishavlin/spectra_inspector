@@ -9,11 +9,13 @@ import plotly.graph_objects as go
 import requests
 from dash import (
     ALL,
+    ClientsideFunction,
     Input,
     Output,
     Patch,
     State,
     callback,
+    clientside_callback,
     ctx,
     dcc,
     html,
@@ -32,7 +34,6 @@ from spectra_inspector.components import (
     fetch_im_data_parallel,
     get_new_im,
     image_toolbox_layout,
-    imageToolboxLayoutIDs,
 )
 from spectra_inspector.components.bitmap_image import colorscale_patch, graph_style
 from spectra_inspector.components.dataset_selector import (
@@ -42,12 +43,13 @@ from spectra_inspector.components.dataset_selector import (
     resolve_spectrum_only,
 )
 from spectra_inspector.components.energy_range_slider import elementDropdownSliderIDS
-from spectra_inspector.components.image_toolbox import (
-    TOOL_IDS,
-    ZOOM_FACTORS,
-    tool_button_states,
-)
+from spectra_inspector.components.image_toolbox import ADD_IMAGE, IMAGE_TOOLBOX
 from spectra_inspector.components.scalebar import scalebarHandler
+from spectra_inspector.components.spectrum_toolbox import (
+    SPECTRUM_TOOLBOX,
+    spectrum_toolbox_layout,
+)
+from spectra_inspector.components.toolbox import RESET_EXTENT, ZOOM_FACTORS
 from spectra_inspector.logging import spectraLogger
 from spectra_inspector.user_store_model import (
     USER_STORE_DIV_ID,
@@ -169,6 +171,9 @@ class inspectorIDs(BaseModel):
     spectrum_container: str = "spectrum-container"
     spectrum_yaxis_scale: str = "spectrum-yaxis-scale"
     spectrum_peak_windows: str = "spectrum-peak-windows"
+    # the spectrum toolbox's tool, and where its clientside actions report
+    spectrum_view_store: str = "spectrum-view"
+    spectrum_action_sink: str = "spectrum-action-sink"
     image_container_type: str = "bitmap-image"
     shapes_store: str = "active-shapes"
     view_store: str = "image-view-store"
@@ -182,7 +187,11 @@ class inspectorIDs(BaseModel):
 _IDS = inspectorIDs()
 _imageIDS = bitmapImageLayoutIDs()
 _imageSliderIds = elementDropdownSliderIDS()
-_toolboxIDS = imageToolboxLayoutIDs()
+_toolboxIDS = IMAGE_TOOLBOX.ids
+_ADD_IMAGE_ID = _toolboxIDS.button_id(ADD_IMAGE.id)
+_RESET_IMAGES_ID = _toolboxIDS.button_id(RESET_EXTENT.id)
+_spectrumToolboxIDS = SPECTRUM_TOOLBOX.ids
+_SPECTRUM_RESET_ID = _spectrumToolboxIDS.button_id(RESET_EXTENT.id)
 _dataExportIDS = data_export_panel.dataExportPanelIDS(index=0)
 
 # the element preset each of the first image panels opens on; panels added
@@ -213,6 +222,12 @@ def _get_div_store() -> html.Div:
                 storage_type="memory",
                 data=empty_view(),
             ),
+            dcc.Store(
+                id=_IDS.spectrum_view_store,
+                storage_type="memory",
+                data={"dragmode": None},
+            ),
+            dcc.Store(id=_IDS.spectrum_action_sink, storage_type="memory"),
             dcc.Store(id=_IDS.full_spectrum_store, storage_type="memory", data={}),
             dcc.Store(id=_IDS.active_spectrum_metadata, storage_type="memory", data={}),
             # elements the user has zeroed out in the weights table; specific
@@ -234,6 +249,7 @@ def new_spectrum_figure(
     active_spectrum_metadata: dict | None = None,
     show_peak_windows: bool | None = True,
     zeroed_elements: list[str] | None = None,
+    dragmode: str | None = None,
 ) -> go.Figure:
     fig = go.Figure()
     fig.add_trace(
@@ -249,9 +265,21 @@ def new_spectrum_figure(
     )
     fig.add_traces([go.Scatter(**trace) for trace in windows.traces])
     fig.update_layout(
-        shapes=windows.shapes, annotations=windows.annotations, showlegend=False
+        shapes=windows.shapes,
+        annotations=windows.annotations,
+        showlegend=False,
+        dragmode=dragmode or SPECTRUM_TOOLBOX.default_tool,
     )
     return fig
+
+
+def _with_spectrum_dragmode(figure: dict, spectrum_view: dict | None) -> dict:
+    """A figure dict about to replace the spectrum, carrying the toolbox's tool
+    so the pressed button stays right."""
+    figure.setdefault("layout", {})["dragmode"] = SPECTRUM_TOOLBOX.active_tool(
+        spectrum_view
+    )
+    return figure
 
 
 def _yaxis_type(yaxis_scale: str | None) -> str:
@@ -339,45 +367,41 @@ def layout(
     spectrum_graph = dcc.Loading(
         dcc.Graph(
             id=_IDS.spectrum_container,
-            config={
-                "displayModeBar": True,
-                "displaylogo": False,
-                "scrollZoom": True,
-            },
+            config={"displayModeBar": False, "scrollZoom": True},
         ),
         id="spectrum-loading",
         overlay_style={"visibility": "visible", "filter": "blur(2px)"},
         type="circle",
     )
 
-    spectrum_controls = html.Div(
-        [
-            dbc.Switch(
-                id=_IDS.spectrum_peak_windows,
-                label="peak windows",
-                value=True,
-                className="mb-0 me-3",
-                label_class_name="mb-0",
-            ),
-            html.Label("y scale:", className="mb-0 me-2"),
-            dbc.RadioItems(
-                options=[{"label": s, "value": s} for s in SPECTRUM_YAXIS_SCALES],
-                value="linear",
-                id=_IDS.spectrum_yaxis_scale,
-                inline=True,
-                className="d-flex align-items-center",
-                inputCheckedClassName="",
-                labelCheckedClassName="",
-            ),
-        ],
-        className="d-flex align-items-center justify-content-end",
-    )
+    # the display switches fill the toolbox's second row
+    spectrum_controls = [
+        dbc.Switch(
+            id=_IDS.spectrum_peak_windows,
+            label="peak windows",
+            value=True,
+            className="mb-0 me-3",
+            label_class_name="mb-0",
+        ),
+        html.Label("y scale:", className="mb-0 me-2"),
+        dbc.RadioItems(
+            options=[{"label": s, "value": s} for s in SPECTRUM_YAXIS_SCALES],
+            value="linear",
+            id=_IDS.spectrum_yaxis_scale,
+            inline=True,
+            className="d-flex align-items-center",
+            inputCheckedClassName="",
+            labelCheckedClassName="",
+        ),
+    ]
+    tools_toggle, tools_collapse, _ = spectrum_toolbox_layout(spectrum_controls)
 
     spectrum_div = dbc.Card(
         dbc.CardBody(
             [
                 dbc.Row(dbc.Col(spectrum_graph, width=12), className="gx-1 gy-1"),
-                spectrum_controls,
+                html.Div(tools_toggle, className="d-flex justify-content-end mb-2"),
+                tools_collapse,
             ]
         ),
         # color="primary",
@@ -404,7 +428,7 @@ def layout(
     State(USER_STORE_DIV_ID, "data"),
     running=[
         (Output("spectrum-loading", "display"), "show", "hide"),
-        (Output(_toolboxIDS.add, "disabled"), True, False),
+        (Output(_ADD_IMAGE_ID, "disabled"), True, False),
     ],
     prevent_initial_call=True,
 )
@@ -500,9 +524,10 @@ def update_zeroed_elements(_zero_clicks, _reset_clicks, zeroed_elements):
     State(_IDS.spectrum_yaxis_scale, "value"),
     State(_IDS.spectrum_peak_windows, "value"),
     State(_IDS.zeroed_elements_store, "data"),
+    State(_IDS.spectrum_view_store, "data"),
     running=[
         (Output("spectrum-loading", "display"), "show", "hide"),
-        (Output(_toolboxIDS.add, "disabled"), True, False),
+        (Output(_ADD_IMAGE_ID, "disabled"), True, False),
     ],
     prevent_initial_call=True,
 )
@@ -516,6 +541,7 @@ def update_spectrum(
     yaxis_scale: str | None,
     show_peak_windows: bool | None,
     zeroed_elements: list[str] | None,
+    spectrum_view: dict | None,
 ):
 
     spectraLogger.info(f"update_spectrum trigger: {ctx.triggered_id}")
@@ -534,6 +560,7 @@ def update_spectrum(
             active_spectrum_metadata,
             show_peak_windows,
             zeroed_elements,
+            dragmode=SPECTRUM_TOOLBOX.active_tool(spectrum_view),
         )
 
         return current_figure, active_spectrum_metadata
@@ -588,7 +615,10 @@ def update_spectrum(
             show_peak_windows,
             zeroed_elements or [],
         )
-        return current_figure, active_spectrum_metadata
+        return (
+            _with_spectrum_dragmode(current_figure, spectrum_view),
+            active_spectrum_metadata,
+        )
 
     return no_update, no_update
 
@@ -614,6 +644,7 @@ def set_spectrum_yaxis_scale(yaxis_scale: str | None, current_figure):
     Input(_IDS.zeroed_elements_store, "data"),
     State(_IDS.spectrum_container, "figure"),
     State(_IDS.active_spectrum_metadata, "data"),
+    State(_IDS.spectrum_view_store, "data"),
     prevent_initial_call=True,
 )
 def toggle_peak_windows(
@@ -621,21 +652,24 @@ def toggle_peak_windows(
     zeroed_elements: list[str] | None,
     current_figure,
     active_spectrum_metadata: dict | None,
+    spectrum_view: dict | None,
 ):
     """Redraw the peaks when the switch flips or an element is zeroed out or
     restored in the weights table; the spectrum itself is not refetched."""
     if current_figure is None or not current_figure.get("data"):
         return no_update
-    return apply_peak_windows(
+    redrawn = apply_peak_windows(
         current_figure,
         active_spectrum_metadata,
         show_peak_windows,
         zeroed_elements or [],
     )
+    assert redrawn is not None
+    return _with_spectrum_dragmode(redrawn, spectrum_view)
 
 
 @callback(
-    Output(_toolboxIDS.add, "n_clicks"),
+    Output(_ADD_IMAGE_ID, "n_clicks"),
     Input(_IDS.sample_name, "children"),
     State(USER_STORE_DIV_ID, "data"),
     State(selectorIDs.get_id_with_index("spectrumonly"), "value"),
@@ -685,11 +719,11 @@ def _index_range_from_shape(shp):
 @callback(
     Output(_IDS.image_container, "children", allow_duplicate=True),
     Output(_IDS.graph_id_store, "data", allow_duplicate=True),
-    Input(_toolboxIDS.add, "n_clicks"),
+    Input(_ADD_IMAGE_ID, "n_clicks"),
     Input({"type": _imageIDS.delete, "index": ALL}, "n_clicks"),
     State(_IDS.graph_id_store, "data"),
     running=[
-        (Output(_toolboxIDS.add, "disabled"), True, False),
+        (Output(_ADD_IMAGE_ID, "disabled"), True, False),
     ],
     prevent_initial_call=True,
 )
@@ -711,7 +745,7 @@ def add_or_delete_image(
     if "active_div_ids" not in graph_id_store:
         graph_id_store["active_div_ids"] = []
 
-    if button_clicked == _toolboxIDS.add and n_clicks is not None:
+    if button_clicked == _ADD_IMAGE_ID and n_clicks is not None:
         patched_children = Patch()
 
         if graph_id_store["initialized"] is False:
@@ -1009,7 +1043,7 @@ def _active_shapes(shapes_store: dict | None) -> list[dict]:
     Output(_IDS.processed_graph_id_store, "data"),
     Output(_IDS.view_store, "data", allow_duplicate=True),
     Input({"type": _imageSliderIds.refreshbutton, "index": ALL}, "n_clicks"),
-    Input(_toolboxIDS.reset, "n_clicks"),
+    Input(_RESET_IMAGES_ID, "n_clicks"),
     State({"type": _imageIDS.colorscale, "index": ALL}, "value"),
     State(_IDS.graph_id_store, "data"),
     State({"type": _imageSliderIds.slider, "index": ALL}, "value"),
@@ -1022,8 +1056,8 @@ def _active_shapes(shapes_store: dict | None) -> list[dict]:
     State(_IDS.shapes_store, "data"),
     running=[
         (Output("full-im-container-loading", "display"), "show", "hide"),
-        (Output(_toolboxIDS.add, "disabled"), True, False),
-        (Output(_toolboxIDS.reset, "disabled"), True, False),
+        (Output(_ADD_IMAGE_ID, "disabled"), True, False),
+        (Output(_RESET_IMAGES_ID, "disabled"), True, False),
         (Output(_dataExportIDS.exportsummary, "disabled"), True, False),
         (Output(_dataExportIDS.exportmsa, "disabled"), True, False),
     ],
@@ -1122,7 +1156,7 @@ def update_graph_figure(
         processed_graph_store["initialized"] = True
         return new_figs, processed_graph_store, no_update
 
-    if triggered_id == _toolboxIDS.reset and reset_nclicks:
+    if triggered_id == _RESET_IMAGES_ID and reset_nclicks:
         # back to the full image on every panel, keeping the tool and the box.
         # A layout patch is all it takes, the image data stays in the browser.
         view = ensure_view({"dragmode": view["dragmode"]})
@@ -1383,7 +1417,10 @@ def select_image_tool(
     """A toolbox tool sets the dragmode of every panel, as a layout patch, and
     is remembered in the shared view so new panels open with it too."""
     tool = _clicked_index(ctx.triggered_id, _toolboxIDS.tool)
-    if tool not in TOOL_IDS or ensure_view(view_store)["dragmode"] == tool:
+    if (
+        tool not in IMAGE_TOOLBOX.tool_ids
+        or ensure_view(view_store)["dragmode"] == tool
+    ):
         return [no_update] * len(graph_ids), no_update
     spectraLogger.info(f"image tool: {tool}")
     return tool_patches(tool, view_store, graph_ids, processed_graph_store)
@@ -1397,8 +1434,7 @@ def select_image_tool(
 def highlight_image_tool(view_store: dict | None, button_ids: list[dict]):
     """The pressed tool button follows the shared view, so it is right however
     the view got there (a click, a reset, a new dataset)."""
-    states = dict(zip(TOOL_IDS, tool_button_states(view_store), strict=True))
-    return [states.get(button_id["index"], False) for button_id in button_ids]
+    return IMAGE_TOOLBOX.tool_states_for(view_store, button_ids)
 
 
 @callback(
@@ -1443,6 +1479,71 @@ def run_image_action(
 
 
 @callback(
+    Output(_IDS.spectrum_container, "figure", allow_duplicate=True),
+    Output(_IDS.spectrum_view_store, "data", allow_duplicate=True),
+    Input({"type": _spectrumToolboxIDS.tool, "index": ALL}, "n_clicks"),
+    State(_IDS.active_spectrum_metadata, "data"),
+    State(_IDS.spectrum_view_store, "data"),
+    prevent_initial_call=True,
+)
+def select_spectrum_tool(
+    _n_clicks: list[int | None],
+    active_spectrum_metadata: dict | None,
+    spectrum_view: dict | None,
+):
+    """A spectrum tool sets the plot's dragmode as a layout patch and is
+    remembered so the figure keeps it when it is next rebuilt.
+
+    The active-spectrum metadata is set in the same callback that draws the
+    figure and cleared with it, so it says whether there is a figure to patch
+    without uploading the figure itself.
+    """
+    tool = _clicked_index(ctx.triggered_id, _spectrumToolboxIDS.tool)
+    if (
+        tool not in SPECTRUM_TOOLBOX.tool_ids
+        or SPECTRUM_TOOLBOX.active_tool(spectrum_view) == tool
+    ):
+        return no_update, no_update
+    spectraLogger.info(f"spectrum tool: {tool}")
+    view = {"dragmode": tool}
+    if not active_spectrum_metadata:
+        return no_update, view
+    patch = Patch()
+    patch["layout"]["dragmode"] = tool
+    return patch, view
+
+
+@callback(
+    Output({"type": _spectrumToolboxIDS.tool, "index": ALL}, "active"),
+    Input(_IDS.spectrum_view_store, "data"),
+    State({"type": _spectrumToolboxIDS.tool, "index": ALL}, "id"),
+)
+def highlight_spectrum_tool(spectrum_view: dict | None, button_ids: list[dict]):
+    return SPECTRUM_TOOLBOX.tool_states_for(spectrum_view, button_ids)
+
+
+# the zoom steps and the reset act on the plot's live ranges, which only the
+# browser has; see assets/toolbox.js
+clientside_callback(
+    ClientsideFunction("toolbox", "spectrumAction"),
+    Output(_IDS.spectrum_action_sink, "data"),
+    Input({"type": _spectrumToolboxIDS.action, "index": ALL}, "n_clicks"),
+    Input(_SPECTRUM_RESET_ID, "n_clicks"),
+    State(_IDS.spectrum_container, "id"),
+    prevent_initial_call=True,
+)
+
+clientside_callback(
+    ClientsideFunction("toolbox", "toggleCollapse"),
+    Output(_spectrumToolboxIDS.collapse, "is_open"),
+    Output(_spectrumToolboxIDS.chevron, "className"),
+    Input(_spectrumToolboxIDS.toggle, "n_clicks"),
+    State(_spectrumToolboxIDS.collapse, "is_open"),
+    prevent_initial_call=True,
+)
+
+
+@callback(
     Output(USER_STORE_DIV_ID, "data", allow_duplicate=True),
     Output(selectorIDs.get_id_with_index("dropdown"), "options"),
     Output(selectorIDs.get_id_with_index("dropdown"), "value"),
@@ -1454,6 +1555,7 @@ def run_image_action(
     Output(_IDS.image_container, "children", allow_duplicate=True),
     Output(_IDS.spectrum_container, "figure"),
     Output(_IDS.view_store, "data", allow_duplicate=True),
+    Output(_IDS.spectrum_view_store, "data", allow_duplicate=True),
     Output(_IDS.shapes_store, "data", allow_duplicate=True),
     Output(selectorIDs.get_id_with_index("liststore"), "data", allow_duplicate=True),
     Output(_IDS.image_section, "hidden"),
@@ -1551,6 +1653,7 @@ def update_selected_dataset(
         figure_div_children,
         None,
         empty_view(),
+        {"dragmode": None},
         {"active_shapes": []},
         output_lists,
         spectrum_only,

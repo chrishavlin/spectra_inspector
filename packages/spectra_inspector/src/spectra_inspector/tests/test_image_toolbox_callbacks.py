@@ -14,7 +14,7 @@ import pytest
 from dash import Patch, no_update
 
 from spectra_inspector.components.bitmap_image import bitmap_image_layout
-from spectra_inspector.components.image_toolbox import DEFAULT_TOOL, TOOL_IDS
+from spectra_inspector.components.image_toolbox import IMAGE_TOOLBOX
 from spectra_inspector.settings import ENV_PREFIX
 from spectra_inspector.tests.test_export_summary import combined_metadata
 from spectra_inspector.user_store_model import UserStore
@@ -140,8 +140,8 @@ def test_default_tool_is_what_new_figures_get(inspector):
         im_data=np.zeros((2, 2)),
         md=combined_metadata(),
     )
-    assert fig.layout.dragmode == DEFAULT_TOOL
-    assert DEFAULT_TOOL in TOOL_IDS
+    assert fig.layout.dragmode == IMAGE_TOOLBOX.default_tool
+    assert IMAGE_TOOLBOX.default_tool in IMAGE_TOOLBOX.tool_ids
 
 
 def test_zoom_in_from_the_full_image(inspector):
