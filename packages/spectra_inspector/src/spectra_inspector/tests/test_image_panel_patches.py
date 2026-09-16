@@ -19,8 +19,8 @@ from spectra_inspector.settings import ENV_PREFIX
 GRAPH_TYPE = "bitmap-image-graph"
 COLORSCALE_TYPE = "bitmap-image-colorscale"
 CONTAINER = "image-container"
-ADD_BUTTON = "dynamic-add-image-btn"
-RESET_BUTTON = "reset-all-axes"
+ADD_BUTTON = "image-toolbox-add"
+RESET_BUTTON = "image-toolbox-reset"
 
 
 def _mentions(dep: dict, id_type: str, prop: str) -> bool:

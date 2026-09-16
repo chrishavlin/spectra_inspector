@@ -161,13 +161,10 @@ def selected_sample_contents(sample_name: str | None) -> str:
 
 
 class inspectorIDs(BaseModel):
-    add_image: str = "dynamic-add-image-btn"
-    reset_all_axes: str = "reset-all-axes"
     metadata: str = "metadata-info"
     sample_name: str = "sample-name"
     image_container: str = "image-container"
-    # the wrappers hidden in spectrum-only mode: the image buttons and the panels
-    image_controls: str = "image-controls"
+    # the wrapper hidden in spectrum-only mode: the toolbox and the panels
     image_section: str = "image-section"
     spectrum_container: str = "spectrum-container"
     spectrum_yaxis_scale: str = "spectrum-yaxis-scale"
@@ -290,49 +287,7 @@ def layout(
 
     _layout_rows.append(directory_selector(component_index=1))
 
-    image_control_card = dbc.Card(
-        dbc.CardBody(
-            [
-                dbc.Row(
-                    [
-                        dbc.Col(_data_selector, style={"minWidth": 0}),
-                        dbc.Col(
-                            dbc.Row(
-                                [
-                                    dbc.Col(
-                                        dbc.Button(
-                                            "Add Image",
-                                            id=_IDS.add_image,
-                                            n_clicks=0,
-                                            color="secondary",
-                                            className="text-nowrap",
-                                        ),
-                                        width="auto",
-                                    ),
-                                    dbc.Col(
-                                        dbc.Button(
-                                            "Reset Images",
-                                            id=_IDS.reset_all_axes,
-                                            n_clicks=0,
-                                            color="secondary",
-                                            className="text-nowrap",
-                                        ),
-                                        width="auto",
-                                    ),
-                                ],
-                                id=_IDS.image_controls,
-                                className="g-3",
-                                style={"display": "none"} if spectrum_only_mode else {},
-                            ),
-                            width="auto",
-                        ),
-                    ],
-                    align="end",
-                    className="g-3",
-                ),
-            ]
-        )
-    )
+    image_control_card = dbc.Card(dbc.CardBody(_data_selector))
 
     _top_image_controls = dbc.Row(
         dbc.Col(
@@ -449,7 +404,7 @@ def layout(
     State(USER_STORE_DIV_ID, "data"),
     running=[
         (Output("spectrum-loading", "display"), "show", "hide"),
-        (Output(_IDS.add_image, "disabled"), True, False),
+        (Output(_toolboxIDS.add, "disabled"), True, False),
     ],
     prevent_initial_call=True,
 )
@@ -547,7 +502,7 @@ def update_zeroed_elements(_zero_clicks, _reset_clicks, zeroed_elements):
     State(_IDS.zeroed_elements_store, "data"),
     running=[
         (Output("spectrum-loading", "display"), "show", "hide"),
-        (Output(_IDS.add_image, "disabled"), True, False),
+        (Output(_toolboxIDS.add, "disabled"), True, False),
     ],
     prevent_initial_call=True,
 )
@@ -680,7 +635,7 @@ def toggle_peak_windows(
 
 
 @callback(
-    Output(_IDS.add_image, "n_clicks"),
+    Output(_toolboxIDS.add, "n_clicks"),
     Input(_IDS.sample_name, "children"),
     State(USER_STORE_DIV_ID, "data"),
     State(selectorIDs.get_id_with_index("spectrumonly"), "value"),
@@ -730,11 +685,11 @@ def _index_range_from_shape(shp):
 @callback(
     Output(_IDS.image_container, "children", allow_duplicate=True),
     Output(_IDS.graph_id_store, "data", allow_duplicate=True),
-    Input(_IDS.add_image, "n_clicks"),
+    Input(_toolboxIDS.add, "n_clicks"),
     Input({"type": _imageIDS.delete, "index": ALL}, "n_clicks"),
     State(_IDS.graph_id_store, "data"),
     running=[
-        (Output(_IDS.add_image, "disabled"), True, False),
+        (Output(_toolboxIDS.add, "disabled"), True, False),
     ],
     prevent_initial_call=True,
 )
@@ -756,7 +711,7 @@ def add_or_delete_image(
     if "active_div_ids" not in graph_id_store:
         graph_id_store["active_div_ids"] = []
 
-    if button_clicked == _IDS.add_image and n_clicks is not None:
+    if button_clicked == _toolboxIDS.add and n_clicks is not None:
         patched_children = Patch()
 
         if graph_id_store["initialized"] is False:
@@ -1054,7 +1009,7 @@ def _active_shapes(shapes_store: dict | None) -> list[dict]:
     Output(_IDS.processed_graph_id_store, "data"),
     Output(_IDS.view_store, "data", allow_duplicate=True),
     Input({"type": _imageSliderIds.refreshbutton, "index": ALL}, "n_clicks"),
-    Input(_IDS.reset_all_axes, "n_clicks"),
+    Input(_toolboxIDS.reset, "n_clicks"),
     State({"type": _imageIDS.colorscale, "index": ALL}, "value"),
     State(_IDS.graph_id_store, "data"),
     State({"type": _imageSliderIds.slider, "index": ALL}, "value"),
@@ -1067,8 +1022,8 @@ def _active_shapes(shapes_store: dict | None) -> list[dict]:
     State(_IDS.shapes_store, "data"),
     running=[
         (Output("full-im-container-loading", "display"), "show", "hide"),
-        (Output(_IDS.add_image, "disabled"), True, False),
-        (Output(_IDS.reset_all_axes, "disabled"), True, False),
+        (Output(_toolboxIDS.add, "disabled"), True, False),
+        (Output(_toolboxIDS.reset, "disabled"), True, False),
         (Output(_dataExportIDS.exportsummary, "disabled"), True, False),
         (Output(_dataExportIDS.exportmsa, "disabled"), True, False),
     ],
@@ -1167,7 +1122,7 @@ def update_graph_figure(
         processed_graph_store["initialized"] = True
         return new_figs, processed_graph_store, no_update
 
-    if triggered_id == _IDS.reset_all_axes and reset_nclicks:
+    if triggered_id == _toolboxIDS.reset and reset_nclicks:
         # back to the full image on every panel, keeping the tool and the box.
         # A layout patch is all it takes, the image data stays in the browser.
         view = ensure_view({"dragmode": view["dragmode"]})
@@ -1501,7 +1456,6 @@ def run_image_action(
     Output(_IDS.view_store, "data", allow_duplicate=True),
     Output(_IDS.shapes_store, "data", allow_duplicate=True),
     Output(selectorIDs.get_id_with_index("liststore"), "data", allow_duplicate=True),
-    Output(_IDS.image_controls, "style"),
     Output(_IDS.image_section, "hidden"),
     Input(selectorIDs.get_id_with_index("dropdown"), "value"),
     Input(selectorIDs.get_id_with_index("refresh"), "n_clicks"),
@@ -1519,8 +1473,8 @@ def update_selected_dataset(
 ):
     """Load a newly picked sample (or refresh the list) and reset the page.
 
-    In spectrum-only mode the image controls and panel area are hidden along
-    the way: the sample is a lone ``.spc`` and there is nothing to image.
+    In spectrum-only mode the image section (toolbox and panels) is hidden
+    along the way: the sample is a lone ``.spc`` and there is nothing to image.
     """
     sisi = SpectraInspectorServerInterface()
     trigger = ctx.triggered_id
@@ -1599,6 +1553,5 @@ def update_selected_dataset(
         empty_view(),
         {"active_shapes": []},
         output_lists,
-        {"display": "none"} if spectrum_only else {},
         spectrum_only,
     )

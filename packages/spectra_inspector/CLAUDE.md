@@ -80,12 +80,12 @@ per-sample request. Things that only show in the browser:
   renderer, which re-mounted the page from the stale layout and flipped the
   switch back. The dark theme's white-on-white value text is fixed with a
   `color` on the dropdown's `style` instead.
-- In spectrum-only mode the inspector hides the image buttons and the panel area
-  (`inspectorIDs.image_controls` / `image_section`) and `initial_update` opens
-  no panels; only the spectrum and the export panel remain. `export_summary`
-  resolves the mode the same way and, when it is on, never looks at the image
-  panels or the box store: the zip / PDF carry the spectrum files only
-  (`tests/test_export_summary.py`).
+- In spectrum-only mode the inspector hides the image section, the toolbox and
+  the panel area together (`inspectorIDs.image_section`), and `initial_update`
+  opens no panels; only the spectrum and the export panel remain.
+  `export_summary` resolves the mode the same way and, when it is on, never
+  looks at the image panels or the box store: the zip / PDF carry the spectrum
+  files only (`tests/test_export_summary.py`).
 
 ### Browser testing without EDAX data
 
@@ -168,9 +168,12 @@ Several Dash/plotly behaviours here are not visible from the python side:
   `scaling.get_image_shape`), and erasing writes an empty `active-shapes` so the
   spectrum reloads. Buttons are pattern ids
   `{"type": "image-toolbox-tool"|"image-toolbox-action", "index": <id>}` over
-  `ALL`; add a tool or action to `TOOLS` / `ACTIONS`, and an action to
-  `action_results`. Plotly's per-panel PNG download went with the modebar; the
-  export panel covers images.
+  `ALL`; add a tool or action to `TOOLS` / `ACTIONS`, an action to
+  `action_results`, and the new button to a `BUTTON_GROUPS` entry, which is the
+  row order. `Add Image` and `Reset Images` share the card but are plain ids
+  (`imageToolboxLayoutIDs.add` / `.reset`) answered by `add_or_delete_image` and
+  `update_graph_figure`. Plotly's per-panel PNG download went with the modebar;
+  the export panel covers images.
 
 All cross-callback state lives in a single `dcc.Store` with id
 `USER_STORE_DIV_ID` (`"user-mem-store"`), whose dict is the `UserStore`
