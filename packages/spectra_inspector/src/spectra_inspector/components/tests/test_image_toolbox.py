@@ -1,13 +1,14 @@
 import dash_bootstrap_components as dbc
 import plotly.express as px
+from dash import html
 
 from spectra_inspector.components.image_toolbox import (
     ACTION_IDS,
     ACTIONS,
     ADD_IMAGE,
-    BUTTON_GROUPS,
     DEFAULT_TOOL,
     RESET_IMAGES,
+    ROWS,
     TOOL_IDS,
     TOOLBOX_TITLE,
     TOOLS,
@@ -38,39 +39,48 @@ def test_image_toolbox_layout_ids():
         assert prop in getattr(ids, prop)
     assert ids.tool_id("zoom") == {"type": ids.tool, "index": "zoom"}
     assert ids.action_id("zoomin") == {"type": ids.action, "index": "zoomin"}
-    assert len({ids.tool, ids.action, ids.reset, ids.add}) == 4
+    assert ids.row_id(1) == {"type": ids.row, "index": 1}
+    assert len({ids.tool, ids.action, ids.reset, ids.add, ids.row}) == 5
     assert ids.button_id("zoom") == ids.tool_id("zoom")
     assert ids.button_id("eraseshape") == ids.action_id("eraseshape")
     assert ids.button_id(RESET_IMAGES.id) == ids.reset
     assert ids.button_id(ADD_IMAGE.id) == ids.add
 
 
-def test_groups_cover_every_tool_and_action_once():
-    grouped = [button for group in BUTTON_GROUPS for button in group]
+def test_rows_cover_every_tool_and_action_once():
+    grouped = [button for row in ROWS for group in row.groups for button in group]
     assert sorted(grouped) == sorted((*TOOL_IDS, *ACTION_IDS, RESET_IMAGES.id))
     assert ADD_IMAGE.id not in grouped
+    assert len({row.label for row in ROWS}) == len(ROWS)
 
 
-def test_layout_follows_the_groups_with_add_at_the_right():
+def test_layout_is_labelled_rows_with_add_at_the_top_right():
     card, ids = image_toolbox_layout()
-    groups = _find(card, lambda c: isinstance(c, dbc.ButtonGroup))
-    assert [[button.id for button in group.children] for group in groups] == [
-        [ids.button_id(button) for button in group] for group in BUTTON_GROUPS
-    ]
+    rows = _find(card, lambda c: isinstance(c, html.Div) and "flex-wrap" in c.className)
+    assert len(rows) == len(ROWS)
+    for position, (row, spec) in enumerate(zip(rows, ROWS, strict=True)):
+        label, *groups = row.children
+        assert label.children == spec.label
+        assert label.id == ids.row_id(position)
+        if position == 0:
+            *groups, add_button = groups
+            assert add_button.id == ids.add
+            assert "ms-auto" in add_button.className
+        assert all(isinstance(group, dbc.ButtonGroup) for group in groups)
+        assert [[button.id for button in group.children] for group in groups] == [
+            [ids.button_id(button) for button in group] for group in spec.groups
+        ]
 
     buttons = _find(card, lambda c: isinstance(c, dbc.Button))
-    add_button = buttons[-1]
-    assert add_button.id == ids.add
-    assert "ms-auto" in add_button.className
-    assert len(buttons) == sum(len(group) for group in BUTTON_GROUPS) + 1
+    assert len(buttons) == sum(len(g) for row in ROWS for g in row.groups) + 1
     # only the default tool starts pressed
     pressed = [button.id for button in buttons if button.active]
     assert pressed == [ids.tool_id(DEFAULT_TOOL)]
 
     tooltips = _find(card, lambda c: isinstance(c, dbc.Tooltip))
-    assert sorted(map(str, (t.target for t in tooltips))) == sorted(
-        map(str, (b.id for b in buttons))
-    )
+    targets = sorted(map(str, (t.target for t in tooltips)))
+    labelled = [b.id for b in buttons] + [ids.row_id(i) for i in range(len(ROWS))]
+    assert targets == sorted(map(str, labelled))
     headers = _find(card, lambda c: isinstance(c, dbc.CardHeader))
     assert headers[0].children == TOOLBOX_TITLE
 

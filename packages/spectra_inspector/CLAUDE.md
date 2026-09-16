@@ -169,11 +169,12 @@ Several Dash/plotly behaviours here are not visible from the python side:
   spectrum reloads. Buttons are pattern ids
   `{"type": "image-toolbox-tool"|"image-toolbox-action", "index": <id>}` over
   `ALL`; add a tool or action to `TOOLS` / `ACTIONS`, an action to
-  `action_results`, and the new button to a `BUTTON_GROUPS` entry, which is the
-  row order. `Add Image` and `Reset Images` share the card but are plain ids
-  (`imageToolboxLayoutIDs.add` / `.reset`) answered by `add_or_delete_image` and
-  `update_graph_figure`. Plotly's per-panel PNG download went with the modebar;
-  the export panel covers images.
+  `action_results`, and the new button to a group of a `ROWS` entry, which is
+  the card's layout (labelled rows of button groups). `Add Image` and
+  `Reset Extent` share the card but are plain ids (`imageToolboxLayoutIDs.add` /
+  `.reset`) answered by `add_or_delete_image` and `update_graph_figure`.
+  Plotly's per-panel PNG download went with the modebar; the export panel covers
+  images.
 
 All cross-callback state lives in a single `dcc.Store` with id
 `USER_STORE_DIV_ID` (`"user-mem-store"`), whose dict is the `UserStore`

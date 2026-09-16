@@ -9,8 +9,11 @@ A *tool* is a plotly ``dragmode`` (what a drag on a panel does) and is
 persistent: the active one is whatever the shared view's ``dragmode`` holds.
 An *action* runs once when clicked (zoom in, zoom out, erase the box). Both
 are pattern ids answered by the toolbox callbacks. The two panel-set buttons,
-reset and add, share the row but carry plain ids: they are answered by the
+reset and add, share the card but carry plain ids: they are answered by the
 inspector's figure-building and panel-adding callbacks.
+
+The card is laid out in labelled rows (``ROWS``): what selects the pixels the
+spectrum is extracted from, and what moves the view.
 """
 
 from dataclasses import dataclass
@@ -70,13 +73,28 @@ RESET_IMAGES = imageButton(
 )
 ADD_IMAGE = imageButton("add", "Add Image", "fa-solid fa-plus", "Open another panel")
 
-# The row, left to right; the buttons of a group sit flush against each other.
+
+@dataclass(frozen=True)
+class toolboxRow:
+    label: str
+    tooltip: str
+    # left to right; the buttons of a group sit flush against each other
+    groups: tuple[tuple[str, ...], ...]
+
+
 # Every tool and action appears in exactly one group. The add button is in no
-# group: it sits alone at the right end of the row.
-BUTTON_GROUPS: tuple[tuple[str, ...], ...] = (
-    ("drawrect", "eraseshape"),
-    ("zoom", "pan"),
-    ("zoomin", "zoomout", RESET_IMAGES.id),
+# group: it sits alone at the right end of the first row.
+ROWS: tuple[toolboxRow, ...] = (
+    toolboxRow(
+        "Extract Spectrum",
+        "The spectrum below sums the pixels inside the selection",
+        (("drawrect", "eraseshape"),),
+    ),
+    toolboxRow(
+        "View Controls",
+        "Zoom and pan every panel together",
+        (("zoom", "pan"), ("zoomin", "zoomout", RESET_IMAGES.id)),
+    ),
 )
 
 # what get_new_im puts on a fresh figure, and so what a view without a dragmode
@@ -92,7 +110,7 @@ ZOOM_FACTORS = {"zoomin": 0.5, "zoomout": 2.0}
 
 
 class imageToolboxLayoutIDs(indexedLayoutIDMapper):
-    prop_names: tuple[str, ...] = ("div", "tool", "action", "reset", "add")
+    prop_names: tuple[str, ...] = ("div", "tool", "action", "reset", "add", "row")
 
     def __init__(self, id_type_base: str = "image-toolbox") -> None:
         super().__init__(id_type_base, None)
@@ -113,12 +131,20 @@ class imageToolboxLayoutIDs(indexedLayoutIDMapper):
     def add(self) -> str:
         return self.full_id("-add")
 
+    @property
+    def row(self) -> str:
+        return self.full_id("-row")
+
     def tool_id(self, tool: str) -> dict[str, str]:
         """The pattern-matching id of a tool button, indexed by the tool."""
         return {"type": self.tool, "index": tool}
 
     def action_id(self, action: str) -> dict[str, str]:
         return {"type": self.action, "index": action}
+
+    def row_id(self, position: int) -> dict[str, str | int]:
+        """The id of a row's label, indexed by the row's position in ROWS."""
+        return {"type": self.row, "index": position}
 
     def button_id(self, button: str) -> str | dict[str, str]:
         """The id of any toolbox button, pattern or plain."""
@@ -167,36 +193,51 @@ def _icon_button(
     )
 
 
-def image_toolbox_layout(
-    id_type_base: str = "image-toolbox",
-) -> tuple[dbc.Card, imageToolboxLayoutIDs]:
-    ids = imageToolboxLayoutIDs(id_type_base=id_type_base)
+def _row(
+    ids: imageToolboxLayoutIDs, position: int, row: toolboxRow, *trailing: Any
+) -> html.Div:
     pressed = active_tool(None)
-
     groups = [
         dbc.ButtonGroup(
             [_icon_button(ids, button, active=button == pressed) for button in group],
             size="sm",
         )
-        for group in BUTTON_GROUPS
+        for group in row.groups
     ]
+    label = html.Span(
+        row.label,
+        id=ids.row_id(position),
+        className="si-toolbox-label small fw-semibold text-nowrap",
+    )
+    return html.Div(
+        [label, *groups, *trailing],
+        className="d-flex flex-wrap align-items-center gap-2",
+    )
+
+
+def image_toolbox_layout(
+    id_type_base: str = "image-toolbox",
+) -> tuple[dbc.Card, imageToolboxLayoutIDs]:
+    ids = imageToolboxLayoutIDs(id_type_base=id_type_base)
+
     add_button = _icon_button(ids, ADD_IMAGE.id, size="sm", class_name="ms-auto")
+    rows = [
+        _row(ids, position, row, *([add_button] if position == 0 else []))
+        for position, row in enumerate(ROWS)
+    ]
     tooltips = [
         dbc.Tooltip(spec.tooltip, target=ids.button_id(spec.id), placement="bottom")
         for spec in _BUTTONS.values()
+    ] + [
+        dbc.Tooltip(row.tooltip, target=ids.row_id(position), placement="right")
+        for position, row in enumerate(ROWS)
     ]
 
     card = dbc.Card(
         [
             dbc.CardHeader(TOOLBOX_TITLE, className="px-2 py-1"),
             dbc.CardBody(
-                [
-                    html.Div(
-                        [*groups, add_button],
-                        className="d-flex flex-wrap align-items-center gap-2",
-                    ),
-                    *tooltips,
-                ],
+                [html.Div(rows, className="d-flex flex-column gap-2"), *tooltips],
                 className="p-2",
             ),
         ],

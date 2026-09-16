@@ -71,3 +71,8 @@
   --bs-btn-color: var(--bs-body-color);
   --bs-btn-disabled-color: var(--bs-body-color);
 }
+
+/* Equal-width row labels keep the button groups of the rows aligned. */
+.si-toolbox-label {
+  min-width: 8rem;
+}
