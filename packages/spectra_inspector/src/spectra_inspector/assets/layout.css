@@ -67,7 +67,8 @@
    secondary, which on the dark theme is barely brighter than the card. Keep
    the label at the body text colour so only the background marks hover and
    the pressed tool. */
-.si-toolbox .btn-outline-secondary {
+.si-toolbox .btn-outline-secondary,
+.si-toolbox-toggle.btn-outline-secondary {
   --bs-btn-color: var(--bs-body-color);
   --bs-btn-disabled-color: var(--bs-body-color);
 }

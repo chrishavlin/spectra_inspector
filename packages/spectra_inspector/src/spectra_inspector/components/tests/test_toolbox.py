@@ -135,6 +135,8 @@ def test_collapse_starts_closed_with_a_chevron():
     assert collapse.is_open is False
     assert collapse.id == spec.ids.collapse
     assert toggle.id == spec.ids.toggle
+    # the CSS hook that keeps its label readable, like the card's buttons
+    assert "si-toolbox-toggle" in toggle.className
     chevron, label = toggle.children
     assert chevron.id == spec.ids.chevron
     assert chevron.className == CHEVRON_CLOSED

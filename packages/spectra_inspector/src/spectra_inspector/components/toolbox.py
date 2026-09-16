@@ -280,6 +280,7 @@ def toolbox_collapse(
         size="sm",
         color="secondary",
         outline=True,
-        className="text-nowrap",
+        # outside the card, so it carries the card's label-colour rule itself
+        className="si-toolbox-toggle text-nowrap",
     )
     return toggle, dbc.Collapse(card, id=ids.collapse, is_open=is_open)
