@@ -188,11 +188,15 @@ Several Dash/plotly behaviours here are not visible from the python side:
   patches `layout.dragmode` and writes the `spectrum-view` store,
   `highlight_spectrum_tool` reads it, and the callbacks that replace the
   spectrum figure (`update_spectrum`, `toggle_peak_windows`) put the stored
-  dragmode on what they return so the pressed button survives a rebuild. Zoom
-  in, zoom out and reset are the `spectrumAction` clientside function: the
-  spectrum's live ranges exist only in the browser, so it reads `gd._fullLayout`
-  and calls `Plotly.relayout`, scaling the energy axis only and reporting into
-  the `spectrum-action-sink` store.
+  dragmode on what they return so the pressed button survives a rebuild. The
+  figure carries a `uirevision` (`_spectrum_revision`: the sample and the box)
+  because the figure prop never receives the browser's zoom: without it a
+  dragmode patch or a peak redraw snapped the plot back to autorange. A y-scale
+  change bumps `yaxis.uirevision` so only that axis resets. Zoom in, zoom out
+  and reset are the `spectrumAction` clientside function: the spectrum's live
+  ranges exist only in the browser, so it reads `gd._fullLayout` and calls
+  `Plotly.relayout`, scaling the energy axis only and reporting into the
+  `spectrum-action-sink` store.
 
 All cross-callback state lives in a single `dcc.Store` with id
 `USER_STORE_DIV_ID` (`"user-mem-store"`), whose dict is the `UserStore`

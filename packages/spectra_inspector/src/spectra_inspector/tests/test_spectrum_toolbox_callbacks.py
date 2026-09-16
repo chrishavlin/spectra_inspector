@@ -99,6 +99,30 @@ def test_new_figures_carry_the_tool(inspector):
     assert fig.layout.dragmode == SPECTRUM_TOOLBOX.default_tool
 
 
+def test_figures_carry_a_revision_that_follows_the_spectrum_shown(inspector):
+    box = {"type": "rect", "x0": 0, "x1": 1, "y0": 0, "y1": 1}
+    full = inspector._spectrum_revision("C12", {"active_shapes": []})
+    assert full == inspector._spectrum_revision("C12", None)
+    assert full != inspector._spectrum_revision("C12", {"active_shapes": [box]})
+    assert full != inspector._spectrum_revision("C8", {"active_shapes": []})
+    fig = inspector.new_spectrum_figure([0.0, 1.0], [1.0, 2.0], uirevision=full)
+    assert fig.layout.uirevision == full
+    # a rebuild keeps it: the figure dict is what dash-renderer holds
+    kept = inspector._with_spectrum_dragmode(
+        {"data": [], "layout": {"uirevision": full}}, {"dragmode": "pan"}
+    )
+    assert kept["layout"]["uirevision"] == full
+
+
+def test_yaxis_scale_change_resets_only_the_y_axis(inspector):
+    patch = inspector.set_spectrum_yaxis_scale("log", {"data": [], "layout": {}})
+    assert _ops(patch) == {
+        "layout.yaxis.type": "log",
+        "layout.yaxis.uirevision": "log",
+    }
+    assert inspector.set_spectrum_yaxis_scale("log", None) is no_update
+
+
 def test_replacement_figures_carry_the_stored_tool(inspector):
     figure = {"data": [], "layout": {"xaxis": {"title": "x"}}}
     out = inspector._with_spectrum_dragmode(figure, {"dragmode": "pan"})

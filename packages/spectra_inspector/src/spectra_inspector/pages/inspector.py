@@ -1,3 +1,4 @@
+import json
 from typing import TYPE_CHECKING, Literal
 
 import dash
@@ -250,6 +251,7 @@ def new_spectrum_figure(
     show_peak_windows: bool | None = True,
     zeroed_elements: list[str] | None = None,
     dragmode: str | None = None,
+    uirevision: str | None = None,
 ) -> go.Figure:
     fig = go.Figure()
     fig.add_trace(
@@ -269,8 +271,21 @@ def new_spectrum_figure(
         annotations=windows.annotations,
         showlegend=False,
         dragmode=dragmode or SPECTRUM_TOOLBOX.default_tool,
+        uirevision=uirevision,
     )
     return fig
+
+
+def _spectrum_revision(sample_name: str | None, shapes_store: dict | None) -> str:
+    """The spectrum figure's ``uirevision``: what the plot is showing.
+
+    The figure prop never receives a zoom, so without a revision every patch
+    (a tool pick, the peaks redrawn) would snap the plot back to autorange.
+    With one, plotly keeps the browser's zoom as long as the revision is
+    unchanged; it changes with the spectrum shown, so a new box or dataset
+    does start from the full view.
+    """
+    return f"{sample_name}|{json.dumps(_active_shapes(shapes_store), sort_keys=True)}"
 
 
 def _with_spectrum_dragmode(figure: dict, spectrum_view: dict | None) -> dict:
@@ -561,6 +576,7 @@ def update_spectrum(
             show_peak_windows,
             zeroed_elements,
             dragmode=SPECTRUM_TOOLBOX.active_tool(spectrum_view),
+            uirevision=_spectrum_revision(sample_name, shapes_store),
         )
 
         return current_figure, active_spectrum_metadata
@@ -607,6 +623,9 @@ def update_spectrum(
         }
 
         current_figure["data"][0] = new_trace
+        current_figure["layout"]["uirevision"] = _spectrum_revision(
+            sample_name, shapes_store
+        )
         # the peaks follow the new curve, and a spatial subset may have lost
         # its calibration (and so its windows) altogether
         current_figure = apply_peak_windows(
@@ -635,6 +654,9 @@ def set_spectrum_yaxis_scale(yaxis_scale: str | None, current_figure):
         return no_update
     patched = Patch()
     patched["layout"]["yaxis"]["type"] = _yaxis_type(yaxis_scale)
+    # a range zoomed on the old scale means nothing on the new one: bumping
+    # the axis's own revision lets it autorange while the energy zoom stays
+    patched["layout"]["yaxis"]["uirevision"] = _yaxis_type(yaxis_scale)
     return patched
 
 
