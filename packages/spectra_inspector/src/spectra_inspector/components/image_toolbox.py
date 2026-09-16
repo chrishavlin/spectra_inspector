@@ -22,7 +22,7 @@ from dash import html
 from spectra_inspector.components.layout_ids import indexedLayoutIDMapper
 from spectra_inspector.utilities.view_sync import ensure_view
 
-TOOLBOX_TITLE = "Element Map Tools"
+TOOLBOX_TITLE = "Image Panel Tools"
 
 
 @dataclass(frozen=True)
@@ -64,9 +64,9 @@ ACTIONS: tuple[imageButton, ...] = (
 
 RESET_IMAGES = imageButton(
     "reset",
-    "Reset Images",
+    "Reset Extent",
     "fa-solid fa-rotate-left",
-    "Back to the full image on every panel; the tool and the box stay",
+    "Zoom out to full extent on every panel",
 )
 ADD_IMAGE = imageButton("add", "Add Image", "fa-solid fa-plus", "Open another panel")
 
