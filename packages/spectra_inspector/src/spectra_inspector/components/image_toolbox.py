@@ -22,7 +22,7 @@ from dash import html
 from spectra_inspector.components.layout_ids import indexedLayoutIDMapper
 from spectra_inspector.utilities.view_sync import ensure_view
 
-TOOLBOX_TITLE = "Bitmap Image Toolbox"
+TOOLBOX_TITLE = "Element Map Tools"
 
 
 @dataclass(frozen=True)
