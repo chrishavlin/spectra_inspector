@@ -10,6 +10,7 @@ from .directory_selector import (
     directory_selector,
     directorySelectorLayoutIDs,
 )
+from .image_toolbox import image_toolbox_layout
 
 __all__ = [
     "bitmapImageLayoutIDs",
@@ -21,4 +22,5 @@ __all__ = [
     "directory_selector",
     "fetch_im_data_parallel",
     "get_new_im",
+    "image_toolbox_layout",
 ]

@@ -80,12 +80,12 @@ per-sample request. Things that only show in the browser:
   renderer, which re-mounted the page from the stale layout and flipped the
   switch back. The dark theme's white-on-white value text is fixed with a
   `color` on the dropdown's `style` instead.
-- In spectrum-only mode the inspector hides the image buttons and the panel area
-  (`inspectorIDs.image_controls` / `image_section`) and `initial_update` opens
-  no panels; only the spectrum and the export panel remain. `export_summary`
-  resolves the mode the same way and, when it is on, never looks at the image
-  panels or the box store: the zip / PDF carry the spectrum files only
-  (`tests/test_export_summary.py`).
+- In spectrum-only mode the inspector hides the image section, the toolbox and
+  the panel area together (`inspectorIDs.image_section`), and `initial_update`
+  opens no panels; only the spectrum and the export panel remain.
+  `export_summary` resolves the mode the same way and, when it is on, never
+  looks at the image panels or the box store: the zip / PDF carry the spectrum
+  files only (`tests/test_export_summary.py`).
 
 ### Browser testing without EDAX data
 
@@ -107,9 +107,11 @@ in a browser. A headless setup that needs no data:
   `p.chromium.launch(channel="chrome")` uses the installed Google Chrome, no
   browser download. Read a panel's state from
   `document.querySelectorAll('.js-plotly-plot')[i]._fullLayout` (ranges,
-  dragmode, shapes), click tools via `.modebar-btn[data-title="Zoom"]`, and drag
-  on the panel's `.nsewdrag` rect. Compare `_fullLayout` across panels rather
-  than the Dash `figure` prop.
+  dragmode, shapes), click tools in the toolbox card (the panels have no
+  modebar) via their pattern ids,
+  `[id='{"index":"zoom","type":"image-toolbox-tool"}']`, and drag on the panel's
+  `.nsewdrag` rect. Compare `_fullLayout` across panels rather than the Dash
+  `figure` prop.
 - While a `dcc.Loading` overlay is showing, the panel swallows mouse events:
   wait for `.dash-spinner` to disappear before dragging.
 
@@ -151,6 +153,50 @@ Several Dash/plotly behaviours here are not visible from the python side:
   re-picked tool likewise). `sync_image_views` therefore clears the triggering
   graph's `relayoutData` with `dash.set_props` once it has read it; a side
   update like that does not re-trigger callbacks, so it costs nothing.
+- The panels' plotly modebars are off (`displayModeBar: False`); the tools live
+  in `components/image_toolbox.py`, one card above the panels (inside
+  `image_section`, so spectrum-only mode hides it too). A _tool_ is a plotly
+  dragmode (`drawrect`, `zoom`, `pan`) and the **active tool is the view store's
+  `dragmode`** -- there is no separate tool store: `select_image_tool` patches
+  `layout.dragmode` on every built panel and writes the view,
+  `highlight_image_tool` sets the buttons' `active` from the view store (so a
+  reset or a dataset switch, which empties the view, presses the default again),
+  and new panels pick the tool up through `apply_view_to_figure`. An _action_
+  (`zoomin`, `zoomout`, `eraseshape`) is answered by `run_image_action` with
+  layout patches only: a zoom step is `view_sync.zoom_view` about the centre (an
+  un-zoomed axis spans the full image, whose shape comes from the metadata via
+  `scaling.get_image_shape`), and erasing writes an empty `active-shapes` so the
+  spectrum reloads. Buttons are pattern ids
+  `{"type": "image-toolbox-tool"|"image-toolbox-action", "index": <id>}` over
+  `ALL`; add a tool or action to the `toolboxSpec` in `image_toolbox.py`
+  (`IMAGE_TOOLBOX`: the buttons plus the labelled rows they sit in, validated at
+  import), and an action to `action_results`. `Add Image` and `Reset Extent`
+  share the card but are plain ids (`ids.button_id("add")` /
+  `ids.button_id("reset")`) answered by `add_or_delete_image` and
+  `update_graph_figure`. Plotly's per-panel PNG download went with the modebar;
+  the export panel covers images.
+- `components/toolbox.py` holds what the two toolboxes share: the button and row
+  dataclasses, the view-control specs, the id mapper, the card builder
+  (`toolbox_card`, whose `extras` slot ready-made components into a row) and the
+  collapse wrapper. It is configuration, not a class hierarchy: the callbacks
+  are each toolbox's own.
+- The spectrum's modebar is off too. `components/spectrum_toolbox.py` folds
+  "Spectrum Plot Tools" under the plot behind a `Plot tools` toggle (closed on
+  load, flipped by the `toggleCollapse` clientside function in
+  `assets/toolbox.js`), with the peak-windows switch and the y-scale radio in
+  its Display row. Only the tool goes through the server: `select_spectrum_tool`
+  patches `layout.dragmode` and writes the `spectrum-view` store,
+  `highlight_spectrum_tool` reads it, and the callbacks that replace the
+  spectrum figure (`update_spectrum`, `toggle_peak_windows`) put the stored
+  dragmode on what they return so the pressed button survives a rebuild. The
+  figure carries a `uirevision` (`_spectrum_revision`: the sample and the box)
+  because the figure prop never receives the browser's zoom: without it a
+  dragmode patch or a peak redraw snapped the plot back to autorange. A y-scale
+  change bumps `yaxis.uirevision` so only that axis resets. Zoom in, zoom out
+  and reset are the `spectrumAction` clientside function: the spectrum's live
+  ranges exist only in the browser, so it reads `gd._fullLayout` and calls
+  `Plotly.relayout`, scaling the energy axis only and reporting into the
+  `spectrum-action-sink` store.
 
 All cross-callback state lives in a single `dcc.Store` with id
 `USER_STORE_DIV_ID` (`"user-mem-store"`), whose dict is the `UserStore`
@@ -181,8 +227,9 @@ Other things worth knowing:
 - Sample names may contain spaces but appear in URL paths, so
   `utilities/coerce.py` swaps them with the `___` placeholder
   (`spaces_to_placeholder` / `placeholder_to_spaces`).
-- Figures are Plotly `px.imshow` with `dragmode="drawrect"`; user rectangles
-  come back through `relayoutData` and become index ranges sent to the backend.
+- Figures are Plotly `px.imshow` with `dragmode="drawrect"` (the toolbox's
+  default tool); user rectangles come back through `relayoutData` and become
+  index ranges sent to the backend.
 - Export: `utilities/summary_writer.py` writes into a uuid subdirectory under
   `SPECTRA_INSPECTOR_WRITE_DIR` and prunes oldest dirs past
   `SPECTRA_INSPECTOR_MAX_TMP_DIRS`; `plotly_to_matplotlib` in `coerce.py`

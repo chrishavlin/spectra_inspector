@@ -85,17 +85,8 @@ def bitmap_image_layout(
     fig_image = dcc.Loading(
         dcc.Graph(
             id=imIDs.get_id_with_index("graph"),
-            config={
-                "modeBarButtonsToAdd": [
-                    # "drawclosedpath",
-                    # "drawcircle",
-                    "drawrect",
-                    "eraseshape",
-                ],
-                "modeBarButtonsToRemove": ["resetScale", "autoScale"],
-                "displayModeBar": True,
-                "displaylogo": False,
-            },
+            # the tools live in the shared image toolbox above the panels
+            config={"displayModeBar": False, "displaylogo": False},
             responsive=True,
             style=graph_style(),
         ),

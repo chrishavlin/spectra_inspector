@@ -135,6 +135,39 @@ def sorted_axis_range(view: dict[str, Any], ax: str) -> list[float] | None:
     return sorted(float(v) for v in axis["range"])
 
 
+def image_axis_range(ax: str, image_shape: tuple[int, int]) -> list[float]:
+    """The full-image range px.imshow gives an axis, in plotly's order.
+
+    Pixel centres sit on integers, so the image spans -0.5 to n - 0.5; the y
+    axis runs downwards, as ``DEFAULT_AUTORANGE`` records.
+    """
+    nrows, ncols = image_shape
+    if ax == "xaxis":
+        return [-0.5, ncols - 0.5]
+    return [nrows - 0.5, -0.5]
+
+
+def zoom_view(
+    view: dict[str, Any], factor: float, image_shape: tuple[int, int]
+) -> dict[str, Any]:
+    """Scale the view's ranges about their centres, like plotly's zoom buttons.
+
+    An axis at its default is taken to show the full image. A factor below one
+    zooms in, above one zooms out.
+    """
+    new_view = ensure_view(view)
+    for ax in AXES:
+        axis = new_view[ax]
+        r0, r1 = (
+            axis["range"] if axis is not None else image_axis_range(ax, image_shape)
+        )
+        centre = (r0 + r1) / 2
+        new_view[ax] = {
+            "range": [centre + (r0 - centre) * factor, centre + (r1 - centre) * factor]
+        }
+    return new_view
+
+
 def apply_view_to_figure(
     fig: Figure,
     view: dict[str, Any] | None,
