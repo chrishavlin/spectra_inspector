@@ -19,6 +19,7 @@ import dash_bootstrap_components as dbc
 from dash import html
 
 from spectra_inspector.components.layout_ids import indexedLayoutIDMapper
+from spectra_inspector.components.tooltip import hover_tooltip
 
 
 @dataclass(frozen=True)
@@ -246,10 +247,10 @@ def toolbox_card(
         for position in range(len(spec.rows))
     ]
     tooltips = [
-        dbc.Tooltip(detail.tooltip, target=ids.button_id(button), placement="bottom")
+        hover_tooltip(detail.tooltip, ids.button_id(button), placement="bottom")
         for button, detail in spec.buttons.items()
     ] + [
-        dbc.Tooltip(row.tooltip, target=ids.row_id(position), placement="right")
+        hover_tooltip(row.tooltip, ids.row_id(position), placement="right")
         for position, row in enumerate(spec.rows)
     ]
     return dbc.Card(

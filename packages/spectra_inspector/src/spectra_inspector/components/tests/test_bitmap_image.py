@@ -1,3 +1,4 @@
+import dash_bootstrap_components as dbc
 from matplotlib import colormaps
 
 from spectra_inspector.components.bitmap_image import bitmap_image_layout
@@ -10,6 +11,15 @@ def test_bitmap_image_layout():
     for prop in div_ids.prop_names:
         assert prop in getattr(div_ids, prop)
         assert div_ids.get_id_with_index(prop)["index"] == 0
+
+
+def test_panel_tooltips_follow_the_mouse_only():
+    """A focus-triggered tooltip outlives the mouse: the element dropdown hands
+    focus back to its button after a pick and the tooltip stays until a blur."""
+    card, _ = bitmap_image_layout(0)
+    tooltips = [c for c in card._traverse() if isinstance(c, dbc.Tooltip)]
+    assert len(tooltips) == 6
+    assert {t.trigger for t in tooltips} == {"hover"}
 
 
 def test_get_sequential_colorscales_restrict_to_common():

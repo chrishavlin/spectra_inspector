@@ -119,6 +119,7 @@ def test_card_has_labelled_rows_groups_and_extras():
     tooltips = find(card, lambda c: isinstance(c, dbc.Tooltip))
     expected = [b.id for b in buttons] + [ids.row_id(i) for i in range(2)]
     assert sorted(map(str, (t.target for t in tooltips))) == sorted(map(str, expected))
+    assert {t.trigger for t in tooltips} == {"hover"}
 
 
 def test_icon_button_takes_extra_classes_and_props():
