@@ -181,31 +181,42 @@ Several Dash/plotly behaviours here are not visible from the python side:
 - The **polygon tool** (`drawpolygon`, `view_sync.POLYGON_TOOL`) is not a plotly
   dragmode: its layout is `dragmode=False` with both axes `fixedrange`, which
   also disables plotly's double-click reset so a double click can remove a
-  corner. Corners are placed by clicking a panel. Plotly's own click event snaps
-  to a pixel and reaches Dash as `clickData`, where two identical clicks in a
-  row are deduplicated, so clicks never go through a callback input: a
-  document-level listener in `assets/toolbox.js` (keyed on that layout
-  signature) converts the pointer position with `xaxis.p2d`, waits
-  `POLYGON_DBLCLICK_MS` for a second click at the same spot, and writes
-  `{kind: "click"|"dblclick", x, y, n}` into the `polygon-click` store with
-  `dash_clientside.set_props`, which does fire dependent callbacks.
-  `edit_polygon` answers with `layout.shapes` patches on every built panel and
-  the shapes store. `utilities/selection.py` owns the store's shape: a box is
-  the plotly rectangle in `active_shapes` as before; a polygon keeps its
-  `points` (and the `submitted` copy, plus the marker radius) under `polygon`,
-  with `active_shapes` drawn from the points (a `path`, closed from three
-  points, and a `circle` per corner). Only a submitted polygon or a box is the
-  `selection_from_store`; `update_spectrum` compares the figure's `uirevision`
-  (`_spectrum_revision`, built on `selection_key`) with the store's and returns
-  `no_update` when the selection has not changed, which is what keeps corner
-  edits from refetching until `Submit shape`. The controls (`polygon_controls`:
-  the button and the how-to note) are shown by `toggle_polygon_controls` while
-  the tool is pressed and the button enabled by `polygon_is_submittable`.
-  Drawing a box replaces the polygon (`shapes_from_relayout` keeps the last
-  shape), erase drops both. The corner markers are circles in data units, sized
-  by `vertex_radius_for` from the visible extent: plotly's pixel-sized shapes
-  (`xsizemode: "pixel"`) leak that mode into the subplot's `plotinfo`, and a box
-  drawn afterwards comes out in pixels. The server sums the polygon (see
+  corner. Corners are placed by clicking a panel, moved by dragging, removed by
+  a double click, and inserted by a double click on a segment. Plotly's own
+  click event snaps to a pixel and reaches Dash as `clickData`, where two
+  identical clicks in a row are deduplicated, so gestures never go through a
+  callback input: document-level listeners in `assets/toolbox.js` (keyed on that
+  layout signature) convert the pointer position with `xaxis.p2d`, wait
+  `POLYGON_DBLCLICK_MS` for a second click at the same spot, and write
+  `{kind: "click"|"dblclick"|"move", x, y, index, n}` into the `polygon-click`
+  store with `dash_clientside.set_props`, which does fire dependent callbacks. A
+  drag starts on a mousedown within `POLYGON_VERTEX_PX` of a corner (read off
+  the named `polygon-vertex` circles in `gd.layout.shapes`); while the mouse is
+  down the corner follows on every panel through `Plotly.react` with the same
+  data and new shapes, and the release emits the `move`. It must be `react`, not
+  `relayout`: `Plotly.relayout` emits `plotly_relayout`, which Dash turns into
+  `relayoutData` and `sync_image_views` into a server round trip per frame (and
+  into a one-shape store, since it keeps the last shape). Escape abandons a
+  drag. `edit_polygon` answers every gesture with `layout.shapes` patches on
+  every built panel and the shapes store; nearness for picking a corner or a
+  segment is `pick_tolerance`, a fraction of the visible extent, and a single
+  click that lands on a corner adds nothing. `utilities/selection.py` owns the
+  store's shape: a box is the plotly rectangle in `active_shapes` as before; a
+  polygon keeps its `points` (and the `submitted` copy, plus the marker radius)
+  under `polygon`, with `active_shapes` drawn from the points (a `path`, closed
+  from three points, and a `circle` per corner). Only a submitted polygon or a
+  box is the `selection_from_store`; `update_spectrum` compares the figure's
+  `uirevision` (`_spectrum_revision`, built on `selection_key`) with the store's
+  and returns `no_update` when the selection has not changed, which is what
+  keeps corner edits from refetching until `Submit shape`. The controls
+  (`polygon_controls`: the button and the how-to note) are shown by
+  `toggle_polygon_controls` while the tool is pressed and the button enabled by
+  `polygon_is_submittable`. Drawing a box replaces the polygon
+  (`shapes_from_relayout` keeps the last shape), erase drops both. The corner
+  markers are circles in data units, sized by `vertex_radius_for` from the
+  visible extent: plotly's pixel-sized shapes (`xsizemode: "pixel"`) leak that
+  mode into the subplot's `plotinfo`, and a box drawn afterwards comes out in
+  pixels. The server sums the polygon (see
   `spectra_inspector_server/CLAUDE.md`); `polygonSelection.vertices` hands it
   `[index0, index1]` pairs, and the export crops the `*_subset` images to the
   polygon's bounding box and records the corners in `subselection.polygon`.

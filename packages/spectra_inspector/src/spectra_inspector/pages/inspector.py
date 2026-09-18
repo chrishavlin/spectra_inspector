@@ -99,6 +99,8 @@ from spectra_inspector.utilities.selection import (
     Selection,
     active_shapes,
     add_point,
+    insert_point_on_nearest_segment,
+    move_point,
     pick_tolerance,
     polygon_is_submittable,
     polygon_points,
@@ -1938,18 +1940,29 @@ def polygon_edit_results(
     processed_graph_store: dict,
     md: "CombinedMetadata",
 ) -> tuple[list, object]:
-    """The figure patches and shapes store a polygon click leaves behind: a
-    click adds a corner, a double click drops the corner nearest to it (within
-    a fraction of the visible extent). The points already submitted are kept,
-    so the spectrum stays put until the next Submit shape."""
+    """The figure patches and shapes store a polygon gesture leaves behind.
+
+    A click appends a corner (none when it lands on an existing one), a
+    double click removes the corner nearest to it or, failing that, inserts
+    a corner on the nearest segment, and a move (the end of a drag in the
+    browser) relocates the corner ``index``. Nearness is a fraction of the
+    visible extent. The points already submitted are kept, so the spectrum
+    stays put until the next Submit shape.
+    """
     no_updates: list = [no_update] * len(graph_ids)
     points = polygon_points(shapes_store)
     spans = _visible_spans(view, md)
+    tolerance = pick_tolerance(spans)
     x, y = float(click["x"]), float(click["y"])
-    if click.get("kind") == "dblclick":
-        new_points = remove_nearest_point(points, x, y, pick_tolerance(spans))
+    kind = click.get("kind")
+    if kind == "dblclick":
+        new_points = remove_nearest_point(points, x, y, tolerance)
+        if new_points == points:
+            new_points = insert_point_on_nearest_segment(points, x, y, tolerance)
+    elif kind == "move":
+        new_points = move_point(points, int(click.get("index", -1)), x, y)
     else:
-        new_points = add_point(points, x, y)
+        new_points = add_point(points, x, y, tolerance)
     if new_points == points:
         return no_updates, no_update
 

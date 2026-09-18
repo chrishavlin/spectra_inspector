@@ -139,6 +139,57 @@ def test_double_click_far_from_every_corner_is_a_no_op(inspector):
     assert new_store is no_update
 
 
+def test_double_click_on_a_segment_inserts_a_corner(inspector):
+    md = combined_metadata()
+    store = polygon_store(TRIANGLE, None)
+    # on the first segment, y = 1 from x = 2 to x = 8, away from both corners
+    _, new_store = inspector.polygon_edit_results(
+        _click("dblclick", 5.0, 1.02),
+        _polygon_view(),
+        store,
+        _graph_ids(1),
+        _processed(0),
+        md,
+    )
+    assert polygon_points(new_store) == [TRIANGLE[0], [5.0, 1.02], *TRIANGLE[1:]]
+
+
+def test_click_on_an_existing_corner_adds_nothing(inspector):
+    md = combined_metadata()
+    store = polygon_store(TRIANGLE, None)
+    patches, new_store = inspector.polygon_edit_results(
+        _click("click", 8.02, 1.0),
+        _polygon_view(),
+        store,
+        _graph_ids(1),
+        _processed(0),
+        md,
+    )
+    assert patches == [no_update]
+    assert new_store is no_update
+
+
+def test_move_relocates_a_corner(inspector):
+    md = combined_metadata()
+    store = polygon_store(TRIANGLE, TRIANGLE)
+    move = {**_click("move", 9.0, 2.0), "index": 1}
+    patches, new_store = inspector.polygon_edit_results(
+        move, _polygon_view(), store, _graph_ids(2), _processed(0, 1), md
+    )
+    assert polygon_points(new_store) == [TRIANGLE[0], [9.0, 2.0], TRIANGLE[2]]
+    assert submitted_polygon(new_store) == TRIANGLE
+    for patch in patches:
+        assert _ops(patch) == {"layout.shapes": new_store["active_shapes"]}
+    # the moved corner's marker follows it
+    marker = new_store["active_shapes"][2]
+    assert (marker["x0"] + marker["x1"]) / 2 == pytest.approx(9.0)
+    # an index that is not a corner changes nothing
+    bad = {**_click("move", 9.0, 2.0), "index": 7}
+    assert inspector.polygon_edit_results(
+        bad, _polygon_view(), store, _graph_ids(1), _processed(0), md
+    ) == ([no_update], no_update)
+
+
 def test_edits_keep_the_submitted_polygon(inspector):
     md = combined_metadata()
     store = polygon_store(TRIANGLE, TRIANGLE)
@@ -242,8 +293,13 @@ def test_click_listener_targets_the_click_store():
     # the polygon mode signature the listener keys on, as tool_layout sets it
     assert "fl.dragmode !== false" in js
     assert "fixedrange" in js
-    assert '"dblclick"' in js
-    assert 'document.addEventListener(\n  "click"' in js
+    for kind in ('"click"', '"dblclick"', '"move"'):
+        assert kind in js
+    for event in ("click", "mousedown", "mousemove", "mouseup"):
+        assert f'document.addEventListener(\n  "{event}"' in js
+    # the shape names the drag reads corners from, as selection.py spells them
+    assert 'const POLYGON_SHAPE_NAME = "polygon";' in js
+    assert 'const POLYGON_VERTEX_NAME = "polygon-vertex";' in js
 
 
 def test_submit_and_controls_are_wired(callbacks):

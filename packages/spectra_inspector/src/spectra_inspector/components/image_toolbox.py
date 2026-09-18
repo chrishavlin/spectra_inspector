@@ -42,7 +42,8 @@ DRAW_POLYGON = toolButton(
     POLYGON_TOOL,
     "Draw shape",
     "fa-solid fa-draw-polygon",
-    "Click on a panel to place the corners of a shape, then Submit shape",
+    "Click on a panel to place the corners of a shape, drag them into place, "
+    "then Submit shape",
 )
 ERASE_SHAPE = toolButton(
     "eraseshape", "Erase shape", "fa-solid fa-eraser", "Remove the box or shape"
@@ -57,8 +58,9 @@ RESET_IMAGES = replace(RESET_EXTENT, tooltip="Zoom out to full extent on every p
 ADD_IMAGE = toolButton("add", "Add Image", "fa-solid fa-plus", "Open another panel")
 
 POLYGON_INSTRUCTIONS = (
-    "Click on an image to add points to your selection path, "
-    "double click a point to remove it, then Submit shape."
+    "Click on an image to add a corner at the end of your selection path, "
+    "drag a corner to move it, double click a corner to remove it or a line "
+    "segment to insert a corner there, then Submit shape."
 )
 
 IMAGE_TOOLBOX = toolboxSpec(

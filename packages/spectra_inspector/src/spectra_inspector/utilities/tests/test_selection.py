@@ -8,7 +8,10 @@ from spectra_inspector.utilities.selection import (
     add_point,
     box_from_shape,
     boxSelection,
+    insert_point_on_nearest_segment,
+    move_point,
     nearest_point,
+    nearest_segment,
     pick_tolerance,
     polygon_is_submittable,
     polygon_points,
@@ -141,6 +144,47 @@ class TestPoints:
     def test_add(self):
         assert add_point([], 1, 2) == [[1.0, 2.0]]
         assert add_point(TRIANGLE, 0, 0) == [*TRIANGLE, [0.0, 0.0]]
+
+    def test_add_on_an_existing_corner_is_a_no_op(self):
+        assert add_point(TRIANGLE, 8.1, 1.0, tolerance=0.5) == TRIANGLE
+        assert add_point(TRIANGLE, 8.1, 1.0, tolerance=0.05) == [*TRIANGLE, [8.1, 1.0]]
+        assert add_point([], 8.1, 1.0, tolerance=0.5) == [[8.1, 1.0]]
+
+    def test_move(self):
+        assert move_point(TRIANGLE, 1, 9.0, 2.0) == [
+            TRIANGLE[0],
+            [9.0, 2.0],
+            TRIANGLE[2],
+        ]
+        assert move_point(TRIANGLE, 3, 9.0, 2.0) == TRIANGLE
+        assert move_point(TRIANGLE, -1, 9.0, 2.0) == TRIANGLE
+        assert move_point([], 0, 1.0, 1.0) == []
+
+    def test_nearest_segment_of_a_closed_polygon(self):
+        # the three segments of TRIANGLE: 0-1 along y=1, 1-2 and 2-0 (closing)
+        assert nearest_segment(TRIANGLE, 5.0, 0.5) == (0, pytest.approx(0.5))
+        index, distance = nearest_segment(TRIANGLE, 3.0, 4.0)
+        assert index == 2  # the closing segment from (5, 6) back to (2, 1)
+        assert distance < 1.0
+        # beyond a segment's end the distance is to the corner
+        assert nearest_segment(TRIANGLE, 9.0, 1.0) == (0, pytest.approx(1.0))
+
+    def test_nearest_segment_of_an_open_path(self):
+        two = TRIANGLE[:2]
+        assert nearest_segment(two, 5.0, 2.0) == (0, pytest.approx(1.0))
+        assert nearest_segment(TRIANGLE[:1], 0, 0) is None
+        assert nearest_segment([], 0, 0) is None
+
+    def test_insert_on_the_nearest_segment(self):
+        inserted = insert_point_on_nearest_segment(TRIANGLE, 5.0, 0.8, tolerance=0.5)
+        assert inserted == [TRIANGLE[0], [5.0, 0.8], TRIANGLE[1], TRIANGLE[2]]
+        # on the closing segment the corner goes after the last one
+        closing = insert_point_on_nearest_segment(TRIANGLE, 3.4, 3.5, tolerance=1.0)
+        assert closing == [*TRIANGLE, [3.4, 3.5]]
+        assert insert_point_on_nearest_segment(TRIANGLE, 5.0, 0.8, tolerance=0.1) == (
+            TRIANGLE
+        )
+        assert insert_point_on_nearest_segment([], 0, 0, tolerance=5) == []
 
     def test_nearest(self):
         assert nearest_point([], 0, 0) is None

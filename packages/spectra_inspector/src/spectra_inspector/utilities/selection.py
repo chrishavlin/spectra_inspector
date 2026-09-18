@@ -223,8 +223,63 @@ def polygon_shapes(
     return shapes
 
 
-def add_point(points: list[Point], x: float, y: float) -> list[Point]:
+def add_point(
+    points: list[Point], x: float, y: float, tolerance: float = 0.0
+) -> list[Point]:
+    """The points with ``(x, y)`` appended, unless it lands within
+    ``tolerance`` of an existing corner (a click on a corner is not a new
+    one)."""
+    nearest = nearest_point(points, x, y)
+    if nearest is not None and nearest[1] <= tolerance:
+        return list(points)
     return [*points, [float(x), float(y)]]
+
+
+def move_point(points: list[Point], index: int, x: float, y: float) -> list[Point]:
+    """The points with corner ``index`` moved to ``(x, y)``; an index that
+    is not a corner leaves them unchanged."""
+    if not 0 <= index < len(points):
+        return list(points)
+    moved = [list(p) for p in points]
+    moved[index] = [float(x), float(y)]
+    return moved
+
+
+def nearest_segment(
+    points: list[Point], x: float, y: float
+) -> tuple[int, float] | None:
+    """The segment of the closed polygon nearest ``(x, y)``: the index of
+    the corner it starts at (the segment runs to the next corner, the last
+    one closing back to the first) and the distance to it."""
+    n = len(points)
+    if n < 2:
+        return None
+    best: tuple[int, float] | None = None
+    for i in range(n if n >= MIN_POLYGON_POINTS else n - 1):
+        (ax, ay), (bx, by) = points[i], points[(i + 1) % n]
+        dx, dy = bx - ax, by - ay
+        length_sq = dx * dx + dy * dy
+        if length_sq == 0:
+            t = 0.0
+        else:
+            t = min(1.0, max(0.0, ((x - ax) * dx + (y - ay) * dy) / length_sq))
+        distance = math.hypot(ax + t * dx - x, ay + t * dy - y)
+        if best is None or distance < best[1]:
+            best = (i, distance)
+    return best
+
+
+def insert_point_on_nearest_segment(
+    points: list[Point], x: float, y: float, tolerance: float
+) -> list[Point]:
+    """The points with ``(x, y)`` inserted as a corner of the segment nearest
+    to it, when that segment lies within ``tolerance``; otherwise the points
+    unchanged."""
+    nearest = nearest_segment(points, x, y)
+    if nearest is None or nearest[1] > tolerance:
+        return list(points)
+    index = nearest[0] + 1
+    return [*points[:index], [float(x), float(y)], *points[index:]]
 
 
 def nearest_point(points: list[Point], x: float, y: float) -> tuple[int, float] | None:
