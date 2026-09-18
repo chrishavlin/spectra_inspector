@@ -1,5 +1,6 @@
 import base64
 import io
+import re
 
 import numpy as np
 import numpy.typing as npt
@@ -9,8 +10,18 @@ from matplotlib import colormaps
 from PIL import Image
 
 from spectra_inspector.logging import spectraLogger
-from spectra_inspector.utilities.matplotib_importer import Rectangle
+from spectra_inspector.utilities.matplotib_importer import Polygon, Rectangle
 from spectra_inspector.utilities.matplotib_importer import mpl_pyplot as plt
+
+_PATH_NUMBER = re.compile(r"[-+]?(?:\d+\.?\d*|\.\d+)(?:[eE][-+]?\d+)?")
+
+
+def path_vertices(path: str) -> list[tuple[float, float]]:
+    """The ``(x, y)`` points of a plotly path shape made of straight
+    segments (``M x,y L x,y ... Z``), as the polygon selection draws them."""
+    numbers = [float(n) for n in _PATH_NUMBER.findall(path)]
+    return list(zip(numbers[0::2], numbers[1::2], strict=False))
+
 
 _place_holder = "___"
 
@@ -185,8 +196,22 @@ def plotly_to_matplotlib(
         im = ax.imshow(z, cmap=cmap_name)
         ax.set_aspect("equal", adjustable="box")
 
-        # add on box annotations
+        # add on the selection: the box, or the polygon's outline (its vertex
+        # markers are pixel-sized circles and are left out)
         for shape in layout.get("shapes", []) or []:
+            if shape.get("type") == "path":
+                corners = path_vertices(shape.get("path", ""))
+                if len(corners) >= 2:
+                    ax.add_patch(
+                        Polygon(
+                            corners,
+                            closed=len(corners) >= 3,
+                            fill=False,
+                            edgecolor="black",
+                            linewidth=2,
+                        )
+                    )
+                continue
             if shape.get("type") != "rect":
                 continue
 

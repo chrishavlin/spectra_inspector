@@ -116,8 +116,25 @@ def test_tool_patches_only_built_panels(inspector):
     assert view["dragmode"] == "pan"
     assert view["xaxis"] is None
     assert patches[1] is no_update
-    assert _ops(patches[0]) == {"layout.dragmode": "pan"}
-    assert _ops(patches[2]) == {"layout.dragmode": "pan"}
+    expected = {
+        "layout.dragmode": "pan",
+        "layout.xaxis.fixedrange": False,
+        "layout.yaxis.fixedrange": False,
+    }
+    assert _ops(patches[0]) == expected
+    assert _ops(patches[2]) == expected
+
+
+def test_polygon_tool_switches_dragging_off(inspector):
+    patches, view = inspector.tool_patches(
+        "drawpolygon", None, _graph_ids(1), _processed(0)
+    )
+    assert view["dragmode"] == "drawpolygon"
+    assert _ops(patches[0]) == {
+        "layout.dragmode": False,
+        "layout.xaxis.fixedrange": True,
+        "layout.yaxis.fixedrange": True,
+    }
 
 
 def test_tool_patches_keep_the_zoom(inspector):

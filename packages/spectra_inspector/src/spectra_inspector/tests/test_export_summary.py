@@ -313,6 +313,63 @@ def test_zip_metadata_describes_the_sample_and_the_box(
         assert name in readme
 
 
+def test_polygon_export_crops_to_the_bounding_box_and_records_the_corners(
+    inspector, image_figures, spectrum_figure, spectrum_metadata, tmp_path
+):
+    browser_figure = {
+        "data": [
+            {
+                "type": "heatmap",
+                "z": {
+                    "shape": "2, 2",
+                    "_inputArray": [{"0": 1, "1": 2}, {"0": 3, "1": 4}],
+                },
+            }
+        ],
+        "layout": {},
+    }
+    # (x, y) corners: a triangle whose centres-reachable bounding box is the
+    # single pixel at row 1, column 0
+    points = [[0.0, 1.0], [0.9, 1.0], [0.0, 1.9]]
+    _export(
+        inspector,
+        [browser_figure] * len(image_figures),
+        spectrum_figure,
+        spectrum_metadata,
+        shapes_store=inspector.polygon_store(points, points),
+    )
+    record = _exported_metadata(tmp_path)
+    sub = record["subselection"]
+    assert sub["kind"] == "polygon"
+    assert sub["shape"] == [1, 1]
+    assert sub["axes"]["index0"]["index_range"] == [1, 2]
+    assert sub["axes"]["index1"]["index_range"] == [0, 1]
+    assert sub["polygon"]["vertices_index"] == [[1.0, 0.0], [1.0, 0.9], [1.9, 0.0]]
+    assert record["images"][1]["subset_file"] == "bitmap_01_Fe_subset.png"
+
+    written = _written_files(tmp_path)
+    assert {"bitmap_00_subset.png", "bitmap_01_Fe_subset.png"} <= written
+    readme = _zip_file(tmp_path).read("README.txt").decode("utf-8")
+    assert "Polygon with 3 corners" in readme
+    assert "Bounding box shape (rows, columns): 1, 1" in readme
+
+
+def test_polygon_in_progress_exports_the_full_map(
+    inspector, image_figures, spectrum_figure, spectrum_metadata, tmp_path
+):
+    points = [[0.0, 1.0], [0.9, 1.0], [0.0, 1.9]]
+    _export(
+        inspector,
+        image_figures,
+        spectrum_figure,
+        spectrum_metadata,
+        shapes_store=inspector.polygon_store(points, None),
+    )
+    record = _exported_metadata(tmp_path)
+    assert record["subselection"] is None
+    assert all(im["subset_file"] is None for im in record["images"])
+
+
 def test_export_survives_an_unreachable_server(
     inspector, image_figures, spectrum_figure, spectrum_metadata, tmp_path, monkeypatch
 ):

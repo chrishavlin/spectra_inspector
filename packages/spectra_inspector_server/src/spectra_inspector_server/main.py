@@ -1,4 +1,6 @@
 import asyncio
+import json
+import math
 import threading
 from asyncio.tasks import Task
 from concurrent.futures import BrokenExecutor, ProcessPoolExecutor
@@ -32,6 +34,7 @@ from spectra_inspector_server.model import (
     raveledImage,
     sampleMetadata,
 )
+from spectra_inspector_server.processor._polygon import MIN_VERTICES, Vertex
 from spectra_inspector_server.processor.operations import OperationEDAXStateHandler
 from spectra_inspector_server.settings import Settings
 
@@ -137,7 +140,9 @@ class queueOpsItem:
     ops_func: str
     ops_id: str
     ops_args: tuple[str] | None | tuple[int, int] | int | str = None
-    ops_kwargs: dict[str, None | tuple[int, int] | int | str | tuple[str]] | None = None
+    ops_kwargs: (
+        dict[str, None | tuple[int, int] | int | str | tuple[str] | list[Vertex]] | None
+    ) = None
 
 
 def process_handler(ph: EDAXPathHandler, item: queueOpsItem) -> OptionalOpsReturnType:
@@ -390,6 +395,33 @@ async def image_metadata_combined(
     return ops.get_combined_metadata(sample_name, spectrum_only=spectrum_only)
 
 
+def _parse_polygon(polygon: str) -> list[Vertex]:
+    """The vertices of the ``polygon`` query parameter: a JSON list of at
+    least three ``[index0, index1]`` pairs of finite numbers."""
+    try:
+        raw = json.loads(polygon)
+    except json.JSONDecodeError as err:
+        msg = f"polygon is not valid JSON: {err.msg}"
+        raise HTTPException(422, detail=msg) from err
+    if not isinstance(raw, list) or len(raw) < MIN_VERTICES:
+        msg = f"polygon must list at least {MIN_VERTICES} vertices"
+        raise HTTPException(422, detail=msg)
+    vertices: list[Vertex] = []
+    for vertex in raw:
+        if (
+            not isinstance(vertex, list)
+            or len(vertex) != 2
+            or not all(
+                isinstance(v, int | float) and not isinstance(v, bool) for v in vertex
+            )
+            or not all(math.isfinite(v) for v in vertex)
+        ):
+            msg = "each polygon vertex must be a pair of finite numbers"
+            raise HTTPException(422, detail=msg)
+        vertices.append((float(vertex[0]), float(vertex[1])))
+    return vertices
+
+
 @app.get("/image-spectrum")
 async def image_spectrum(
     sample_name: str,
@@ -403,11 +435,18 @@ async def image_spectrum(
     index1_1: int | None | Literal["none"] = None,
     include_weights: bool = True,
     spectrum_only: bool = False,
+    polygon: str | None = None,
 ) -> Spectrum1dDict:
+    """The spectrum summed over a region of the map: the whole map, the box
+    the index ranges describe, or the inside of ``polygon``, a JSON list of
+    ``[index0, index1]`` vertices in pixel index units (pixel centres sit on
+    the integers), which takes precedence over the index ranges."""
 
     if not _valid_sample_name(sample_name, ph, spectrum_only=spectrum_only):
         msg = f"{sample_name} is not a valid sample"
         raise HTTPException(404, detail=msg)
+
+    vertices = _parse_polygon(polygon) if polygon is not None else None
 
     q = request.app.state.q
     assert isinstance(q, asyncio.Queue)
@@ -439,6 +478,7 @@ async def image_spectrum(
             "index0_range": index0_range,
             "index1_range": index1_range,
             "spectrum_only": spectrum_only,
+            "polygon": vertices,
         },
     )
 

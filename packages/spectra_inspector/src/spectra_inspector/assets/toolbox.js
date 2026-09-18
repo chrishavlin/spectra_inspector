@@ -61,3 +61,87 @@ window.dash_clientside = Object.assign({}, window.dash_clientside, {
     },
   },
 });
+
+/* The polygon tool (components/image_toolbox.py): clicks on an image panel
+   place the corners of a shape and a double click removes the nearest one.
+   Plotly's own click event is snapped to a pixel and reaches Dash as
+   clickData, where two identical clicks in a row are deduplicated, so the
+   panels are watched from here instead: one listener on the document, acting
+   only while a panel is in polygon mode (dragging off and the axes fixed,
+   what view_sync.tool_layout puts on the layout). Plotly re-dispatches every
+   click that was not a drag as a single synthetic click event, so a double
+   click arrives as two clicks: the first waits POLYGON_DBLCLICK_MS for a
+   second one at the same spot before it counts as a single click. Both land
+   in the polygon click store as {kind, x, y, n}, the counter making a repeat
+   at the same spot still count as a change; pages/inspector.py answers them.
+   The store id mirrors inspectorIDs.polygon_click_store. */
+const POLYGON_CLICK_STORE = "polygon-click";
+const POLYGON_DBLCLICK_MS = 350;
+const POLYGON_DBLCLICK_PX = 6;
+const polygonClicks = { timer: null, pending: null, n: 0 };
+
+function polygonPanelPoint(event) {
+  const target = event.target;
+  const gd =
+    target && target.closest
+      ? target.closest("#image-container .js-plotly-plot")
+      : null;
+  if (!gd || !gd._fullLayout) {
+    return null;
+  }
+  const fl = gd._fullLayout;
+  if (fl.dragmode !== false || !fl.xaxis || !fl.xaxis.fixedrange) {
+    return null;
+  }
+  const rect = gd.getBoundingClientRect();
+  const px = event.clientX - rect.left - fl._size.l;
+  const py = event.clientY - rect.top - fl._size.t;
+  if (px < 0 || py < 0 || px > fl._size.w || py > fl._size.h) {
+    return null;
+  }
+  return {
+    x: fl.xaxis.p2d(px),
+    y: fl.yaxis.p2d(py),
+    clientX: event.clientX,
+    clientY: event.clientY,
+  };
+}
+
+function emitPolygonClick(kind, point) {
+  polygonClicks.n += 1;
+  window.dash_clientside.set_props(POLYGON_CLICK_STORE, {
+    data: { kind: kind, x: point.x, y: point.y, n: polygonClicks.n },
+  });
+}
+
+document.addEventListener(
+  "click",
+  (event) => {
+    const point = polygonPanelPoint(event);
+    if (point === null) {
+      return;
+    }
+    const pending = polygonClicks.pending;
+    if (pending !== null) {
+      clearTimeout(polygonClicks.timer);
+      polygonClicks.timer = null;
+      polygonClicks.pending = null;
+      const near =
+        Math.abs(pending.clientX - point.clientX) <= POLYGON_DBLCLICK_PX &&
+        Math.abs(pending.clientY - point.clientY) <= POLYGON_DBLCLICK_PX;
+      if (near || event.detail > 1) {
+        emitPolygonClick("dblclick", pending);
+        return;
+      }
+      // two quick clicks in different places: both are corners
+      emitPolygonClick("click", pending);
+    }
+    polygonClicks.pending = point;
+    polygonClicks.timer = setTimeout(() => {
+      polygonClicks.timer = null;
+      polygonClicks.pending = null;
+      emitPolygonClick("click", point);
+    }, POLYGON_DBLCLICK_MS);
+  },
+  true,
+);

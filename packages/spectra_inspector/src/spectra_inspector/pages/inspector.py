@@ -1,4 +1,3 @@
-import json
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any, Literal
 
@@ -54,7 +53,13 @@ from spectra_inspector.components.dataset_selector import (
     resolve_spectrum_only,
 )
 from spectra_inspector.components.energy_range_slider import elementDropdownSliderIDS
-from spectra_inspector.components.image_toolbox import ADD_IMAGE, IMAGE_TOOLBOX
+from spectra_inspector.components.image_toolbox import (
+    ADD_IMAGE,
+    DRAW_POLYGON,
+    IMAGE_TOOLBOX,
+    POLYGON_CONTROLS_ID,
+    SUBMIT_SHAPE,
+)
 from spectra_inspector.components.scalebar import scalebarHandler
 from spectra_inspector.components.spectrum_toolbox import (
     SPECTRUM_TOOLBOX,
@@ -90,11 +95,29 @@ from spectra_inspector.utilities.peak_windows import (
     peak_windows,
 )
 from spectra_inspector.utilities.scaling import get_image_shape
+from spectra_inspector.utilities.selection import (
+    Selection,
+    active_shapes,
+    add_point,
+    pick_tolerance,
+    polygon_is_submittable,
+    polygon_points,
+    polygon_store,
+    polygonSelection,
+    remove_nearest_point,
+    selection_from_store,
+    selection_key,
+    submitted_polygon,
+    vertex_radius,
+    vertex_radius_for,
+)
 from spectra_inspector.utilities.summary_writer import summaryWriter
 from spectra_inspector.utilities.view_sync import (
     apply_axes_to_patch,
+    apply_tool_to_patch,
     empty_view,
     ensure_view,
+    image_axis_range,
     shapes_from_relayout,
     sorted_axis_range,
     update_view_from_relayout,
@@ -121,6 +144,19 @@ def _valid_sample_name(sample_name: str | None):
     )
 
 
+def _ensure_dataset(user_store_dict: dict, sample_name: str | None) -> dict:
+    """Put the page's sample into a user store that names no dataset yet.
+
+    On a fresh load the figure callbacks can run before
+    ``update_selected_dataset`` has written the store, which then still holds
+    the ``UserStore`` default of ``"none"``; the metadata is fetched from the
+    server in that case.
+    """
+    if not _valid_sample_name(user_store_dict.get("selected_dataset")):
+        user_store_dict["selected_dataset"] = sample_name
+    return user_store_dict
+
+
 def get_spectrum(
     sample_name: str,
     channel_range: tuple[int, int] | None = None,
@@ -128,6 +164,7 @@ def get_spectrum(
     index1_range: tuple[int, int] | None = None,
     directory_sync: dict | None = None,
     spectrum_only: bool = False,
+    polygon: list[list[float]] | None = None,
 ) -> pd.DataFrame:
 
     sisi = SpectraInspectorServerInterface()
@@ -138,6 +175,7 @@ def get_spectrum(
         index1_range=index1_range,
         directory_sync=directory_sync,
         spectrum_only=spectrum_only,
+        polygon=polygon,
     )
 
     min_e = spectrum.energy_min
@@ -191,6 +229,8 @@ class inspectorIDs(BaseModel):
     image_mode: str = "image-mode"
     image_container_type: str = "bitmap-image"
     shapes_store: str = "active-shapes"
+    # where the click listener in assets/toolbox.js reports polygon clicks
+    polygon_click_store: str = "polygon-click"
     view_store: str = "image-view-store"
     processed_graph_id_store: str = "processed-graph-ids"
     graph_id_store: str = "graph-id-store"
@@ -205,6 +245,7 @@ _imageSliderIds = elementDropdownSliderIDS()
 _toolboxIDS = IMAGE_TOOLBOX.ids
 _ADD_IMAGE_ID = _toolboxIDS.button_id(ADD_IMAGE.id)
 _RESET_IMAGES_ID = _toolboxIDS.button_id(RESET_EXTENT.id)
+_SUBMIT_SHAPE_ID = _toolboxIDS.button_id(SUBMIT_SHAPE.id)
 _spectrumToolboxIDS = SPECTRUM_TOOLBOX.ids
 _SPECTRUM_RESET_ID = _spectrumToolboxIDS.button_id(RESET_EXTENT.id)
 _compositeIDS = compositeImageLayoutIDs()
@@ -243,6 +284,7 @@ def _get_div_store() -> html.Div:
                 storage_type="memory",
                 data={},
             ),
+            dcc.Store(id=_IDS.polygon_click_store, storage_type="memory"),
             dcc.Store(
                 id=_IDS.view_store,  # zoom + tool shared by the image panels
                 storage_type="memory",
@@ -307,10 +349,10 @@ def _spectrum_revision(sample_name: str | None, shapes_store: dict | None) -> st
     The figure prop never receives a zoom, so without a revision every patch
     (a tool pick, the peaks redrawn) would snap the plot back to autorange.
     With one, plotly keeps the browser's zoom as long as the revision is
-    unchanged; it changes with the spectrum shown, so a new box or dataset
-    does start from the full view.
+    unchanged; it changes with the spectrum shown, so a new box, a submitted
+    polygon or a new dataset does start from the full view.
     """
-    return f"{sample_name}|{json.dumps(_active_shapes(shapes_store), sort_keys=True)}"
+    return f"{sample_name}|{selection_key(shapes_store)}"
 
 
 def _with_spectrum_dragmode(figure: dict, spectrum_view: dict | None) -> dict:
@@ -615,29 +657,30 @@ def update_spectrum(
 
         return current_figure, active_spectrum_metadata
 
-    # finally, we have a figure, but only update if the annotations have changed
+    # finally, we have a figure, but only update if the selection has changed:
+    # the shapes store also moves while a polygon is being placed, which does
+    # not change what the spectrum sums over until the shape is submitted
+    revision = _spectrum_revision(sample_name, shapes_store)
+    if (current_figure.get("layout") or {}).get("uirevision") == revision:
+        return no_update, no_update
+
     if shapes_store is not None:
-        shapes = shapes_store.get("active_shapes", [])
+        selection = selection_from_store(shapes_store)
         name = "full spectrum"
 
         if active_spectrum_metadata is None:
             active_spectrum_metadata = {}
 
-        if len(shapes) > 0:
+        if selection is not None:
             assert isinstance(sample_name, str)
-            shp = shapes[0]
-            index0_range, index1_range = _index_range_from_shape(shp)
-
-            spectraLogger.info(
-                f"fetching subsample spectrum with ranges {index0_range}, {index1_range}"
-            )
+            request_kwargs = selection.request_kwargs()
+            spectraLogger.info(f"fetching subsample spectrum with {request_kwargs}")
             user_store = UserStore(**(user_store_dict or {}))
             df = get_spectrum(
                 sample_name,
-                index0_range=(index0_range[0], index0_range[1]),
-                index1_range=(index1_range[0], index1_range[1]),
                 directory_sync=user_store.directory_sync(),
                 spectrum_only=user_store.spectrum_only,
+                **request_kwargs,
             )
             name = "spatial subset"
             active_spectrum_metadata["intensity"] = df.intensity.tolist()
@@ -657,9 +700,7 @@ def update_spectrum(
         }
 
         current_figure["data"][0] = new_trace
-        current_figure["layout"]["uirevision"] = _spectrum_revision(
-            sample_name, shapes_store
-        )
+        current_figure["layout"]["uirevision"] = revision
         # the peaks follow the new curve, and a spatial subset may have lost
         # its calibration (and so its windows) altogether
         current_figure = apply_peak_windows(
@@ -760,16 +801,15 @@ def _find_id_in_list(
     return None
 
 
-def _index_range_from_shape(shp):
-    if shp["type"] != "rect":
-        msg = f"Unsupported shape type of {shp['type']}"
-        raise TypeError(msg)
-
-    index1_range = [int(np.floor(shp["x0"])), int(np.floor(shp["x1"]))]
-    index1_range.sort()
-    index0_range = [int(np.floor(shp["y0"])), int(np.floor(shp["y1"]))]
-    index0_range.sort()
-    return index0_range, index1_range
+def _selection_bounds(
+    selection: Selection | None, md: "CombinedMetadata | None"
+) -> tuple[tuple[int, int], tuple[int, int]] | None:
+    """The index ranges the exported ``*_subset`` images are cropped to: the
+    box itself, or the polygon's bounding box clipped to the map."""
+    if selection is None:
+        return None
+    image_shape = get_image_shape(md) if md is not None else None
+    return selection.bounding_box(image_shape)
 
 
 def _new_panel(mode: str | None, index: int) -> tuple[dbc.Card, dict[str, str | int]]:
@@ -1005,8 +1045,7 @@ def export_summary(
     if export_clicks is None or export_clicks == 0:
         return None
 
-    if "selected_dataset" not in user_store_dict:
-        user_store_dict["selected_dataset"] = sample_name
+    _ensure_dataset(user_store_dict, sample_name)
     user_store = UserStore(**user_store_dict)
     spectrum_only = resolve_spectrum_only(user_store_dict, spectrum_only_switch)
 
@@ -1184,11 +1223,13 @@ def _export_metadata(
         md = None
 
     index_ranges = None
+    polygon = None
     images = None
     if not spectrum_only:
-        active_shapes = _active_shapes(shapes_store)
-        if active_shapes:
-            index_ranges = _index_range_from_shape(active_shapes[0])
+        selection = selection_from_store(shapes_store)
+        index_ranges = _selection_bounds(selection, md)
+        if isinstance(selection, polygonSelection):
+            polygon = selection.vertices
         images = [panel.metadata(index_ranges is not None) for panel in panels]
 
     return build_export_metadata(
@@ -1197,6 +1238,7 @@ def _export_metadata(
         sample_metadata=user_store.sample_metadata,
         spectrum_only=spectrum_only,
         index_ranges=index_ranges,
+        polygon=polygon,
         images=images,
         zeroed_elements=zeroed_elements,
         show_peak_windows=show_peak_windows,
@@ -1208,16 +1250,20 @@ def _image_figures_to_write(
     panels: list[panelExport],
     shapes_store: dict | None,
 ) -> dict:
-    """Matplotlib versions of every image panel, plus the box subset of each
-    when a rectangle is drawn, keyed by output file stem."""
+    """Matplotlib versions of every image panel, plus the subset of each when
+    a selection is drawn (the box, or the polygon's bounding box), keyed by
+    output file stem."""
     index0_range = None
     index1_range = None
-    active_shapes = _active_shapes(shapes_store)
-    if active_shapes:
-        index0_range, index1_range = _index_range_from_shape(active_shapes[0])
+    md: CombinedMetadata | None = None
+    selection = selection_from_store(shapes_store)
+    if selection is not None:
+        md = user_store.conditionally_fetch_metadata()
+        bounds = _selection_bounds(selection, md)
+        assert bounds is not None
+        index0_range, index1_range = bounds
 
     figs_to_write = {}
-    md: CombinedMetadata | None = None
     for panel in panels:
         figs_to_write[panel.stem] = plotly_to_matplotlib(
             panel.figure, cmap=panel.colormap
@@ -1271,7 +1317,7 @@ def _graph_dict(index: int) -> dict[str, str | int]:
 
 
 def _active_shapes(shapes_store: dict | None) -> list[dict]:
-    return list((shapes_store or {}).get("active_shapes", []))
+    return active_shapes(shapes_store)
 
 
 @callback(
@@ -1333,8 +1379,7 @@ def update_graph_figure(
 
     if "graph_ids" not in processed_graph_store:
         processed_graph_store["graph_ids"] = []
-    if "selected_dataset" not in user_store_dict:
-        user_store_dict["selected_dataset"] = sample_name
+    _ensure_dataset(user_store_dict, sample_name)
     user_store = UserStore(**user_store_dict)
     view = ensure_view(view_store)
     shapes = _active_shapes(shapes_store)
@@ -1528,8 +1573,7 @@ def update_composite_figure(
         targets = [triggered_id["index"]]
     spectraLogger.info(f"building composite figures for panels {targets}")
 
-    if "selected_dataset" not in user_store_dict:
-        user_store_dict["selected_dataset"] = sample_name
+    _ensure_dataset(user_store_dict, sample_name)
     user_store = UserStore(**user_store_dict)
     md = user_store.conditionally_fetch_metadata()
     assert md is not None
@@ -1697,8 +1741,7 @@ def sync_image_views(
 
     md: CombinedMetadata | None = None
     if axes_changed:
-        if "selected_dataset" not in user_store_dict:
-            user_store_dict["selected_dataset"] = sample_name
+        _ensure_dataset(user_store_dict, sample_name)
         md = UserStore(**user_store_dict).conditionally_fetch_metadata()
 
     processed = processed_graph_store.get("graph_ids", [])
@@ -1746,14 +1789,12 @@ def _processed_positions(
 def tool_patches(
     tool: str, view: dict | None, graph_ids: list, processed_graph_store: dict
 ) -> tuple[list, dict]:
-    """Put a tool on every panel: the dragmode patches and the updated view."""
+    """Put a tool on every panel: the layout patches and the updated view."""
     view = ensure_view(view)
     view["dragmode"] = tool
     patches: list = [no_update] * len(graph_ids)
     for pos in _processed_positions(graph_ids, processed_graph_store):
-        patch = Patch()
-        patch["layout"]["dragmode"] = tool
-        patches[pos] = patch
+        patches[pos] = apply_tool_to_patch(Patch(), tool)
     return patches, view
 
 
@@ -1863,13 +1904,133 @@ def run_image_action(
     if action is None:
         return [no_update] * len(graph_ids), no_update, no_update
     spectraLogger.info(f"image action: {action}")
-    if "selected_dataset" not in user_store_dict:
-        user_store_dict["selected_dataset"] = sample_name
+    _ensure_dataset(user_store_dict, sample_name)
     md = UserStore(**user_store_dict).conditionally_fetch_metadata()
     assert md is not None
     return action_results(
         action, view_store, shapes_store, graph_ids, processed_graph_store, md
     )
+
+
+# The panels' clicks reach the polygon through a document-level listener in
+# assets/toolbox.js, which tells a double click from two single ones and
+# writes {kind, x, y, n} into the click store; that write is what fires
+# edit_polygon. Nothing goes through the graphs' clickData: two identical
+# clicks in a row are deduplicated on the way to a Dash callback.
+
+
+def _visible_spans(view: dict | None, md: "CombinedMetadata") -> tuple[float, float]:
+    """How much of the image each axis shows, in pixels: the view's range, or
+    the whole image for an axis at its default."""
+    image_shape = get_image_shape(md)
+    spans = []
+    for ax in ("xaxis", "yaxis"):
+        rng = sorted_axis_range(view, ax) or sorted(image_axis_range(ax, image_shape))
+        spans.append(rng[1] - rng[0])
+    return spans[0], spans[1]
+
+
+def polygon_edit_results(
+    click: dict,
+    view: dict | None,
+    shapes_store: dict | None,
+    graph_ids: list,
+    processed_graph_store: dict,
+    md: "CombinedMetadata",
+) -> tuple[list, object]:
+    """The figure patches and shapes store a polygon click leaves behind: a
+    click adds a corner, a double click drops the corner nearest to it (within
+    a fraction of the visible extent). The points already submitted are kept,
+    so the spectrum stays put until the next Submit shape."""
+    no_updates: list = [no_update] * len(graph_ids)
+    points = polygon_points(shapes_store)
+    spans = _visible_spans(view, md)
+    x, y = float(click["x"]), float(click["y"])
+    if click.get("kind") == "dblclick":
+        new_points = remove_nearest_point(points, x, y, pick_tolerance(spans))
+    else:
+        new_points = add_point(points, x, y)
+    if new_points == points:
+        return no_updates, no_update
+
+    store = polygon_store(
+        new_points, submitted_polygon(shapes_store), vertex_radius_for(spans)
+    )
+    patches = list(no_updates)
+    for pos in _processed_positions(graph_ids, processed_graph_store):
+        patch = Patch()
+        patch["layout"]["shapes"] = store["active_shapes"]
+        patches[pos] = patch
+    return patches, store
+
+
+@callback(
+    Output({"type": _imageIDS.graph, "index": ALL}, "figure", allow_duplicate=True),
+    Output(_IDS.shapes_store, "data", allow_duplicate=True),
+    Input(_IDS.polygon_click_store, "data"),
+    State({"type": _imageIDS.graph, "index": ALL}, "id"),
+    State(_IDS.processed_graph_id_store, "data"),
+    State(_IDS.view_store, "data"),
+    State(_IDS.shapes_store, "data"),
+    State(USER_STORE_DIV_ID, "data"),
+    State("sample-name", "children"),
+    prevent_initial_call=True,
+)
+def edit_polygon(
+    click: dict | None,
+    graph_ids: list[dict[str, str | int]],
+    processed_graph_store: dict,
+    view_store: dict | None,
+    shapes_store: dict | None,
+    user_store_dict: dict,
+    sample_name: str,
+):
+    """Place or remove a polygon corner on every panel, as layout patches.
+
+    A first corner replaces whatever selection was drawn before (a box, or a
+    polygon submitted earlier is redrawn from its own points as they change).
+    """
+    if not click or IMAGE_TOOLBOX.active_tool(view_store) != DRAW_POLYGON.id:
+        return [no_update] * len(graph_ids), no_update
+    spectraLogger.info(
+        f"polygon {click.get('kind')} at {click.get('x')}, {click.get('y')}"
+    )
+    _ensure_dataset(user_store_dict, sample_name)
+    md = UserStore(**user_store_dict).conditionally_fetch_metadata()
+    assert md is not None
+    return polygon_edit_results(
+        click, view_store, shapes_store, graph_ids, processed_graph_store, md
+    )
+
+
+@callback(
+    Output(_IDS.shapes_store, "data", allow_duplicate=True),
+    Input(_SUBMIT_SHAPE_ID, "n_clicks"),
+    State(_IDS.shapes_store, "data"),
+    prevent_initial_call=True,
+)
+def submit_polygon(n_clicks: int | None, shapes_store: dict | None):
+    """Submit shape makes the placed corners the selection; ``update_spectrum``
+    sees the store change and fetches the spectrum over the polygon."""
+    if not n_clicks or not polygon_is_submittable(shapes_store):
+        return no_update
+    points = polygon_points(shapes_store)
+    spectraLogger.info(f"polygon submitted with {len(points)} points")
+    return polygon_store(points, points, vertex_radius(shapes_store))
+
+
+@callback(
+    Output(POLYGON_CONTROLS_ID, "hidden"),
+    Output(_SUBMIT_SHAPE_ID, "disabled"),
+    Input(_IDS.view_store, "data"),
+    Input(_IDS.shapes_store, "data"),
+)
+def toggle_polygon_controls(view_store: dict | None, shapes_store: dict | None):
+    """The how-to note and Submit shape show only while the polygon tool is
+    pressed; the button is live once three corners are placed that have not
+    been submitted yet."""
+    hidden = IMAGE_TOOLBOX.active_tool(view_store) != DRAW_POLYGON.id
+    return hidden, not polygon_is_submittable(shapes_store)
 
 
 @callback(
