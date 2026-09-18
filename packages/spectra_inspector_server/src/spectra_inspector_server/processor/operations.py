@@ -5,6 +5,7 @@ off the request queue in ``main.py`` (``queueOpsItem.ops_func``), so a rename
 here is a change to how endpoints call in.
 """
 
+from collections.abc import Sequence
 from typing import TYPE_CHECKING, Any
 
 import numpy as np
@@ -19,6 +20,7 @@ from spectra_inspector_server.model import (
     Spectrum1d,
     raveledImage,
 )
+from spectra_inspector_server.processor._polygon import Vertex, polygon_mask
 from spectra_inspector_server.processor._reductions import (
     accumulator_dtype,
     chunk_bounds,
@@ -417,9 +419,11 @@ class OperationEDAXStateHandler:
         chunking_index: int = 0,
         chunksize: int = _DEFAULT_CHUNKSIZE,
         spectrum_only: bool = False,
+        polygon: Sequence[Vertex] | None = None,
     ) -> Spectrum1d:
         """Sum a sample's data cube over a spatial region into a 1D spectrum.
 
+        The region is a box given by index ranges, or the inside of a polygon.
         The summation is chunked along one spatial axis so that the full cube
         is never held in memory at once.
 
@@ -444,6 +448,11 @@ class OperationEDAXStateHandler:
             read the sample's ``.spc`` file on its own instead of summing the
             map, by default False. There is nothing spatial to sum over then,
             so the index ranges are ignored.
+        polygon : Sequence[tuple[float, float]] | None, optional
+            the corners of a polygon as ``(index0, index1)`` pairs in pixel
+            index units, by default None. When given, the pixels whose
+            centres fall inside it are summed instead of a box, and the index
+            ranges are replaced by the polygon's bounding box.
 
         Returns
         -------
@@ -455,6 +464,15 @@ class OperationEDAXStateHandler:
 
         if spectrum_only:
             return self._get_spc_spectrum(sample_name, channel_range=channel_range)
+
+        mask: npt.NDArray[np.bool_] | None = None
+        if polygon is not None:
+            edax_ds = self._load(sample_name)
+            image_shape = (
+                edax_ds.axes_by_index[0].size,
+                edax_ds.axes_by_index[1].size,
+            )
+            mask, index0_range, index1_range = polygon_mask(polygon, image_shape)
 
         input_index_ranges = [index0_range, index1_range, channel_range]
         valid_index_ranges, physical_ranges, md, md_orig = self._validate_index_ranges(
@@ -487,7 +505,19 @@ class OperationEDAXStateHandler:
         for chunk in chunks:
             slices = [slice(*rng) for rng in index_ranges]
             slices[chunking_index] = slice(*chunk)
-            partial = np.sum(data[tuple(slices)], axis=(0, 1), dtype=acc_dtype)
+            block = data[tuple(slices)]
+            if mask is not None:
+                # the mask covers the bounding box the index ranges span
+                mask_slices = [slice(None), slice(None)]
+                offset = index_ranges[chunking_index][0]
+                mask_slices[chunking_index] = slice(
+                    chunk[0] - offset, chunk[1] - offset
+                )
+                partial = np.sum(
+                    block[mask[tuple(mask_slices)]], axis=0, dtype=acc_dtype
+                )
+            else:
+                partial = np.sum(block, axis=(0, 1), dtype=acc_dtype)
             assert partial.size == im_output.size
             im_output += partial
 

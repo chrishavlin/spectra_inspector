@@ -149,7 +149,7 @@ class summaryWriter:
 
     def _pdf_metadata_pages(self, pdf: fpdf.FPDF) -> None:
         """The sample metadata (as the data-selection accordion shows it) and
-        the box subselection, as text; a heading only when no record was set."""
+        the subselection, as text; a heading only when no record was set."""
         pdf.add_page()
         pdf.set_font("Helvetica", size=14)
         pdf.cell(text="Sample metadata", new_x="LMARGIN", new_y="NEXT")
@@ -175,7 +175,7 @@ class summaryWriter:
 
         pdf.ln(4)
         pdf.set_font("Helvetica", size=14)
-        pdf.cell(text="Box subselection", new_x="LMARGIN", new_y="NEXT")
+        pdf.cell(text="Subselection", new_x="LMARGIN", new_y="NEXT")
         pdf.ln(2)
         pdf.set_font("Courier", size=8)
         pdf.multi_cell(

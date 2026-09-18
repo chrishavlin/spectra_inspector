@@ -101,7 +101,7 @@ def test_composite_zip_writes_the_blend_and_its_subset(
         "bitmap_00_composite_Mg-Al.png: composite of Mg (1.13, 1.34 keV) in red; "
         "Al (1.4, 1.61 keV) in green"
     ) in readme
-    assert "bitmap_00_composite_Mg-Al_subset.png: the box region of" in readme
+    assert "bitmap_00_composite_Mg-Al_subset.png: the selected region of" in readme
 
 
 def test_panel_exports_name_single_and_composite_panels(inspector):

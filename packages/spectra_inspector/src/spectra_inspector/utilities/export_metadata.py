@@ -47,9 +47,12 @@ def subselection_metadata(
     md: CombinedMetadata,
     index0_range: list[int] | tuple[int, int],
     index1_range: list[int] | tuple[int, int],
+    polygon: list[list[float]] | None = None,
 ) -> dict[str, Any]:
-    """Describe the box drawn on the image panels: the index ranges it covers
-    on each image axis and the same bounds in the axes' physical units.
+    """Describe the selection drawn on the image panels: the index ranges it
+    covers on each image axis and the same bounds in the axes' physical
+    units, plus the corners of a polygon when that is what was drawn (the
+    ranges are then its bounding box).
 
     ``index0`` runs down the image rows and ``index1`` across the columns, the
     order the exported ``*_subset`` images are sliced in. A range is half-open,
@@ -64,13 +67,28 @@ def subselection_metadata(
             "bounds": [ax.offset + start * ax.scale, ax.offset + stop * ax.scale],
             "units": ax.units,
         }
-    return {
+    record: dict[str, Any] = {
+        "kind": "box" if polygon is None else "polygon",
         "shape": [
             int(index0_range[1]) - int(index0_range[0]),
             int(index1_range[1]) - int(index1_range[0]),
         ],
         "axes": axes,
     }
+    if polygon is not None:
+        # corners in pixel index units, [index0, index1], and in the axes'
+        # physical units in the same order
+        record["polygon"] = {
+            "vertices_index": [[float(v) for v in vertex] for vertex in polygon],
+            "vertices_physical": [
+                [
+                    get_axis(md, 0).offset + vertex[0] * get_axis(md, 0).scale,
+                    get_axis(md, 1).offset + vertex[1] * get_axis(md, 1).scale,
+                ]
+                for vertex in polygon
+            ],
+        }
+    return record
 
 
 def _image_files(stem: str, has_subset: bool) -> dict[str, Any]:
@@ -153,19 +171,23 @@ def build_export_metadata(
     md: CombinedMetadata | None,
     sample_metadata: dict[str, Any] | None = None,
     spectrum_only: bool = False,
-    index_ranges: tuple[list[int], list[int]] | None = None,
+    index_ranges: tuple[list[int], list[int]]
+    | tuple[tuple[int, int], ...]
+    | None = None,
     images: list[dict[str, Any]] | None = None,
     zeroed_elements: list[str] | None = None,
     show_peak_windows: bool | None = None,
     now: datetime.datetime | None = None,
+    polygon: list[list[float]] | None = None,
 ) -> dict[str, Any]:
     """The full record written with an export. ``md`` may be None when the
     server could not be reached for the metadata; the record then says so
-    rather than the export failing."""
+    rather than the export failing. ``polygon`` carries the corners when the
+    selection is one, with ``index_ranges`` its bounding box."""
     now = now or datetime.datetime.now(tz=ZoneInfo("UTC"))
     subselection = None
     if md is not None and index_ranges is not None and not spectrum_only:
-        subselection = subselection_metadata(md, *index_ranges)
+        subselection = subselection_metadata(md, *index_ranges, polygon=polygon)
     return {
         "generated_utc": now.isoformat(),
         "dataset": dataset,
@@ -207,10 +229,12 @@ def flatten_for_display(d: dict[str, Any], indent: int = 0) -> list[str]:
 
 
 def subselection_lines(subselection: dict[str, Any] | None) -> list[str]:
-    """Human-readable lines for the box, for the README and the PDF."""
+    """Human-readable lines for the selection, for the README and the PDF."""
     if subselection is None:
-        return ["No box drawn: the images cover the full map."]
-    lines = [f"Box shape (rows, columns): {_fmt(subselection['shape'])}"]
+        return ["No box or shape drawn: the images cover the full map."]
+    polygon = subselection.get("polygon")
+    box = "Bounding box" if polygon else "Box"
+    lines = [f"{box} shape (rows, columns): {_fmt(subselection['shape'])}"]
     for key, ax in subselection["axes"].items():
         lo, hi = ax["bounds"]
         i0, i1 = ax["index_range"]
@@ -218,11 +242,17 @@ def subselection_lines(subselection: dict[str, Any] | None) -> list[str]:
             f"{key} ({ax['name']}): indices [{i0}, {i1}), "
             f"{_fmt(lo)} to {_fmt(hi)} {ax['units']}"
         )
+    if polygon:
+        corners = polygon["vertices_index"]
+        lines.append(
+            f"Polygon with {len(corners)} corners, as (index0, index1): "
+            + "; ".join(f"({_fmt(v[0])}, {_fmt(v[1])})" for v in corners)
+        )
     return lines
 
 
 _FIXED_FILE_DESCRIPTIONS = {
-    "metadata.json": "this record as JSON: sample metadata, box bounds, panels",
+    "metadata.json": "this record as JSON: sample metadata, selection bounds, panels",
     "README.txt": "this file",
     "spectrum.png": "the spectrum as plotted, peak windows included when shown",
     "spectrum.msa": "the spectrum in EMSA/MAS format",
@@ -249,12 +279,12 @@ def readme_text(metadata: dict[str, Any], files: list[str]) -> str:
     for image in metadata.get("images") or []:
         described[image["file"]] = image_description(image)
         if image["subset_file"]:
-            described[image["subset_file"]] = f"the box region of {image['file']}"
+            described[image["subset_file"]] = f"the selected region of {image['file']}"
     for f in sorted(files):
         description = described.get(f)
         lines.append(f"{f}: {description}" if description else f)
 
-    lines.extend(["", "Box subselection", "----------------"])
+    lines.extend(["", "Subselection", "------------"])
     lines.extend(subselection_lines(metadata.get("subselection")))
 
     spectrum = metadata.get("spectrum") or {}

@@ -63,6 +63,16 @@ deliberately single-threaded.
 Images cross the wire as `raveledImage` (flat list + shape), reshaped
 client-side.
 
+`/image-spectrum` sums a region given either as index ranges (a box) or as
+`polygon`, a JSON list of at least three `[index0, index1]` vertices in pixel
+index units (pixel centres on the integers), which takes precedence over the
+ranges. `processor/_polygon.py` rasterises it in numpy (even-odd rule over the
+pixel centres, half-open in the row direction, over the polygon's bounding box
+clipped to the map; no shapely), and `get_spectrum` sums the masked pixels chunk
+by chunk like a box. The parameter is parsed and validated in `main.py`
+(`_parse_polygon`, 422 on anything malformed) rather than through a pydantic
+model so the frontend's generated `model.py` is unaffected.
+
 `calibration.py` computes per-element peak weights over fixed keV windows plus
 the `DH_assessment` ratio; `Spectrum1d.get_weights()` attaches them to
 `/image-spectrum` responses when `include_weights=true`, together with the

@@ -156,27 +156,70 @@ Several Dash/plotly behaviours here are not visible from the python side:
 - The panels' plotly modebars are off (`displayModeBar: False`); the tools live
   in `components/image_toolbox.py`, one card above the panels (inside
   `image_section`, so spectrum-only mode hides it too). A _tool_ is a plotly
-  dragmode (`drawrect`, `zoom`, `pan`) and the **active tool is the view store's
-  `dragmode`** -- there is no separate tool store: `select_image_tool` patches
-  `layout.dragmode` on every built panel and writes the view,
-  `highlight_image_tool` sets the buttons' `active` from the view store (so a
-  reset or a dataset switch, which empties the view, presses the default again),
-  and new panels pick the tool up through `apply_view_to_figure`. An _action_
-  (`zoomin`, `zoomout`, `eraseshape`) is answered by `run_image_action` with
-  layout patches only: a zoom step is `view_sync.zoom_view` about the centre (an
-  un-zoomed axis spans the full image, whose shape comes from the metadata via
-  `scaling.get_image_shape`), and erasing writes an empty `active-shapes` so the
-  spectrum reloads. Buttons are pattern ids
+  dragmode (`drawrect`, `zoom`, `pan`) or the polygon tool (below), and the
+  **active tool is the view store's `dragmode`** -- there is no separate tool
+  store: `select_image_tool` patches the tool's layout (`view_sync.tool_layout`:
+  `dragmode` plus the axes' `fixedrange`) on every built panel and writes the
+  view, `highlight_image_tool` sets the buttons' `active` from the view store
+  (so a reset or a dataset switch, which empties the view, presses the default
+  again), and new panels pick the tool up through `apply_view_to_figure`. An
+  _action_ (`zoomin`, `zoomout`, `eraseshape`) is answered by `run_image_action`
+  with layout patches only: a zoom step is `view_sync.zoom_view` about the
+  centre (an un-zoomed axis spans the full image, whose shape comes from the
+  metadata via `scaling.get_image_shape`), and erasing writes an empty
+  `active-shapes` so the spectrum reloads. Buttons are pattern ids
   `{"type": "image-toolbox-tool"|"image-toolbox-action", "index": <id>}` over
   `ALL`; add a tool or action to the `toolboxSpec` in `image_toolbox.py`
   (`IMAGE_TOOLBOX`: the buttons plus the labelled rows they sit in, validated at
-  import), and an action to `action_results`. `Add Image` and `Reset Extent`
-  share the card but are plain ids (`ids.button_id("add")` /
-  `ids.button_id("reset")`) answered by `add_or_delete_image` and
-  `update_graph_figure`. The card's third row, Panel Mode, holds the single /
-  multi-channel switch (`inspectorIDs.image_mode`), built by the page and passed
-  into `image_toolbox_layout`. Plotly's per-panel PNG download went with the
-  modebar; the export panel covers images.
+  import), and an action to `action_results`. `Add Image`, `Reset Extent` and
+  `Submit shape` share the card but are plain ids (`ids.button_id("add")` /
+  `("reset")` / `("submit")`) answered by `add_or_delete_image`,
+  `update_graph_figure` and `submit_polygon`. The card's third row, Panel Mode,
+  holds the single / multi-channel switch (`inspectorIDs.image_mode`), built by
+  the page and passed into `image_toolbox_layout`. Plotly's per-panel PNG
+  download went with the modebar; the export panel covers images.
+- The **polygon tool** (`drawpolygon`, `view_sync.POLYGON_TOOL`) is not a plotly
+  dragmode: its layout is `dragmode=False` with both axes `fixedrange`, which
+  also disables plotly's double-click reset so a double click can remove a
+  corner. Corners are placed by clicking a panel, moved by dragging, removed by
+  a double click, and inserted by a double click on a segment. Plotly's own
+  click event snaps to a pixel and reaches Dash as `clickData`, where two
+  identical clicks in a row are deduplicated, so gestures never go through a
+  callback input: document-level listeners in `assets/toolbox.js` (keyed on that
+  layout signature) convert the pointer position with `xaxis.p2d`, wait
+  `POLYGON_DBLCLICK_MS` for a second click at the same spot, and write
+  `{kind: "click"|"dblclick"|"move", x, y, index, n}` into the `polygon-click`
+  store with `dash_clientside.set_props`, which does fire dependent callbacks. A
+  drag starts on a mousedown within `POLYGON_VERTEX_PX` of a corner (read off
+  the named `polygon-vertex` circles in `gd.layout.shapes`); while the mouse is
+  down the corner follows on every panel through `Plotly.react` with the same
+  data and new shapes, and the release emits the `move`. It must be `react`, not
+  `relayout`: `Plotly.relayout` emits `plotly_relayout`, which Dash turns into
+  `relayoutData` and `sync_image_views` into a server round trip per frame (and
+  into a one-shape store, since it keeps the last shape). Escape abandons a
+  drag. `edit_polygon` answers every gesture with `layout.shapes` patches on
+  every built panel and the shapes store; nearness for picking a corner or a
+  segment is `pick_tolerance`, a fraction of the visible extent, and a single
+  click that lands on a corner adds nothing. `utilities/selection.py` owns the
+  store's shape: a box is the plotly rectangle in `active_shapes` as before; a
+  polygon keeps its `points` (and the `submitted` copy, plus the marker radius)
+  under `polygon`, with `active_shapes` drawn from the points (a `path`, closed
+  from three points, and a `circle` per corner). Only a submitted polygon or a
+  box is the `selection_from_store`; `update_spectrum` compares the figure's
+  `uirevision` (`_spectrum_revision`, built on `selection_key`) with the store's
+  and returns `no_update` when the selection has not changed, which is what
+  keeps corner edits from refetching until `Submit shape`. The controls
+  (`polygon_controls`: the button and the how-to note) are shown by
+  `toggle_polygon_controls` while the tool is pressed and the button enabled by
+  `polygon_is_submittable`. Drawing a box replaces the polygon
+  (`shapes_from_relayout` keeps the last shape), erase drops both. The corner
+  markers are circles in data units, sized by `vertex_radius_for` from the
+  visible extent: plotly's pixel-sized shapes (`xsizemode: "pixel"`) leak that
+  mode into the subplot's `plotinfo`, and a box drawn afterwards comes out in
+  pixels. The server sums the polygon (see
+  `spectra_inspector_server/CLAUDE.md`); `polygonSelection.vertices` hands it
+  `[index0, index1]` pairs, and the export crops the `*_subset` images to the
+  polygon's bounding box and records the corners in `subselection.polygon`.
 - `components/toolbox.py` holds what the two toolboxes share: the button and row
   dataclasses, the view-control specs, the id mapper, the card builder
   (`toolbox_card`, whose `extras` slot ready-made components into a row) and the
@@ -277,7 +320,12 @@ Other things worth knowing:
   (`spaces_to_placeholder` / `placeholder_to_spaces`).
 - Figures are Plotly `px.imshow` with `dragmode="drawrect"` (the toolbox's
   default tool); user rectangles come back through `relayoutData` and become
-  index ranges sent to the backend.
+  index ranges sent to the backend, a submitted polygon becomes the `polygon`
+  query parameter (`utilities/selection.py`).
+- On a fresh load the figure callbacks can run before `update_selected_dataset`
+  has written the user store, which then still names the `UserStore` default
+  dataset `"none"`; `_ensure_dataset` puts the page's sample in for the
+  callbacks that read the store (they fetch the metadata themselves then).
 - Export: `utilities/summary_writer.py` writes into a uuid subdirectory under
   `SPECTRA_INSPECTOR_WRITE_DIR` and prunes oldest dirs past
   `SPECTRA_INSPECTOR_MAX_TMP_DIRS`; `plotly_to_matplotlib` in `coerce.py`

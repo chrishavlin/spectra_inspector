@@ -2,10 +2,12 @@ import numpy as np
 import pytest
 
 from spectra_inspector.utilities.coerce import (
+    path_vertices,
     placeholder_to_spaces,
     plotly_to_matplotlib,
     spaces_to_placeholder,
 )
+from spectra_inspector.utilities.selection import polygon_shapes
 
 
 def test_spaces_placeholder_roundtrip():
@@ -26,6 +28,36 @@ def test_plotly_to_matplotlib_preserves_heatmap_box_annotation():
     assert len(ax.patches) == 1
     assert ax.patches[0].get_edgecolor() == (0.0, 0.0, 0.0, 1.0)
     assert ax.patches[0].get_linewidth() == 2
+
+
+def test_path_vertices_reads_the_polygon_path():
+    assert path_vertices("M 2.0,1.0 L 8.5,1.0 L 5,6e0 Z") == [
+        (2.0, 1.0),
+        (8.5, 1.0),
+        (5.0, 6.0),
+    ]
+    assert path_vertices("M -1.5,2 L 3,-4") == [(-1.5, 2.0), (3.0, -4.0)]
+    assert path_vertices("") == []
+
+
+def test_plotly_to_matplotlib_draws_the_polygon_outline_without_its_markers():
+    im_data = [[1, 2], [3, 4]]
+    fig = {
+        "data": [{"type": "heatmap", "z": im_data}],
+        "layout": {"shapes": polygon_shapes([[0.0, 0.0], [1.0, 0.0], [1.0, 1.0]])},
+    }
+
+    mpl_fig = plotly_to_matplotlib(fig, im_data=np.asarray(im_data))
+    ax = mpl_fig.axes[0]
+
+    assert len(ax.patches) == 1
+    outline = ax.patches[0]
+    assert outline.get_closed()
+    np.testing.assert_array_equal(
+        outline.get_xy()[:3], [[0.0, 0.0], [1.0, 0.0], [1.0, 1.0]]
+    )
+    assert outline.get_edgecolor() == (0.0, 0.0, 0.0, 1.0)
+    assert not outline.get_fill()
 
 
 def test_plotly_to_matplotlib_preserves_heatmap_overlay_trace_and_annotation():
