@@ -1,8 +1,12 @@
+import base64
+import io
+
 import numpy as np
 import numpy.typing as npt
 import plotly.express as px
 import plotly.graph_objects as go
 from matplotlib import colormaps
+from PIL import Image
 
 from spectra_inspector.logging import spectraLogger
 from spectra_inspector.utilities.matplotib_importer import Rectangle
@@ -52,6 +56,25 @@ def plotly_im_trace_to_array(trace_data: dict) -> npt.NDArray:
         im_array[irow, :] = list(data_i.values())
 
     return im_array
+
+
+def plotly_image_trace_to_array(trace_data: dict) -> npt.NDArray:
+    """The pixels of an ``image`` trace as a ``(rows, cols, 3)`` uint8 array.
+
+    ``px.imshow`` ships an RGB image as a base64 PNG data URI in ``source``,
+    which the browser hands back untouched; an explicit ``z`` array (a figure
+    built with ``binary_string=False``) is accepted too.
+    """
+    source = trace_data.get("source")
+    if isinstance(source, str) and source.startswith("data:image"):
+        encoded = source.split(",", maxsplit=1)[1]
+        with Image.open(io.BytesIO(base64.b64decode(encoded))) as im:
+            return np.asarray(im.convert("RGB"), dtype=np.uint8)
+    z = trace_data.get("z")
+    if z is None:
+        msg = "image trace carries neither a source nor a z array"
+        raise ValueError(msg)
+    return np.asarray(z, dtype=np.uint8)
 
 
 def _draw_paper_spanning_shapes(ax, layout: dict) -> None:
@@ -141,21 +164,23 @@ def plotly_to_matplotlib(
 
     first_trace = data[0]
     trace_type = first_trace.get("type", "scatter")
-    if trace_type == "heatmap":
-        if im_data is None:
+    if trace_type in {"heatmap", "image"}:
+        if im_data is not None:
+            z = im_data
+        elif trace_type == "heatmap":
             z = plotly_im_trace_to_array(first_trace)
         else:
-            z = im_data
+            z = plotly_image_trace_to_array(first_trace)
         spectraLogger.info(f"extracted data {z.shape}, {z.dtype}")
         fig_mpl, ax = plt.subplots(figsize=(6, 4), dpi=150)
 
-        # handle colormap coercion
-        if isinstance(cmap, str):
-            cmap_name = cmap
+        # an RGB image carries its own colours; a scalar map takes the colormap
+        if z.ndim == 3:
+            cmap_name = None
         else:
-            cmap_name = "viridis"
-        if cmap_name in _mpl_cmaps_lower:
-            cmap_name = _mpl_cmaps_lower[cmap_name]
+            cmap_name = cmap if isinstance(cmap, str) else "viridis"
+            if cmap_name in _mpl_cmaps_lower:
+                cmap_name = _mpl_cmaps_lower[cmap_name]
 
         im = ax.imshow(z, cmap=cmap_name)
         ax.set_aspect("equal", adjustable="box")
@@ -228,7 +253,7 @@ def plotly_to_matplotlib(
                             )
 
         ax.set_axis_off()
-        if include_colorbar:
+        if include_colorbar and z.ndim == 2:
             fig_mpl.colorbar(im, ax=ax, fraction=0.046, pad=0.04)
 
         title_text = title.get("text") if isinstance(title, dict) else None

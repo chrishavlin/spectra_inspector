@@ -173,8 +173,10 @@ Several Dash/plotly behaviours here are not visible from the python side:
   import), and an action to `action_results`. `Add Image` and `Reset Extent`
   share the card but are plain ids (`ids.button_id("add")` /
   `ids.button_id("reset")`) answered by `add_or_delete_image` and
-  `update_graph_figure`. Plotly's per-panel PNG download went with the modebar;
-  the export panel covers images.
+  `update_graph_figure`. The card's third row, Panel Mode, holds the single /
+  multi-channel switch (`inspectorIDs.image_mode`), built by the page and passed
+  into `image_toolbox_layout`. Plotly's per-panel PNG download went with the
+  modebar; the export panel covers images.
 - `components/toolbox.py` holds what the two toolboxes share: the button and row
   dataclasses, the view-control specs, the id mapper, the card builder
   (`toolbox_card`, whose `extras` slot ready-made components into a row) and the
@@ -197,6 +199,52 @@ Several Dash/plotly behaviours here are not visible from the python side:
   ranges exist only in the browser, so it reads `gd._fullLayout` and calls
   `Plotly.relayout`, scaling the energy axis only and reporting into the
   `spectrum-action-sink` store.
+
+### Multi-channel (composite) panels
+
+The image toolbox's Panel Mode row carries a two-way mode switch
+(`inspectorIDs.image_mode`, `IMAGE_MODE_SINGLE` / `IMAGE_MODE_MULTI`). Flipping
+it runs `switch_image_mode`, which replaces the container's children wholesale
+(three element maps, or one composite), resets `graph-id-store` and empties
+`processed-graph-ids`; the shared view and box are kept, so the new panels open
+on the same zoom. `add_or_delete_image` reads the mode as a `State` and appends
+a panel of the current kind; panel indices come from the store's `next_index`
+rather than from the button's click count, so a panel never reuses the index of
+one that was replaced.
+
+`components/composite_image.py` builds the composite card. Its card, graph,
+delete button and loading overlay carry the same `bitmap-image` ids as a single
+panel, which is what makes `sync_image_views`, the box, the reset and the delete
+path work on both kinds unchanged. Everything composite-specific has its own id
+types: `composite-image-apply` / `-detailsbutton` / `-details` per panel, and
+per channel (index `"<panel>-<channel>"`, see `channel_index`) a
+`composite-channel-selector-*` element dropdown and energy slider (the shared
+`energy_range_slider` pieces built under another `id_type_base`, with
+`custom`/`off` entries instead of `none`; `register_element_selector_callbacks`
+registers the dropdown/slider syncing per base), plus `composite-channel-badge`
+/ `-color` / `-stretch`. The channel row always shows the numbered swatch and
+element dropdown; colour, energy window and percentile stretch sit in the
+details collapse. The swatch follows a colour pick at once, the image waits for
+Apply.
+
+Two consequences for the page callbacks:
+
+- `update_graph_figure` only builds panels that have a single-panel Apply button
+  (it reads their ids), and `update_composite_figure` answers the composite
+  Apply. Both write `processed-graph-ids` and can run at the same time (a mode
+  switch removes one kind's inputs while inserting the other's), so each returns
+  `no_update` for that store unless it actually added to it. The composite
+  builder reads no figures: a composite always fetches its own channels
+  (`fetch_im_data_parallel` over every new panel's active channels).
+- The blend (`utilities/composite.py`) normalises each channel to its own
+  percentile stretch, tints it a single hue from a fixed palette and sums; the
+  figure is a `px.imshow` RGB image whose pixels travel as a base64 PNG in
+  `data[0].source`. `recolor_image` never sees a composite (no colorscale
+  dropdown), and `coerce.plotly_image_trace_to_array` decodes the PNG for the
+  export, which names the files `bitmap_NN_composite_<elements>` and records one
+  `channels` list per panel in the metadata. `export_summary` sorts panels into
+  kinds by graph index (`_panel_exports`), so the single-panel lists are matched
+  by slider id rather than by position when the ids are present.
 
 All cross-callback state lives in a single `dcc.Store` with id
 `USER_STORE_DIV_ID` (`"user-mem-store"`), whose dict is the `UserStore`

@@ -1,4 +1,6 @@
+from collections.abc import Callable
 from dataclasses import dataclass, field
+from typing import Any
 
 import dash_bootstrap_components as dbc
 from dash import MATCH, Input, Output, State, callback, ctx, dcc, no_update
@@ -57,19 +59,32 @@ class elementDropdownSliderParts:
     apply_button: dbc.Button
     collapse_button: dbc.Button
     collapse: dbc.Collapse
+    # the range slider itself, for a layout that places it outside ``collapse``
+    # (mount one or the other, never both: it is one component)
+    slider: dcc.RangeSlider
     tooltips: list[Component] = field(default_factory=list)
+
+
+CUSTOM_RANGE_LABEL = "none"
 
 
 def build_element_dropdown_and_slider(
     id_type_base: str = "element-dropdown-slider",
-    index: int = 0,
+    index: int | str = 0,
     slider_start: float = 0.0,
     slider_stop: float = 15.0,
     slider_step: float = 0.1,
     init_element: str | None = None,
+    custom_label: str = CUSTOM_RANGE_LABEL,
+    extra_options: tuple[str, ...] = (),
 ) -> tuple[elementDropdownSliderParts, elementDropdownSliderIDS]:
     """``init_element`` picks the preset the panel starts on; when it is not
-    among the server's presets (or is None) the first preset is used."""
+    among the server's presets (or is None) the first preset is used.
+
+    ``custom_label`` is the dropdown entry meaning "whatever the slider says",
+    which the slider selects when moved by hand. ``extra_options`` are appended
+    after the elements and leave the slider alone when picked (see
+    ``register_element_selector_callbacks``)."""
 
     layoutIDs = elementDropdownSliderIDS(id_type_base, index=index)
 
@@ -79,7 +94,7 @@ def build_element_dropdown_and_slider(
     if init_element not in element_ranges:
         init_element = elements[0]
     element_selector = dcc.Dropdown(
-        ["none", *elements],
+        [custom_label, *elements, *extra_options],
         value=init_element,
         id=layoutIDs.get_id_with_index("dropdown"),
         className="text-info",
@@ -92,19 +107,17 @@ def build_element_dropdown_and_slider(
 
     energy_marks = {val: val for val in range(0, 16, 3)}
 
+    slider = dcc.RangeSlider(
+        slider_start,
+        slider_stop,
+        step=slider_step,
+        value=slider_init_range,
+        id=layoutIDs.get_id_with_index("slider"),
+        className="text-info",
+        marks=energy_marks,
+    )
     energy_range = dbc.Card(
-        dbc.CardBody(
-            dcc.RangeSlider(
-                slider_start,
-                slider_stop,
-                step=slider_step,
-                value=slider_init_range,
-                id=layoutIDs.get_id_with_index("slider"),
-                className="text-info",
-                marks=energy_marks,
-            ),
-            className="pb-1 pt-3 px-2",
-        ),
+        dbc.CardBody(slider, className="pb-1 pt-3 px-2"),
         color="light",
         className="mb-2",
     )
@@ -153,6 +166,7 @@ def build_element_dropdown_and_slider(
         apply_button=apply_button,
         collapse_button=collapse_button,
         collapse=slider_collapse,
+        slider=slider,
         tooltips=tooltips,
     )
     return parts, layoutIDs
@@ -196,40 +210,56 @@ def get_element_dropdown_and_slider(
     return cont, layoutIDs
 
 
+def register_element_selector_callbacks(
+    id_type_base: str = "element-dropdown-slider",
+    custom_label: str = CUSTOM_RANGE_LABEL,
+) -> Callable[[str, tuple[float, float]], tuple[Any, Any]]:
+    """Register the dropdown/slider syncing for one ``id_type_base``.
+
+    Picking an element moves the slider to its preset; moving the slider by
+    hand flips the dropdown to ``custom_label``. Any other entry (the custom
+    label itself, or an extra option such as "off") leaves the slider alone.
+    Pattern-matching callbacks are keyed on the id type, so every base these
+    controls are built under registers its own pair. Returns the sync callback.
+    """
+    ids = elementDropdownSliderIDS(id_type_base)
+
+    @callback(
+        Output({"type": ids.slider, "index": MATCH}, "value"),
+        Output({"type": ids.dropdown, "index": MATCH}, "value"),
+        Input({"type": ids.dropdown, "index": MATCH}, "value"),
+        Input({"type": ids.slider, "index": MATCH}, "value"),
+    )
+    def sync_element_selector_dropdown(
+        element_name: str, slider_range: tuple[float, float]
+    ):
+        triggered_id = ctx.triggered_id
+        if triggered_id is None or "type" not in triggered_id:
+            return no_update, no_update
+        if triggered_id["type"] == ids.dropdown:
+            if element_name == custom_label or element_name is None:
+                return no_update, no_update
+            element_range = get_element_energy_ranges().get(element_name)
+            if element_range is None:
+                return no_update, no_update
+            return element_range, no_update
+        if triggered_id["type"] == ids.slider:
+            return slider_range, custom_label
+        msg = "unexpected trigger."
+        raise RuntimeError(msg)
+
+    @callback(
+        Output({"type": ids.collapse, "index": MATCH}, "is_open"),
+        [Input({"type": ids.collapsebutton, "index": MATCH}, "n_clicks")],
+        [State({"type": ids.collapse, "index": MATCH}, "is_open")],
+    )
+    def toggle_energy_slider_collapse(n, is_open):
+        if n:
+            return not is_open
+        return is_open
+
+    return sync_element_selector_dropdown
+
+
 _imageSliderIds = elementDropdownSliderIDS()
-
-
-@callback(
-    Output({"type": _imageSliderIds.slider, "index": MATCH}, "value"),
-    Output({"type": _imageSliderIds.dropdown, "index": MATCH}, "value"),
-    Input({"type": _imageSliderIds.dropdown, "index": MATCH}, "value"),
-    Input({"type": _imageSliderIds.slider, "index": MATCH}, "value"),
-)
-def sync_element_selector_dropdown(
-    element_name: str, slider_range: tuple[float, float]
-):
-    triggered_id = ctx.triggered_id
-    if triggered_id is None or "type" not in triggered_id:
-        return no_update, no_update
-    if triggered_id["type"] == _imageSliderIds.dropdown:
-        if element_name == "none" or element_name is None:
-            return no_update, no_update
-        element_range = get_element_energy_ranges().get(element_name)
-        if element_range is None:
-            return no_update, no_update
-        return element_range, no_update
-    if triggered_id["type"] == _imageSliderIds.slider:
-        return slider_range, "none"
-    msg = "unexpected trigger."
-    raise RuntimeError(msg)
-
-
-@callback(
-    Output({"type": _imageSliderIds.collapse, "index": MATCH}, "is_open"),
-    [Input({"type": _imageSliderIds.collapsebutton, "index": MATCH}, "n_clicks")],
-    [State({"type": _imageSliderIds.collapse, "index": MATCH}, "is_open")],
-)
-def toggle_energy_slider_collapse(n, is_open):
-    if n:
-        return not is_open
-    return is_open
+sync_element_selector_dropdown = register_element_selector_callbacks()
