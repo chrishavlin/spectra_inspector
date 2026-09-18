@@ -13,6 +13,7 @@ from spectra_inspector.components.energy_range_slider import (
 )
 from spectra_inspector.components.layout_ids import indexedLayoutIDMapper
 from spectra_inspector.components.scalebar import scalebarHandler
+from spectra_inspector.components.tooltip import hover_tooltip
 from spectra_inspector.logging import spectraLogger
 from spectra_inspector.settings import Settings
 from spectra_inspector.user_store_model import UserStore
@@ -157,11 +158,11 @@ def bitmap_image_layout(
                     energy_parts.collapse,
                     fig_image,
                     *energy_parts.tooltips,
-                    dbc.Tooltip(
+                    hover_tooltip(
                         "Delete bitmap image panel",
                         target=imIDs.get_id_with_index("delete"),
                     ),
-                    dbc.Tooltip(
+                    hover_tooltip(
                         "Apply changes to energy bounds",
                         target=imIDs.get_id_with_index("refresh"),
                     ),

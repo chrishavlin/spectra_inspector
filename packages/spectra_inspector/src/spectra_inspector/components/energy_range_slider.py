@@ -5,6 +5,7 @@ from dash import MATCH, Input, Output, State, callback, ctx, dcc, no_update
 from dash.development.base_component import Component
 
 from spectra_inspector.components.layout_ids import indexedLayoutIDMapper
+from spectra_inspector.components.tooltip import hover_tooltip
 from spectra_inspector.utilities.element_energy_ranges import (
     get_element_energy_ranges,
 )
@@ -129,19 +130,19 @@ def build_element_dropdown_and_slider(
     )
 
     tooltips: list[Component] = [
-        dbc.Tooltip(
+        hover_tooltip(
             "Adjust endpoints to set energy bounds (keV)",
             target=layoutIDs.get_id_with_index("slider"),
         ),
-        dbc.Tooltip(
+        hover_tooltip(
             "Click to show or hide the manual energy range adjustment panel",
             target=layoutIDs.get_id_with_index("collapsebutton"),
         ),
-        dbc.Tooltip(
+        hover_tooltip(
             "Click to apply any changes in element or energy bounds range",
             target=layoutIDs.get_id_with_index("refreshbutton"),
         ),
-        dbc.Tooltip(
+        hover_tooltip(
             "Select an element map",
             target=layoutIDs.get_id_with_index("dropdown"),
         ),
