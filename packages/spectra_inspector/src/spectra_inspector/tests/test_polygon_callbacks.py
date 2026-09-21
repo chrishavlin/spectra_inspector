@@ -13,6 +13,7 @@ from spectra_inspector.components.image_toolbox import (
     DRAW_POLYGON,
     IMAGE_TOOLBOX,
     POLYGON_CONTROLS_ID,
+    POLYGON_NOTE_ID,
     SUBMIT_SHAPE,
 )
 from spectra_inspector.settings import ENV_PREFIX
@@ -231,25 +232,14 @@ def test_submit_makes_the_points_the_selection(inspector):
 
 
 def test_controls_show_with_the_tool_and_enable_with_three_points(inspector):
-    assert inspector.toggle_polygon_controls(empty_view(), {}) == (True, True)
+    # (submit hidden, note hidden, submit disabled)
+    toggle = inspector.toggle_polygon_controls
+    assert toggle(empty_view(), {}) == (True, True, True)
     view = _polygon_view()
-    assert inspector.toggle_polygon_controls(view, {}) == (False, True)
-    assert inspector.toggle_polygon_controls(
-        view, polygon_store(TRIANGLE[:2], None)
-    ) == (
-        False,
-        True,
-    )
-    assert inspector.toggle_polygon_controls(view, polygon_store(TRIANGLE, None)) == (
-        False,
-        False,
-    )
-    assert inspector.toggle_polygon_controls(
-        view, polygon_store(TRIANGLE, TRIANGLE)
-    ) == (
-        False,
-        True,
-    )
+    assert toggle(view, {}) == (False, False, True)
+    assert toggle(view, polygon_store(TRIANGLE[:2], None)) == (False, False, True)
+    assert toggle(view, polygon_store(TRIANGLE, None)) == (False, False, False)
+    assert toggle(view, polygon_store(TRIANGLE, TRIANGLE)) == (False, False, True)
 
 
 def test_erase_drops_the_polygon_too(inspector):
@@ -314,4 +304,5 @@ def test_submit_and_controls_are_wired(callbacks):
     assert len(submit) == 1
     controls = [cb for cb in callbacks if POLYGON_CONTROLS_ID in cb["output"]]
     assert len(controls) == 1
+    assert f"{POLYGON_NOTE_ID}.hidden" in controls[0]["output"]
     assert f"{submit_id}.disabled" in controls[0]["output"]

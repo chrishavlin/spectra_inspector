@@ -58,6 +58,7 @@ from spectra_inspector.components.image_toolbox import (
     DRAW_POLYGON,
     IMAGE_TOOLBOX,
     POLYGON_CONTROLS_ID,
+    POLYGON_NOTE_ID,
     SUBMIT_SHAPE,
 )
 from spectra_inspector.components.scalebar import scalebarHandler
@@ -2071,6 +2072,7 @@ def submit_polygon(n_clicks: int | None, shapes_store: dict | None):
 
 @callback(
     Output(POLYGON_CONTROLS_ID, "hidden"),
+    Output(POLYGON_NOTE_ID, "hidden"),
     Output(_SUBMIT_SHAPE_ID, "disabled"),
     Input(_IDS.view_store, "data"),
     Input(_IDS.shapes_store, "data"),
@@ -2080,7 +2082,7 @@ def toggle_polygon_controls(view_store: dict | None, shapes_store: dict | None):
     pressed; the button is live once three corners are placed that have not
     been submitted yet."""
     hidden = IMAGE_TOOLBOX.active_tool(view_store) != DRAW_POLYGON.id
-    return hidden, not polygon_is_submittable(shapes_store)
+    return hidden, hidden, not polygon_is_submittable(shapes_store)
 
 
 @callback(

@@ -6,9 +6,10 @@ others; the pressed tool is whatever the shared view's ``dragmode`` holds. The
 two plain buttons, reset and add, are answered by the inspector's
 figure-building and panel-adding callbacks, and the Panel Mode row holds the
 page's single / multi-channel switch, passed in ready-made. The polygon tool
-brings its own controls into the first row: a note on how to place points and
-the Submit shape button that sends the finished polygon to the server. See
-``components/toolbox.py`` for the pieces shared with the spectrum's toolbox.
+brings its own controls: the Submit shape button that sends the finished
+polygon to the server joins the first row, and a note on how to place points
+wraps onto a line of its own below it. See ``components/toolbox.py`` for the
+pieces shared with the spectrum's toolbox.
 """
 
 from dataclasses import replace
@@ -100,35 +101,38 @@ POLYGON_NOTE_ID = IMAGE_TOOLBOX.ids.full_id("-polygon-note")
 
 
 def polygon_controls() -> html.Div:
-    """Submit shape and the how-to note, hidden until the polygon tool is
-    picked (``toggle_polygon_controls`` on the inspector page)."""
+    """Submit shape, hidden until the polygon tool is picked
+    (``toggle_polygon_controls`` on the inspector page)."""
     submit = icon_button(IMAGE_TOOLBOX, SUBMIT_SHAPE.id, size="sm", disabled=True)
-    note = html.Span(
+    return html.Div(
+        submit, id=POLYGON_CONTROLS_ID, hidden=True, className="si-polygon-controls"
+    )
+
+
+def polygon_note() -> html.Div:
+    """The how-to note, shown and hidden with ``polygon_controls``. Full
+    width, so the row's flex-wrap drops it onto a line of its own below the
+    buttons; no ``d-*`` class, those are !important and would override the
+    ``hidden`` attribute."""
+    return html.Div(
         POLYGON_INSTRUCTIONS,
         id=POLYGON_NOTE_ID,
-        className="small text-body-secondary",
-    )
-    # the display class sits on an inner div: bootstrap's ``d-*`` utilities
-    # are !important and would override the ``hidden`` attribute
-    return html.Div(
-        html.Div([submit, note], className="d-inline-flex align-items-center gap-2"),
-        id=POLYGON_CONTROLS_ID,
         hidden=True,
-        className="si-polygon-controls",
+        className="w-100 small text-body-secondary",
     )
 
 
 def image_toolbox_layout(
     mode_controls: list[Any] | None = None,
 ) -> tuple[dbc.Card, toolboxLayoutIDs]:
-    """The card, with the polygon controls and then Add Image alone at the
-    right end of the first row, and ``mode_controls`` filling the Panel Mode
-    row."""
+    """The card, with Submit shape and then Add Image alone at the right end
+    of the first row, the polygon note on its own line under them, and
+    ``mode_controls`` filling the Panel Mode row."""
     add_button = icon_button(
         IMAGE_TOOLBOX, ADD_IMAGE.id, size="sm", class_name="ms-auto"
     )
     extras = {
-        0: [polygon_controls(), add_button],
+        0: [polygon_controls(), add_button, polygon_note()],
         PANEL_MODE_ROW: mode_controls or [],
     }
     return toolbox_card(IMAGE_TOOLBOX, extras=extras), IMAGE_TOOLBOX.ids

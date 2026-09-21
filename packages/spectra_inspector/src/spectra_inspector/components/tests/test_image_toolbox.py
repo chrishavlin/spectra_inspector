@@ -50,7 +50,7 @@ def test_layout_puts_add_at_the_right_of_the_first_row():
     assert ids.div == IMAGE_TOOLBOX.ids.div
     rows = rows_of(card)
     assert len(rows) == 3
-    add_button = rows[0].children[-1]
+    add_button = rows[0].children[-2]
     assert add_button.id == ids.button_id(ADD_IMAGE.id)
     assert "ms-auto" in add_button.className
     assert isinstance(rows[1].children[-1], dbc.ButtonGroup)
@@ -60,21 +60,27 @@ def test_layout_puts_add_at_the_right_of_the_first_row():
     assert pressed == [ids.tool_id(DRAW_BOX.id)]
 
 
-def test_polygon_controls_sit_hidden_before_add():
+def test_polygon_controls_sit_hidden_before_add_and_the_note_below():
     card, ids = image_toolbox_layout()
     rows = rows_of(card)
-    controls = rows[0].children[-2]
+    controls = rows[0].children[-3]
     assert controls.id == POLYGON_CONTROLS_ID
     assert controls.hidden is True
-    # no bootstrap display class on the hidden element itself: those are
-    # !important and would override the hidden attribute
-    assert "d-" not in controls.className
-    submit, note = controls.children.children
+    submit = controls.children
     assert submit.id == ids.button_id(SUBMIT_SHAPE.id)
     assert submit.disabled is True
+    # the note is the row's last item and full width, so the row wraps it
+    # onto a line of its own under the buttons
+    note = rows[0].children[-1]
     assert note.id == POLYGON_NOTE_ID
+    assert note.hidden is True
+    assert "w-100" in note.className
     assert note.children == POLYGON_INSTRUCTIONS
     assert "double click" in POLYGON_INSTRUCTIONS
+    # no bootstrap display class on the hidden elements: those are
+    # !important and would override the hidden attribute
+    for hidden in (controls, note):
+        assert "d-" not in hidden.className
 
 
 def test_layout_fills_the_panel_mode_row_with_the_switch():
