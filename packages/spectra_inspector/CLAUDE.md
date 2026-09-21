@@ -287,6 +287,23 @@ element dropdown; colour, energy window and percentile stretch sit in the
 details collapse. The swatch follows a colour pick at once, the image waits for
 Apply.
 
+Both kinds of Apply button say when they need pressing. A change to a panel's
+controls turns the button `primary` and adds the `si-apply-pending` class (a
+short pulse in `assets/layout.css`) from the browser, through the `applyButton`
+clientside functions in `assets/apply_button.js`: `MATCH` for a single panel
+(`register_apply_pending_callback` in `energy_range_slider.py`), `ALL` plus the
+triggered id for a composite, whose controls are indexed per channel while Apply
+is per panel. A user's change reaches a marker as the changed control alone or
+batched with the slider move the element sync answers a dropdown pick with (one
+or two props of one control index); a panel's insertion or removal never reaches
+them (`prevent_initial_call` covers a new panel's own outputs, and a removal
+re-fires neither, checked in the browser), and a call reporting several controls
+marks nothing. `update_graph_figure` and `update_composite_figure` send
+`APPLY_IDLE_PROPS` back with `set_props` for the panel they refreshed, and a
+single panel seeded from another's figure is sent `APPLY_PENDING_PROPS`, since
+its image is a copy of what its controls say. The extent reset leaves the marks
+alone: it re-fetches nothing.
+
 Two consequences for the page callbacks:
 
 - `update_graph_figure` only builds panels that have a single-panel Apply button

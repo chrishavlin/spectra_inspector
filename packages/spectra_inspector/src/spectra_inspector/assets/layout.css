@@ -77,3 +77,30 @@
 .si-toolbox-label {
   min-width: 8rem;
 }
+
+/* An Apply button whose panel controls have changed since it was last
+   pressed. assets/apply_button.js adds the class (with the primary colour as
+   the standing reminder) and the figure builders take it off; the pulse runs
+   a few times and stops so a panel left alone is not permanent noise. The
+   class name mirrors APPLY_PENDING_PROPS in components/energy_range_slider.py. */
+.si-apply-pending {
+  animation: si-apply-pulse 1.4s ease-out 3;
+}
+
+@keyframes si-apply-pulse {
+  0% {
+    box-shadow: 0 0 0 0 rgba(var(--bs-primary-rgb), 0.6);
+  }
+  70% {
+    box-shadow: 0 0 0 0.6rem rgba(var(--bs-primary-rgb), 0);
+  }
+  100% {
+    box-shadow: 0 0 0 0 rgba(var(--bs-primary-rgb), 0);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .si-apply-pending {
+    animation: none;
+  }
+}

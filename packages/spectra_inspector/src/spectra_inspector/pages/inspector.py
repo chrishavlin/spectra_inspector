@@ -52,7 +52,11 @@ from spectra_inspector.components.dataset_selector import (
     list_store_data,
     resolve_spectrum_only,
 )
-from spectra_inspector.components.energy_range_slider import elementDropdownSliderIDS
+from spectra_inspector.components.energy_range_slider import (
+    APPLY_IDLE_PROPS,
+    APPLY_PENDING_PROPS,
+    elementDropdownSliderIDS,
+)
 from spectra_inspector.components.image_toolbox import (
     ADD_IMAGE,
     DRAW_POLYGON,
@@ -1356,6 +1360,14 @@ def _graph_dict(index: int) -> dict[str, str | int]:
     return {"type": _imageIDS.graph, "index": index}
 
 
+def _apply_button_id(index: int) -> dict[str, str | int]:
+    return {"type": _imageSliderIds.refreshbutton, "index": index}
+
+
+def _composite_apply_id(index: int) -> dict[str, str | int]:
+    return {"type": _compositeIDS.apply, "index": index}
+
+
 def _active_shapes(shapes_store: dict | None) -> list[dict]:
     return active_shapes(shapes_store)
 
@@ -1415,6 +1427,10 @@ def update_graph_figure(
     applies to every panel with a figure, whichever kind. The processed-id
     store is only returned when this call added to it, since the composite
     callback writes the same store and may be running at the same time.
+
+    The Apply button of a refreshed panel goes back to idle, and a later
+    panel seeded from another's figure is marked pending, since its image
+    is a copy rather than what its controls say.
     """
 
     if "graph_ids" not in processed_graph_store:
@@ -1484,6 +1500,10 @@ def update_graph_figure(
                 shapes=shapes,
             )
             set_props(graph_ids[pos], {"style": graph_style(im_array.shape)})
+            if seed is not None:
+                set_props(
+                    _apply_button_id(graph_ids[pos]["index"]), APPLY_PENDING_PROPS
+                )
         processed_graph_store["initialized"] = True
         return new_figs, processed_graph_store, no_update
 
@@ -1514,6 +1534,7 @@ def update_graph_figure(
 
     # fetch the image for the panel's (possibly new) energy range
     spectraLogger.info(f"refreshing panel {triggered_id}")
+    set_props(_apply_button_id(triggered_id["index"]), APPLY_IDLE_PROPS)
     new_figs = list(no_updates)
     new_figs[pos] = get_new_im(
         user_store,
@@ -1581,7 +1602,7 @@ def update_composite_figure(
     panel by ``channel_specs_from_states``. Each active channel's map is
     fetched (all panels' channels concurrently), blended and drawn into the
     shared view. Nothing here reads the existing figures: a composite always
-    fetches its own channels.
+    fetches its own channels. The clicked Apply goes back to idle.
     """
     no_updates = [no_update] * len(graph_ids)
     if not _valid_sample_name(sample_name):
@@ -1611,6 +1632,7 @@ def update_composite_figure(
         ):
             return no_updates, no_update
         targets = [triggered_id["index"]]
+        set_props(_composite_apply_id(targets[0]), APPLY_IDLE_PROPS)
     spectraLogger.info(f"building composite figures for panels {targets}")
 
     _ensure_dataset(user_store_dict, sample_name)

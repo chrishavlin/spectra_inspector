@@ -15,7 +15,19 @@ import dash_bootstrap_components as dbc
 import numpy.typing as npt
 import plotly.express as px
 import plotly.graph_objects as go
-from dash import MATCH, Input, Output, State, callback, dcc, html, no_update
+from dash import (
+    ALL,
+    MATCH,
+    ClientsideFunction,
+    Input,
+    Output,
+    State,
+    callback,
+    clientside_callback,
+    dcc,
+    html,
+    no_update,
+)
 from dash_bootstrap_components import Button
 
 from spectra_inspector.components.bitmap_image import (
@@ -24,6 +36,7 @@ from spectra_inspector.components.bitmap_image import (
     graph_style,
 )
 from spectra_inspector.components.energy_range_slider import (
+    APPLY_IDLE_PROPS,
     build_element_dropdown_and_slider,
     elementDropdownSliderIDS,
     register_element_selector_callbacks,
@@ -261,7 +274,7 @@ def composite_image_layout(
         )
 
     apply_button = Button(
-        "Apply", id=panelIDs.get_id_with_index("apply"), color="secondary"
+        "Apply", id=panelIDs.get_id_with_index("apply"), **APPLY_IDLE_PROPS
     )
     delete_button = Button(
         delete_button_label,
@@ -431,3 +444,19 @@ def recolor_channel_badge(color: str | None):
 
 
 channel_selector_ids = elementDropdownSliderIDS(CHANNEL_SELECTOR_BASE)
+
+# A change to any channel control marks its panel's Apply as pending, in the
+# browser. The controls are indexed per channel and Apply per panel, so the
+# controls are ``ALL`` inputs and ``markPanelPending`` (assets/apply_button.js)
+# reads the panel off the triggered id and finds its Apply among the ids.
+clientside_callback(
+    ClientsideFunction("applyButton", "markPanelPending"),
+    Output({"type": _panelIDs.apply, "index": ALL}, "color"),
+    Output({"type": _panelIDs.apply, "index": ALL}, "className"),
+    Input({"type": channel_selector_ids.dropdown, "index": ALL}, "value"),
+    Input({"type": channel_selector_ids.slider, "index": ALL}, "value"),
+    Input({"type": _channelIDs.color, "index": ALL}, "value"),
+    Input({"type": _channelIDs.stretch, "index": ALL}, "value"),
+    State({"type": _panelIDs.apply, "index": ALL}, "id"),
+    prevent_initial_call=True,
+)
