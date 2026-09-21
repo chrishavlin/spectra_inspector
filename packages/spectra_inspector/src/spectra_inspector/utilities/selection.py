@@ -36,10 +36,14 @@ VERTEX_PICK_FRACTION = 0.04
 VERTEX_RADIUS_FRACTION = 0.008
 DEFAULT_VERTEX_RADIUS = 1.0
 
-# the polygon's look
+# the polygon's look: the path and the corners in between are white, the
+# corner the path starts at is green and the one it ends at (where a click
+# appends the next) is red
 POLYGON_COLOR = "#f8f9fa"
 POLYGON_FILL = "rgba(248, 249, 250, 0.15)"
 VERTEX_OUTLINE = "#212529"
+START_VERTEX_COLOR = "#3fb950"
+END_VERTEX_COLOR = "#f85149"
 
 Point = list[float]
 IndexRange = tuple[int, int]
@@ -214,13 +218,23 @@ def polygon_shapes(
             "y0": y - radius,
             "y1": y + radius,
             "line": {"color": VERTEX_OUTLINE, "width": 1},
-            "fillcolor": POLYGON_COLOR,
+            "fillcolor": vertex_color(i, len(points)),
             "editable": False,
             "name": f"{POLYGON_KEY}-vertex",
         }
-        for x, y in points
+        for i, (x, y) in enumerate(points)
     )
     return shapes
+
+
+def vertex_color(index: int, n_points: int) -> str:
+    """Green for the corner the path starts at, red for the one it ends at,
+    white in between; a lone corner is the start."""
+    if index == 0:
+        return START_VERTEX_COLOR
+    if index == n_points - 1:
+        return END_VERTEX_COLOR
+    return POLYGON_COLOR
 
 
 def add_point(

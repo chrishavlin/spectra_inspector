@@ -204,8 +204,9 @@ Several Dash/plotly behaviours here are not visible from the python side:
   store's shape: a box is the plotly rectangle in `active_shapes` as before; a
   polygon keeps its `points` (and the `submitted` copy, plus the marker radius)
   under `polygon`, with `active_shapes` drawn from the points (a `path`, closed
-  from three points, and a `circle` per corner). Only a submitted polygon or a
-  box is the `selection_from_store`; `update_spectrum` compares the figure's
+  from three points, and a `circle` per corner: green where the path starts, red
+  where it ends, white in between, `vertex_color`). Only a submitted polygon or
+  a box is the `selection_from_store`; `update_spectrum` compares the figure's
   `uirevision` (`_spectrum_revision`, built on `selection_key`) with the store's
   and returns `no_update` when the selection has not changed, which is what
   keeps corner edits from refetching until `Submit shape`. The controls

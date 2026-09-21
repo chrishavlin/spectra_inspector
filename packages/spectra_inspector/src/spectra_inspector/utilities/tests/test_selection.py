@@ -3,7 +3,10 @@ import pytest
 
 from spectra_inspector.utilities.selection import (
     DEFAULT_VERTEX_RADIUS,
+    END_VERTEX_COLOR,
     MIN_POLYGON_POINTS,
+    POLYGON_COLOR,
+    START_VERTEX_COLOR,
     active_shapes,
     add_point,
     box_from_shape,
@@ -133,6 +136,22 @@ class TestShapes:
         assert shapes[0]["path"] == "M 2.0,1.0 L 8.0,1.0 L 5.0,6.0 Z"
         assert shapes[0]["fillcolor"] != "rgba(0,0,0,0)"
         assert len(shapes) == 4
+
+    def test_start_and_end_corners_are_coloured(self):
+        colours = [
+            s["fillcolor"] for s in polygon_shapes(TRIANGLE) if s["type"] == "circle"
+        ]
+        assert colours == [START_VERTEX_COLOR, POLYGON_COLOR, END_VERTEX_COLOR]
+        two = [
+            s["fillcolor"]
+            for s in polygon_shapes(TRIANGLE[:2])
+            if s["type"] == "circle"
+        ]
+        assert two == [START_VERTEX_COLOR, END_VERTEX_COLOR]
+        # a lone corner is where the path starts
+        (only,) = polygon_shapes(TRIANGLE[:1])
+        assert only["fillcolor"] == START_VERTEX_COLOR
+        assert START_VERTEX_COLOR != END_VERTEX_COLOR != POLYGON_COLOR
 
     def test_shapes_are_valid_plotly(self):
         fig = go.Figure()

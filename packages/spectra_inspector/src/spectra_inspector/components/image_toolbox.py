@@ -58,9 +58,10 @@ RESET_IMAGES = replace(RESET_EXTENT, tooltip="Zoom out to full extent on every p
 ADD_IMAGE = toolButton("add", "Add Image", "fa-solid fa-plus", "Open another panel")
 
 POLYGON_INSTRUCTIONS = (
-    "Click on an image to add a corner at the end of your selection path, "
-    "drag a corner to move it, double click a corner to remove it or a line "
-    "segment to insert a corner there, then Submit shape."
+    "Click on an image to add a corner after the red end of your selection "
+    "path (green is its start), drag a corner to move it, double click a "
+    "corner to remove it or a line segment to insert a corner there, then "
+    "Submit shape."
 )
 
 IMAGE_TOOLBOX = toolboxSpec(
