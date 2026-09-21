@@ -221,10 +221,17 @@ Several Dash/plotly behaviours here are not visible from the python side:
   `spectra_inspector_server/CLAUDE.md`); `polygonSelection.vertices` hands it
   `[index0, index1]` pairs. The export crops the `*_subset` images to the pixel
   rectangle around the polygon (`polygonSelection.bounding_box`: every pixel a
-  corner lands in, wider than the centres-inside set the server sums), draws the
-  outline alone over the crop (`outline_shape`, shifted to the crop's origin, no
-  fill; `plotly_to_matplotlib` skips the corner circles) and records the corners
-  in `subselection.polygon`.
+  corner lands in, wider than the centres-inside set the server sums) and
+  records the corners in `subselection.polygon`. The exported images never copy
+  the browser's shapes: `_image_figures_to_write` replaces them with
+  `selection.overlay_shapes` (the box as the pixel-aligned rectangle of what was
+  summed, the polygon as an unfilled outline plus a dot per corner, shifted to
+  the crop's origin on the subset and left off a box's own crop) in the
+  `outlineStyle` the export panel's **Figure export settings** give: a "draw the
+  outline" checkbox and line / dot colour dropdowns (`OUTLINE_COLORS`, white by
+  default), shown by `toggle_figure_export_settings` only while a selection
+  exists. `plotly_to_matplotlib` draws `rect`, `path` and `circle` shapes in
+  their own colours (`mpl_color` turns `rgba(...)` into fractions).
 - `components/toolbox.py` holds what the two toolboxes share: the button and row
   dataclasses, the view-control specs, the id mapper, the card builder
   (`toolbox_card`, whose `extras` slot ready-made components into a row) and the

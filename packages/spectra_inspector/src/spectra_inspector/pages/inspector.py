@@ -101,6 +101,8 @@ from spectra_inspector.utilities.selection import (
     add_point,
     insert_point_on_nearest_segment,
     move_point,
+    outlineStyle,
+    overlay_shapes,
     pick_tolerance,
     polygon_is_submittable,
     polygon_points,
@@ -1002,6 +1004,9 @@ def export_msa(
     State({"type": _channelIDS.color, "index": ALL}, "id"),
     State({"type": _channelIDS.stretch, "index": ALL}, "value"),
     State({"type": _channelIDS.stretch, "index": ALL}, "id"),
+    State(_dataExportIDS.includeoutline, "value"),
+    State(_dataExportIDS.outlinelinecolor, "value"),
+    State(_dataExportIDS.outlinedotcolor, "value"),
     prevent_initial_call=True,
     running=[
         (Output(_dataExportIDS.exportsummary, "disabled"), True, False),
@@ -1036,13 +1041,17 @@ def export_summary(
     channel_color_ids: list[dict] | None = None,
     channel_stretches: list | None = None,
     channel_stretch_ids: list[dict] | None = None,
+    include_outline: bool | None = None,
+    outline_line_color: str | None = None,
+    outline_dot_color: str | None = None,
 ):
     """Write the summary export: the spectrum plus, for a map, every image
     panel (and its box subset). A spectrum-only dataset has no images, so the
     panels are not consulted at all in that mode, whatever the page holds.
 
     The spectrum carries its peaks into the export exactly as the page shows
-    them: the "peak windows" switch and the zeroed-out elements both apply."""
+    them: the "peak windows" switch and the zeroed-out elements both apply.
+    The images draw the selection as the figure export settings say."""
 
     if export_clicks is None or export_clicks == 0:
         return None
@@ -1075,7 +1084,12 @@ def export_summary(
 
     figs_to_write = {}
     if not spectrum_only:
-        figs_to_write.update(_image_figures_to_write(user_store, panels, shapes_store))
+        style = data_export_panel.outline_style(
+            include_outline, outline_line_color, outline_dot_color
+        )
+        figs_to_write.update(
+            _image_figures_to_write(user_store, panels, shapes_store, style)
+        )
     figs_to_write["spectrum"] = plotly_to_matplotlib(
         apply_peak_windows(
             spectrum_figure,
@@ -1247,31 +1261,46 @@ def _export_metadata(
     )
 
 
+def _with_shapes(figure: dict, shapes: list[dict]) -> dict:
+    """The figure with ``shapes`` as its only layout shapes."""
+    return {**figure, "layout": {**(figure.get("layout") or {}), "shapes": shapes}}
+
+
 def _image_figures_to_write(
     user_store: UserStore,
     panels: list[panelExport],
     shapes_store: dict | None,
+    style: outlineStyle | None = None,
 ) -> dict:
     """Matplotlib versions of every image panel, plus the subset of each when
     a selection is drawn, keyed by output file stem. The subset is the box,
-    or the pixel rectangle around the polygon with its outline drawn over."""
+    or the pixel rectangle around the polygon. The selection is drawn on the
+    images as ``style`` says (``overlay_shapes``), never as the browser
+    happened to draw it."""
+    style = style or outlineStyle()
     index0_range = None
     index1_range = None
-    subset_shapes: list[dict] | None = None
+    full_shapes: list[dict] = []
+    subset_shapes: list[dict] = []
     md: CombinedMetadata | None = None
     selection = selection_from_store(shapes_store)
     if selection is not None:
         md = user_store.conditionally_fetch_metadata()
-        bounds = _selection_bounds(selection, md)
-        assert bounds is not None
+        assert md is not None
+        image_shape = get_image_shape(md)
+        bounds = selection.bounding_box(image_shape)
         index0_range, index1_range = bounds
-        if isinstance(selection, polygonSelection):
-            subset_shapes = [selection.outline_shape(bounds)]
+        full_shapes = overlay_shapes(selection, style, image_shape)
+        crop_shape = (
+            index0_range[1] - index0_range[0],
+            index1_range[1] - index1_range[0],
+        )
+        subset_shapes = overlay_shapes(selection, style, crop_shape, bounds)
 
     figs_to_write = {}
     for panel in panels:
         figs_to_write[panel.stem] = plotly_to_matplotlib(
-            panel.figure, cmap=panel.colormap
+            _with_shapes(panel.figure, full_shapes), cmap=panel.colormap
         )
         if not (index0_range and index1_range):
             continue
@@ -2052,6 +2081,16 @@ def toggle_polygon_controls(view_store: dict | None, shapes_store: dict | None):
     been submitted yet."""
     hidden = IMAGE_TOOLBOX.active_tool(view_store) != DRAW_POLYGON.id
     return hidden, not polygon_is_submittable(shapes_store)
+
+
+@callback(
+    Output(_dataExportIDS.figuresettings, "hidden"),
+    Input(_IDS.shapes_store, "data"),
+)
+def toggle_figure_export_settings(shapes_store: dict | None) -> bool:
+    """The figure export settings only matter once a box or a polygon is the
+    selection the export would draw; a polygon still being placed is not."""
+    return selection_from_store(shapes_store) is None
 
 
 @callback(

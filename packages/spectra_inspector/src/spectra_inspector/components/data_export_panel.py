@@ -9,6 +9,7 @@ from spectra_inspector.utilities.peak_windows import (
     spectrum_element_colors,
     visible_elements,
 )
+from spectra_inspector.utilities.selection import DEFAULT_OUTLINE_COLOR, outlineStyle
 
 WEIGHTS_UNAVAILABLE_MSG = "Weights unavailable for this map"
 
@@ -25,6 +26,39 @@ INTEGER_WEIGHT_KEYS: tuple[str, ...] = ("total_count", "counts_14_15_kev")
 ZERO_SYMBOL = "\u2715"
 RESTORE_SYMBOL = "\u21ba"
 
+# the colours the exported figures may draw the selection outline in, by the
+# name the dropdowns show
+OUTLINE_COLORS: dict[str, str] = {
+    "white": "#ffffff",
+    "black": "#000000",
+    "red": "#ff0000",
+    "green": "#00ff00",
+    "blue": "#0000ff",
+    "cyan": "#00ffff",
+    "magenta": "#ff00ff",
+    "yellow": "#ffff00",
+    "orange": "#ff8000",
+}
+DEFAULT_OUTLINE_COLOR_NAME = "white"
+
+
+def outline_style(
+    include: bool | None,
+    line_color: str | None,
+    dot_color: str | None,
+) -> outlineStyle:
+    """The figure export settings as the export draws them: an unset control
+    (the page not having rendered the settings yet) means its default."""
+    return outlineStyle(
+        show=True if include is None else bool(include),
+        line_color=OUTLINE_COLORS.get(
+            line_color or DEFAULT_OUTLINE_COLOR_NAME, DEFAULT_OUTLINE_COLOR
+        ),
+        dot_color=OUTLINE_COLORS.get(
+            dot_color or DEFAULT_OUTLINE_COLOR_NAME, DEFAULT_OUTLINE_COLOR
+        ),
+    )
+
 
 class dataExportPanelIDS(indexedLayoutIDMapper):
     prop_names: tuple[str, ...] = (
@@ -38,6 +72,10 @@ class dataExportPanelIDS(indexedLayoutIDMapper):
         "elementweightsdiv",
         "resetweights",
         "zeroelement",
+        "figuresettings",
+        "includeoutline",
+        "outlinelinecolor",
+        "outlinedotcolor",
     )
 
     def __init__(
@@ -92,6 +130,67 @@ class dataExportPanelIDS(indexedLayoutIDMapper):
     def zero_element_id(self, element: str) -> dict[str, str]:
         """The pattern-matching id of the button that zeroes one element."""
         return {"type": self.zeroelement, "index": element}
+
+    @property
+    def figuresettings(self) -> str:
+        return self.full_id("-figuresettings")
+
+    @property
+    def includeoutline(self) -> str:
+        return self.full_id("-includeoutline")
+
+    @property
+    def outlinelinecolor(self) -> str:
+        return self.full_id("-outlinelinecolor")
+
+    @property
+    def outlinedotcolor(self) -> str:
+        return self.full_id("-outlinedotcolor")
+
+
+def _color_dropdown(id_: str) -> dcc.Dropdown:
+    return dcc.Dropdown(
+        list(OUTLINE_COLORS),
+        value=DEFAULT_OUTLINE_COLOR_NAME,
+        id=id_,
+        className="text-info",
+        searchable=False,
+        clearable=False,
+    )
+
+
+def figure_settings_layout(layoutIDs: dataExportPanelIDS) -> html.Div:
+    """The figure export settings: whether the exported images draw the
+    selected box or polygon, and in which colours. Hidden until a selection
+    exists (``toggle_figure_export_settings`` on the inspector page)."""
+    return html.Div(
+        [
+            html.H6("Figure export settings", className="mt-3"),
+            dbc.Checkbox(
+                id=layoutIDs.includeoutline,
+                label="Draw the selection outline on the images",
+                value=True,
+            ),
+            dbc.Row(
+                [
+                    dbc.Col("line colour", width=6),
+                    dbc.Col(_color_dropdown(layoutIDs.outlinelinecolor), width=6),
+                ],
+                align="center",
+                className="mt-1",
+            ),
+            dbc.Row(
+                [
+                    dbc.Col("corner dot colour", width=6),
+                    dbc.Col(_color_dropdown(layoutIDs.outlinedotcolor), width=6),
+                ],
+                align="center",
+                className="mt-1",
+            ),
+        ],
+        id=layoutIDs.figuresettings,
+        hidden=True,
+    )
 
 
 def get_layout(
@@ -172,7 +271,9 @@ def get_layout(
                             html.H3("Extract-a-comp!", className="card-title"),
                             html.Hr(),
                             html.H5("Export summary", className="card-subtitle"),
-                            dbc.Container(summary_row),
+                            dbc.Container(
+                                [summary_row, figure_settings_layout(layoutIDs)]
+                            ),
                             html.Hr(),
                             html.H5("Export Spectrum", className="card-subtitle"),
                             dbc.Container(msa_row),

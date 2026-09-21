@@ -99,18 +99,68 @@ class polygonSelection:
             ranges.append((lo, max(hi, lo)))
         return ranges[0], ranges[1]
 
-    def outline_shape(
+    def cropped_points(
         self, bounds: tuple[IndexRange, IndexRange] | None = None
-    ) -> dict:
-        """The polygon's outline as an unfilled plotly path shape, drawn in
-        the coordinates of the image cropped to ``bounds`` (its origin moves
-        to the crop's first pixel) when they are given."""
+    ) -> list[Point]:
+        """The corners in the coordinates of the image cropped to ``bounds``
+        (its origin moves to the crop's first pixel), or as they are."""
         offset0, offset1 = (0, 0) if bounds is None else (bounds[0][0], bounds[1][0])
-        points = [[x - offset1, y - offset0] for x, y in self.points]
-        return polygon_outline(points)
+        return [[x - offset1, y - offset0] for x, y in self.points]
 
 
 Selection = boxSelection | polygonSelection
+
+DEFAULT_OUTLINE_COLOR = "#ffffff"
+
+
+@dataclass(frozen=True)
+class outlineStyle:
+    """How the exported figures draw the selection: whether at all, and the
+    colours of the line and of a polygon's corner dots."""
+
+    show: bool = True
+    line_color: str = DEFAULT_OUTLINE_COLOR
+    dot_color: str = DEFAULT_OUTLINE_COLOR
+
+
+def overlay_shapes(
+    selection: Selection,
+    style: outlineStyle,
+    image_shape: tuple[int, int],
+    bounds: tuple[IndexRange, IndexRange] | None = None,
+) -> list[dict]:
+    """The layout shapes an exported figure draws for the selection over an
+    image of ``image_shape`` (rows, columns): the pixel-aligned rectangle of
+    a box, or a polygon's outline and a dot on each corner, in the crop's
+    coordinates when ``bounds`` are given. Nothing when the style hides the
+    outline, and nothing over a box's own crop, which is the box."""
+    if not style.show:
+        return []
+    if isinstance(selection, boxSelection):
+        if bounds is not None:
+            return []
+        (r0, r1), (c0, c1) = selection.index0_range, selection.index1_range
+        return [
+            {
+                "type": "rect",
+                "x0": c0 - 0.5,
+                "x1": c1 - 0.5,
+                "y0": r0 - 0.5,
+                "y1": r1 - 0.5,
+                "line": {"color": style.line_color, "width": 2},
+                "fillcolor": "rgba(0,0,0,0)",
+            }
+        ]
+    points = selection.cropped_points(bounds)
+    spans = (float(image_shape[0]), float(image_shape[1]))
+    radius = vertex_radius_for(spans)
+    return [
+        polygon_outline(points, color=style.line_color),
+        *(
+            vertex_shape(x, y, radius, style.dot_color, style.dot_color)
+            for x, y in points
+        ),
+    ]
 
 
 def active_shapes(store: dict | None) -> list[dict]:
@@ -199,7 +249,9 @@ def _path(points: list[Point]) -> str:
     return f"M {moves}{closed}"
 
 
-def polygon_outline(points: list[Point], fill: bool = False) -> dict:
+def polygon_outline(
+    points: list[Point], fill: bool = False, color: str = POLYGON_COLOR
+) -> dict:
     """The path shape through ``points``, closed once there are three, with
     the panels' translucent fill when ``fill`` is set and none otherwise."""
     closed = len(points) >= MIN_POLYGON_POINTS
@@ -208,10 +260,33 @@ def polygon_outline(points: list[Point], fill: bool = False) -> dict:
         "path": _path(points),
         "xref": "x",
         "yref": "y",
-        "line": {"color": POLYGON_COLOR, "width": 2},
+        "line": {"color": color, "width": 2},
         "fillcolor": POLYGON_FILL if fill and closed else "rgba(0,0,0,0)",
         "editable": False,
         "name": POLYGON_KEY,
+    }
+
+
+def vertex_shape(
+    x: float,
+    y: float,
+    radius: float,
+    fill_color: str,
+    line_color: str = VERTEX_OUTLINE,
+) -> dict:
+    """The circle of ``radius`` data units marking a corner at ``(x, y)``."""
+    return {
+        "type": "circle",
+        "xref": "x",
+        "yref": "y",
+        "x0": x - radius,
+        "x1": x + radius,
+        "y0": y - radius,
+        "y1": y + radius,
+        "line": {"color": line_color, "width": 1},
+        "fillcolor": fill_color,
+        "editable": False,
+        "name": f"{POLYGON_KEY}-vertex",
     }
 
 
@@ -226,19 +301,7 @@ def polygon_shapes(
     if len(points) >= 2:
         shapes.append(polygon_outline(points, fill=True))
     shapes.extend(
-        {
-            "type": "circle",
-            "xref": "x",
-            "yref": "y",
-            "x0": x - radius,
-            "x1": x + radius,
-            "y0": y - radius,
-            "y1": y + radius,
-            "line": {"color": VERTEX_OUTLINE, "width": 1},
-            "fillcolor": vertex_color(i, len(points)),
-            "editable": False,
-            "name": f"{POLYGON_KEY}-vertex",
-        }
+        vertex_shape(x, y, radius, vertex_color(i, len(points)))
         for i, (x, y) in enumerate(points)
     )
     return shapes

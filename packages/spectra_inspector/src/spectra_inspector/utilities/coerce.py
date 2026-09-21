@@ -10,7 +10,7 @@ from matplotlib import colormaps
 from PIL import Image
 
 from spectra_inspector.logging import spectraLogger
-from spectra_inspector.utilities.matplotib_importer import Polygon, Rectangle
+from spectra_inspector.utilities.matplotib_importer import Circle, Polygon, Rectangle
 from spectra_inspector.utilities.matplotib_importer import mpl_pyplot as plt
 
 _PATH_NUMBER = re.compile(r"[-+]?(?:\d+\.?\d*|\.\d+)(?:[eE][-+]?\d+)?")
@@ -21,6 +21,22 @@ def path_vertices(path: str) -> list[tuple[float, float]]:
     segments (``M x,y L x,y ... Z``), as the polygon selection draws them."""
     numbers = [float(n) for n in _PATH_NUMBER.findall(path)]
     return list(zip(numbers[0::2], numbers[1::2], strict=False))
+
+
+_RGBA = re.compile(r"rgba?\(\s*([^)]*)\)")
+
+
+def mpl_color(color: str | None, default: str) -> str | tuple[float, ...]:
+    """A plotly colour as matplotlib takes it: names and hex pass through,
+    ``rgb(...)`` / ``rgba(...)`` become fractions, nothing gives ``default``."""
+    if not color:
+        return default
+    match = _RGBA.fullmatch(color.strip())
+    if match is None:
+        return color
+    parts = [float(p) for p in match.group(1).split(",")]
+    rgb = tuple(p / 255.0 for p in parts[:3])
+    return (*rgb, parts[3]) if len(parts) > 3 else rgb
 
 
 _place_holder = "___"
@@ -196,10 +212,13 @@ def plotly_to_matplotlib(
         im = ax.imshow(z, cmap=cmap_name)
         ax.set_aspect("equal", adjustable="box")
 
-        # add on the selection: the box, or the polygon's outline (its vertex
-        # markers are pixel-sized circles and are left out)
+        # add on the selection: the box, or the polygon's outline (a path)
+        # and its corner dots (circles), in the shapes' own colours; the
+        # outline is never filled
         for shape in layout.get("shapes", []) or []:
-            if shape.get("type") == "path":
+            line_color = mpl_color((shape.get("line") or {}).get("color"), "black")
+            kind = shape.get("type")
+            if kind == "path":
                 corners = path_vertices(shape.get("path", ""))
                 if len(corners) >= 2:
                     ax.add_patch(
@@ -207,12 +226,12 @@ def plotly_to_matplotlib(
                             corners,
                             closed=len(corners) >= 3,
                             fill=False,
-                            edgecolor="black",
+                            edgecolor=line_color,
                             linewidth=2,
                         )
                     )
                 continue
-            if shape.get("type") != "rect":
+            if kind not in {"rect", "circle"}:
                 continue
 
             x0 = shape.get("x0")
@@ -222,12 +241,24 @@ def plotly_to_matplotlib(
             if None in {x0, x1, y0, y1}:
                 continue
 
+            if kind == "circle":
+                ax.add_patch(
+                    Circle(
+                        ((x0 + x1) / 2, (y0 + y1) / 2),
+                        abs(x1 - x0) / 2,
+                        facecolor=mpl_color(shape.get("fillcolor"), line_color),
+                        edgecolor=line_color,
+                        linewidth=1,
+                    )
+                )
+                continue
+
             rect = Rectangle(
                 (x0, y0),
                 x1 - x0,
                 y1 - y0,
                 fill=False,
-                edgecolor="black",
+                edgecolor=line_color,
                 linewidth=2,
             )
             ax.add_patch(rect)

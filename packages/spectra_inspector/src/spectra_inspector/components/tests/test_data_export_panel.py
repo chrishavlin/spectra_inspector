@@ -1,6 +1,8 @@
 import pytest
 
 from spectra_inspector.components.data_export_panel import (
+    DEFAULT_OUTLINE_COLOR_NAME,
+    OUTLINE_COLORS,
     RESTORE_SYMBOL,
     SUMMARY_WEIGHT_KEYS,
     WEIGHTS_UNAVAILABLE_MSG,
@@ -9,7 +11,10 @@ from spectra_inspector.components.data_export_panel import (
     dataExportPanelIDS,
     get_element_weights,
     get_formatted_element_weights,
+    get_layout,
+    outline_style,
 )
+from spectra_inspector.utilities.selection import outlineStyle
 
 
 @pytest.mark.parametrize(
@@ -56,6 +61,42 @@ def test_data_export_panel_ids_round_trip():
 def test_zero_element_id_is_keyed_on_the_element():
     ids = dataExportPanelIDS(index=0)
     assert ids.zero_element_id("Na") == {"type": ids.zeroelement, "index": "Na"}
+
+
+def test_outline_style_reads_the_controls_and_defaults_to_white():
+    # the states are None until the page has rendered the settings
+    assert outline_style(None, None, None) == outlineStyle(True, "#ffffff", "#ffffff")
+    assert outline_style(False, "black", "red") == outlineStyle(
+        False, "#000000", "#ff0000"
+    )
+    assert outline_style(True, "not-a-colour", None).line_color == "#ffffff"
+
+
+def _find(component, id_):
+    if getattr(component, "id", None) == id_:
+        return component
+    children = getattr(component, "children", None)
+    if children is None:
+        return None
+    if not isinstance(children, list | tuple):
+        children = [children]
+    for child in children:
+        found = _find(child, id_)
+        if found is not None:
+            return found
+    return None
+
+
+def test_figure_settings_start_hidden_with_the_outline_drawn_in_white():
+    layout, ids = get_layout()
+    settings = _find(layout, ids.figuresettings)
+    assert settings is not None
+    assert settings.hidden is True
+    assert _find(settings, ids.includeoutline).value is True
+    for prop in ("outlinelinecolor", "outlinedotcolor"):
+        dropdown = _find(settings, getattr(ids, prop))
+        assert dropdown.value == DEFAULT_OUTLINE_COLOR_NAME
+        assert dropdown.options == list(OUTLINE_COLORS)
 
 
 def test_apply_zeroed_elements():

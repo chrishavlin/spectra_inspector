@@ -15,6 +15,8 @@ from spectra_inspector.utilities.selection import (
     move_point,
     nearest_point,
     nearest_segment,
+    outlineStyle,
+    overlay_shapes,
     pick_tolerance,
     polygon_is_submittable,
     polygon_points,
@@ -61,15 +63,66 @@ def test_polygon_bounding_box_is_the_pixel_rectangle_around_the_corners():
     assert off_image.bounding_box((10, 10)) == ((10, 10), (10, 10))
 
 
-def test_polygon_outline_shape_moves_into_the_cropped_image():
+def test_polygon_cropped_points_move_into_the_cropped_image():
     poly = polygonSelection(((2.75, 1.0), (8.0, 1.5), (5.0, 6.25)))
     # the crop starts at row 1, column 3
-    outline = poly.outline_shape(poly.bounding_box())
-    assert outline["type"] == "path"
-    assert outline["path"] == "M -0.25,0.0 L 5.0,0.5 L 2.0,5.25 Z"
-    assert outline["fillcolor"] == "rgba(0,0,0,0)"
-    assert outline["line"]["color"] == POLYGON_COLOR
-    assert poly.outline_shape()["path"] == "M 2.75,1.0 L 8.0,1.5 L 5.0,6.25 Z"
+    assert poly.cropped_points(poly.bounding_box()) == [
+        [-0.25, 0.0],
+        [5.0, 0.5],
+        [2.0, 5.25],
+    ]
+    assert poly.cropped_points() == [[2.75, 1.0], [8.0, 1.5], [5.0, 6.25]]
+
+
+class TestOverlayShapes:
+    poly = polygonSelection(((2.75, 1.0), (8.0, 1.5), (5.0, 6.25)))
+    box = boxSelection((1, 5), (0, 3))
+    style = outlineStyle(line_color="#ff0000", dot_color="#0000ff")
+
+    def test_defaults_to_white(self):
+        assert outlineStyle() == outlineStyle(True, "#ffffff", "#ffffff")
+
+    def test_hidden_draws_nothing(self):
+        hidden = outlineStyle(show=False)
+        assert overlay_shapes(self.poly, hidden, (10, 10)) == []
+        assert overlay_shapes(self.box, hidden, (10, 10)) == []
+
+    def test_box_is_the_pixel_aligned_rectangle_on_the_full_image_only(self):
+        (rect,) = overlay_shapes(self.box, self.style, (10, 10))
+        assert rect["type"] == "rect"
+        assert (rect["x0"], rect["x1"], rect["y0"], rect["y1"]) == (
+            -0.5,
+            2.5,
+            0.5,
+            4.5,
+        )
+        assert rect["line"]["color"] == "#ff0000"
+        # the crop of a box is the box: nothing to draw over it
+        bounds = self.box.bounding_box()
+        assert overlay_shapes(self.box, self.style, (4, 3), bounds) == []
+
+    def test_polygon_is_the_unfilled_outline_and_a_dot_per_corner(self):
+        outline, *dots = overlay_shapes(self.poly, self.style, (10, 20))
+        assert outline["type"] == "path"
+        assert outline["path"] == "M 2.75,1.0 L 8.0,1.5 L 5.0,6.25 Z"
+        assert outline["fillcolor"] == "rgba(0,0,0,0)"
+        assert outline["line"]["color"] == "#ff0000"
+        assert len(dots) == MIN_POLYGON_POINTS
+        radius = vertex_radius_for((10.0, 20.0))
+        for dot, (x, y) in zip(dots, self.poly.points, strict=True):
+            assert dot["type"] == "circle"
+            assert (dot["x0"], dot["x1"]) == (x - radius, x + radius)
+            assert (dot["y0"], dot["y1"]) == (y - radius, y + radius)
+            assert dot["fillcolor"] == "#0000ff"
+            assert dot["line"]["color"] == "#0000ff"
+
+    def test_polygon_over_its_crop_is_shifted_and_sized_to_the_crop(self):
+        bounds = self.poly.bounding_box()
+        crop = (6, 6)
+        outline, *dots = overlay_shapes(self.poly, self.style, crop, bounds)
+        assert outline["path"] == "M -0.25,0.0 L 5.0,0.5 L 2.0,5.25 Z"
+        radius = vertex_radius_for((6.0, 6.0))
+        assert (dots[0]["x0"], dots[0]["y0"]) == (-0.25 - radius, 0.0 - radius)
 
 
 class TestStore:
