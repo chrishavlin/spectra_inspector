@@ -158,19 +158,25 @@ def figure_settings_layout(layoutIDs: dataExportPanelIDS) -> html.Div:
     exists (``toggle_figure_export_settings`` on the inspector page)."""
     return html.Div(
         [
-            html.H6("Figure export settings", className="mt-3"),
-            dbc.Checkbox(
-                id=layoutIDs.includeoutline,
-                label="Draw the selection outline on the images",
-                value=True,
-            ),
+            html.H5("Figure settings", className="mt-3"),
             dbc.Row(
                 [
-                    dbc.Col("line colour", width="auto"),
+                    dbc.Col("Selection Outline: ", width="auto"),
+                    dbc.Col(
+                        dbc.Checkbox(
+                            id=layoutIDs.includeoutline,
+                            value=True,
+                            className="mb-0",
+                        ),
+                        width="auto",
+                        className="d-flex align-items-center",
+                    ),
+                    dbc.Col("line color", width="auto"),
                     dbc.Col(_color_input(layoutIDs.outlinelinecolor), width="auto"),
-                    dbc.Col("corner dot colour", width="auto"),
+                    dbc.Col("dot color", width="auto"),
                     dbc.Col(_color_input(layoutIDs.outlinedotcolor), width="auto"),
                 ],
+                justify="start",
                 align="center",
                 className="mt-1 g-2",
             ),
@@ -257,12 +263,12 @@ def get_layout(
                         [
                             html.H3("Extract-a-comp!", className="card-title"),
                             html.Hr(),
-                            html.H5("Export summary", className="card-subtitle"),
+                            html.H4("Export summary", className="card-subtitle"),
                             dbc.Container(
                                 [summary_row, figure_settings_layout(layoutIDs)]
                             ),
                             html.Hr(),
-                            html.H5("Export Spectrum", className="card-subtitle"),
+                            html.H4("Export Spectrum", className="card-subtitle"),
                             dbc.Container(msa_row),
                         ],
                         width=6,
@@ -274,7 +280,7 @@ def get_layout(
                                 dbc.Row(
                                     [
                                         dbc.Col(
-                                            html.H5(
+                                            html.H4(
                                                 "Element weights",
                                                 className="card-subtitle",
                                             )
