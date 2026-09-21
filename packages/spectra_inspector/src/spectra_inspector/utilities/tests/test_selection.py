@@ -48,13 +48,28 @@ def test_polygon_vertices_are_row_column_for_the_server():
     assert poly.request_kwargs() == {"polygon": poly.vertices}
 
 
-def test_polygon_bounding_box_covers_reachable_pixel_centres():
-    poly = polygonSelection(((2.5, 1.0), (8.0, 1.5), (5.0, 6.2)))
-    # rows: ceil(1.0)=1 .. floor(6.2)=6 -> [1, 7); columns: ceil(2.5)=3 .. 8 -> [3, 9)
-    assert poly.bounding_box() == ((1, 7), (3, 9))
-    assert poly.bounding_box((5, 5)) == ((1, 5), (3, 5))
+def test_polygon_bounding_box_is_the_pixel_rectangle_around_the_corners():
+    poly = polygonSelection(((2.4, 1.0), (8.0, 1.5), (5.0, 6.2)))
+    # rows: pixel 1 holds y=1.0, pixel 6 holds 6.2 -> [1, 7); columns: pixel 2
+    # holds x=2.4 (it spans 1.5 to 2.5), pixel 8 holds 8.0 -> [2, 9)
+    assert poly.bounding_box() == ((1, 7), (2, 9))
+    assert poly.bounding_box((5, 5)) == ((1, 5), (2, 5))
+    # a corner in a pixel's outer half still brings that pixel in
+    edge = polygonSelection(((0.6, 0.0), (3.4, 0.0), (2.0, 4.6)))
+    assert edge.bounding_box() == ((0, 6), (1, 4))
     off_image = polygonSelection(((20.0, 20.0), (30.0, 20.0), (25.0, 30.0)))
     assert off_image.bounding_box((10, 10)) == ((10, 10), (10, 10))
+
+
+def test_polygon_outline_shape_moves_into_the_cropped_image():
+    poly = polygonSelection(((2.75, 1.0), (8.0, 1.5), (5.0, 6.25)))
+    # the crop starts at row 1, column 3
+    outline = poly.outline_shape(poly.bounding_box())
+    assert outline["type"] == "path"
+    assert outline["path"] == "M -0.25,0.0 L 5.0,0.5 L 2.0,5.25 Z"
+    assert outline["fillcolor"] == "rgba(0,0,0,0)"
+    assert outline["line"]["color"] == POLYGON_COLOR
+    assert poly.outline_shape()["path"] == "M 2.75,1.0 L 8.0,1.5 L 5.0,6.25 Z"
 
 
 class TestStore:

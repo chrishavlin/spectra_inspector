@@ -83,18 +83,31 @@ class polygonSelection:
     def bounding_box(
         self, image_shape: tuple[int, int] | None = None
     ) -> tuple[IndexRange, IndexRange]:
-        """The half-open index ranges of the pixels whose centres the polygon
-        can reach, clipped to the image when its shape is known."""
+        """The half-open index ranges of the pixel rectangle around the
+        polygon: from the pixel holding its lowest corner to the one holding
+        its highest on each axis (pixel ``i`` spans ``i - 0.5`` to ``i +
+        0.5``), clipped to the image when its shape is known. This is wider
+        than the pixels the server sums, whose centres must fall inside."""
         verts = np.asarray(self.vertices, dtype=float)
         ranges: list[IndexRange] = []
         for axis in range(2):
-            lo = math.ceil(verts[:, axis].min())
-            hi = math.floor(verts[:, axis].max()) + 1
+            lo = math.floor(verts[:, axis].min() + 0.5)
+            hi = math.floor(verts[:, axis].max() + 0.5) + 1
             if image_shape is not None:
                 lo = min(max(lo, 0), image_shape[axis])
                 hi = min(max(hi, lo), image_shape[axis])
             ranges.append((lo, max(hi, lo)))
         return ranges[0], ranges[1]
+
+    def outline_shape(
+        self, bounds: tuple[IndexRange, IndexRange] | None = None
+    ) -> dict:
+        """The polygon's outline as an unfilled plotly path shape, drawn in
+        the coordinates of the image cropped to ``bounds`` (its origin moves
+        to the crop's first pixel) when they are given."""
+        offset0, offset1 = (0, 0) if bounds is None else (bounds[0][0], bounds[1][0])
+        points = [[x - offset1, y - offset0] for x, y in self.points]
+        return polygon_outline(points)
 
 
 Selection = boxSelection | polygonSelection
@@ -186,6 +199,22 @@ def _path(points: list[Point]) -> str:
     return f"M {moves}{closed}"
 
 
+def polygon_outline(points: list[Point], fill: bool = False) -> dict:
+    """The path shape through ``points``, closed once there are three, with
+    the panels' translucent fill when ``fill`` is set and none otherwise."""
+    closed = len(points) >= MIN_POLYGON_POINTS
+    return {
+        "type": "path",
+        "path": _path(points),
+        "xref": "x",
+        "yref": "y",
+        "line": {"color": POLYGON_COLOR, "width": 2},
+        "fillcolor": POLYGON_FILL if fill and closed else "rgba(0,0,0,0)",
+        "editable": False,
+        "name": POLYGON_KEY,
+    }
+
+
 def polygon_shapes(
     points: list[Point], radius: float = DEFAULT_VERTEX_RADIUS
 ) -> list[dict]:
@@ -195,19 +224,7 @@ def polygon_shapes(
     clicking."""
     shapes: list[dict] = []
     if len(points) >= 2:
-        closed = len(points) >= MIN_POLYGON_POINTS
-        shapes.append(
-            {
-                "type": "path",
-                "path": _path(points),
-                "xref": "x",
-                "yref": "y",
-                "line": {"color": POLYGON_COLOR, "width": 2},
-                "fillcolor": POLYGON_FILL if closed else "rgba(0,0,0,0)",
-                "editable": False,
-                "name": POLYGON_KEY,
-            }
-        )
+        shapes.append(polygon_outline(points, fill=True))
     shapes.extend(
         {
             "type": "circle",

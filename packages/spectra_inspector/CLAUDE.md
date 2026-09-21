@@ -219,8 +219,12 @@ Several Dash/plotly behaviours here are not visible from the python side:
   mode into the subplot's `plotinfo`, and a box drawn afterwards comes out in
   pixels. The server sums the polygon (see
   `spectra_inspector_server/CLAUDE.md`); `polygonSelection.vertices` hands it
-  `[index0, index1]` pairs, and the export crops the `*_subset` images to the
-  polygon's bounding box and records the corners in `subselection.polygon`.
+  `[index0, index1]` pairs. The export crops the `*_subset` images to the pixel
+  rectangle around the polygon (`polygonSelection.bounding_box`: every pixel a
+  corner lands in, wider than the centres-inside set the server sums), draws the
+  outline alone over the crop (`outline_shape`, shifted to the crop's origin, no
+  fill; `plotly_to_matplotlib` skips the corner circles) and records the corners
+  in `subselection.polygon`.
 - `components/toolbox.py` holds what the two toolboxes share: the button and row
   dataclasses, the view-control specs, the id mapper, the card builder
   (`toolbox_card`, whose `extras` slot ready-made components into a row) and the

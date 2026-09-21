@@ -60,15 +60,15 @@ def _axis(index: int, name: str, size: int, scale: float) -> m.EDAX_axis:
     )
 
 
-def combined_metadata() -> m.CombinedMetadata:
+def combined_metadata(shape: tuple[int, int] = (2, 2)) -> m.CombinedMetadata:
     return m.CombinedMetadata(
         metadata=_metadata_model(),
         axes_by_index={
-            "0": _axis(0, "y", 2, 1.5),
-            "1": _axis(1, "x", 2, 2.0),
+            "0": _axis(0, "y", shape[0], 1.5),
+            "1": _axis(1, "x", shape[1], 2.0),
             "2": _axis(2, "Energy", 3, 0.5),
         },
-        data_shape=[2, 2, 3],
+        data_shape=[*shape, 3],
     )
 
 
@@ -313,24 +313,45 @@ def test_zip_metadata_describes_the_sample_and_the_box(
         assert name in readme
 
 
-def test_polygon_export_crops_to_the_bounding_box_and_records_the_corners(
-    inspector, image_figures, spectrum_figure, spectrum_metadata, tmp_path
+def test_polygon_export_crops_to_the_pixel_rectangle_and_draws_the_outline(
+    inspector, image_figures, spectrum_figure, spectrum_metadata, tmp_path, monkeypatch
 ):
     browser_figure = {
         "data": [
             {
                 "type": "heatmap",
                 "z": {
-                    "shape": "2, 2",
-                    "_inputArray": [{"0": 1, "1": 2}, {"0": 3, "1": 4}],
+                    "shape": "3, 3",
+                    "_inputArray": [
+                        {"0": 1, "1": 2, "2": 3},
+                        {"0": 4, "1": 5, "2": 6},
+                        {"0": 7, "1": 8, "2": 9},
+                    ],
                 },
             }
         ],
         "layout": {},
     }
-    # (x, y) corners: a triangle whose centres-reachable bounding box is the
-    # single pixel at row 1, column 0
-    points = [[0.0, 1.0], [0.9, 1.0], [0.0, 1.9]]
+    # the subset figures are built in python from the cropped array; keep
+    # them to check what is drawn over the crop
+    subsets = []
+    convert = inspector.plotly_to_matplotlib
+
+    def capture(fig, **kwargs):
+        if kwargs.get("im_data") is not None:
+            subsets.append(fig.to_plotly_json())
+        return convert(fig, **kwargs)
+
+    monkeypatch.setattr(inspector, "plotly_to_matplotlib", capture)
+    monkeypatch.setattr(
+        inspector.UserStore,
+        "conditionally_fetch_metadata",
+        lambda _self: combined_metadata(shape=(3, 3)),
+    )
+    # (x, y) corners of a triangle: only the centre of pixel (1, 1) is inside
+    # it, but its corners reach into the pixels around, so the crop is rows 1
+    # to 2 and columns 0 to 2
+    points = [[0.4, 0.6], [2.4, 1.0], [1.0, 2.4]]
     _export(
         inspector,
         [browser_figure] * len(image_figures),
@@ -341,17 +362,27 @@ def test_polygon_export_crops_to_the_bounding_box_and_records_the_corners(
     record = _exported_metadata(tmp_path)
     sub = record["subselection"]
     assert sub["kind"] == "polygon"
-    assert sub["shape"] == [1, 1]
-    assert sub["axes"]["index0"]["index_range"] == [1, 2]
-    assert sub["axes"]["index1"]["index_range"] == [0, 1]
-    assert sub["polygon"]["vertices_index"] == [[1.0, 0.0], [1.0, 0.9], [1.9, 0.0]]
+    assert sub["shape"] == [2, 3]
+    assert sub["axes"]["index0"]["index_range"] == [1, 3]
+    assert sub["axes"]["index1"]["index_range"] == [0, 3]
+    assert sub["polygon"]["vertices_index"] == [[0.6, 0.4], [1.0, 2.4], [2.4, 1.0]]
     assert record["images"][1]["subset_file"] == "bitmap_01_Fe_subset.png"
+
+    # every subset carries the outline alone, shifted onto the crop, unfilled
+    assert len(subsets) == len(image_figures)
+    for fig in subsets:
+        (outline,) = fig["layout"]["shapes"]
+        assert outline["type"] == "path"
+        assert coerce.path_vertices(outline["path"]) == pytest.approx(
+            [(0.4, -0.4), (2.4, 0.0), (1.0, 1.4)]
+        )
+        assert outline["fillcolor"] == "rgba(0,0,0,0)"
 
     written = _written_files(tmp_path)
     assert {"bitmap_00_subset.png", "bitmap_01_Fe_subset.png"} <= written
     readme = _zip_file(tmp_path).read("README.txt").decode("utf-8")
     assert "Polygon with 3 corners" in readme
-    assert "Bounding box shape (rows, columns): 1, 1" in readme
+    assert "Bounding box shape (rows, columns): 2, 3" in readme
 
 
 def test_polygon_in_progress_exports_the_full_map(

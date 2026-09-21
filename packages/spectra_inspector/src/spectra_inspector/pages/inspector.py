@@ -807,7 +807,7 @@ def _selection_bounds(
     selection: Selection | None, md: "CombinedMetadata | None"
 ) -> tuple[tuple[int, int], tuple[int, int]] | None:
     """The index ranges the exported ``*_subset`` images are cropped to: the
-    box itself, or the polygon's bounding box clipped to the map."""
+    box itself, or the pixel rectangle around the polygon clipped to the map."""
     if selection is None:
         return None
     image_shape = get_image_shape(md) if md is not None else None
@@ -1253,10 +1253,11 @@ def _image_figures_to_write(
     shapes_store: dict | None,
 ) -> dict:
     """Matplotlib versions of every image panel, plus the subset of each when
-    a selection is drawn (the box, or the polygon's bounding box), keyed by
-    output file stem."""
+    a selection is drawn, keyed by output file stem. The subset is the box,
+    or the pixel rectangle around the polygon with its outline drawn over."""
     index0_range = None
     index1_range = None
+    subset_shapes: list[dict] | None = None
     md: CombinedMetadata | None = None
     selection = selection_from_store(shapes_store)
     if selection is not None:
@@ -1264,6 +1265,8 @@ def _image_figures_to_write(
         bounds = _selection_bounds(selection, md)
         assert bounds is not None
         index0_range, index1_range = bounds
+        if isinstance(selection, polygonSelection):
+            subset_shapes = [selection.outline_shape(bounds)]
 
     figs_to_write = {}
     for panel in panels:
@@ -1286,7 +1289,11 @@ def _image_figures_to_write(
                 md = user_store.conditionally_fetch_metadata()
             assert md is not None
             newfig = composite_figure(
-                rgb, panel.channels, md, scalebar_handler=scalebar_handler
+                rgb,
+                panel.channels,
+                md,
+                scalebar_handler=scalebar_handler,
+                shapes=subset_shapes,
             )
             figs_to_write[subset_name] = plotly_to_matplotlib(newfig, im_data=rgb)
             continue
@@ -1306,6 +1313,7 @@ def _image_figures_to_write(
             scalebar_handler=scalebar_handler,
             zmin=zmin,
             zmax=zmax,
+            shapes=subset_shapes,
         )
         figs_to_write[subset_name] = plotly_to_matplotlib(
             newfig, im_data=im, cmap=panel.colormap
