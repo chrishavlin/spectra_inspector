@@ -348,7 +348,7 @@ def test_polygon_export_crops_to_the_pixel_rectangle_and_draws_the_outline(
         spectrum_figure,
         spectrum_metadata,
         shapes_store=inspector.polygon_store(points, points),
-        outline_dot_color="red",
+        outline_dot_color="#ff0000",
     )
     record = _exported_metadata(tmp_path)
     sub = record["subselection"]
@@ -449,7 +449,7 @@ def test_box_export_draws_the_selected_pixels_in_the_chosen_colour(
         spectrum_figure,
         spectrum_metadata,
         shapes_store=BOX_STORE,
-        outline_line_color="black",
+        outline_line_color="#000000",
     )
     # the box is the pixel it selected (row 0, column 0), drawn at that
     # pixel's edges rather than where the drag happened to land

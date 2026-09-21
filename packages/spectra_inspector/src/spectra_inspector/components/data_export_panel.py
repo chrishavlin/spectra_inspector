@@ -1,3 +1,4 @@
+import re
 from collections.abc import Iterable
 
 import dash_bootstrap_components as dbc
@@ -26,20 +27,12 @@ INTEGER_WEIGHT_KEYS: tuple[str, ...] = ("total_count", "counts_14_15_kev")
 ZERO_SYMBOL = "\u2715"
 RESTORE_SYMBOL = "\u21ba"
 
-# the colours the exported figures may draw the selection outline in, by the
-# name the dropdowns show
-OUTLINE_COLORS: dict[str, str] = {
-    "white": "#ffffff",
-    "black": "#000000",
-    "red": "#ff0000",
-    "green": "#00ff00",
-    "blue": "#0000ff",
-    "cyan": "#00ffff",
-    "magenta": "#ff00ff",
-    "yellow": "#ffff00",
-    "orange": "#ff8000",
-}
-DEFAULT_OUTLINE_COLOR_NAME = "white"
+# what a native colour input reports
+_HEX_COLOR = re.compile(r"#[0-9a-fA-F]{6}")
+
+
+def _hex_or_default(color: str | None) -> str:
+    return color if color and _HEX_COLOR.fullmatch(color) else DEFAULT_OUTLINE_COLOR
 
 
 def outline_style(
@@ -48,15 +41,12 @@ def outline_style(
     dot_color: str | None,
 ) -> outlineStyle:
     """The figure export settings as the export draws them: an unset control
-    (the page not having rendered the settings yet) means its default."""
+    (the page not having rendered the settings yet) or anything that is not
+    a ``#rrggbb`` colour means its default."""
     return outlineStyle(
         show=True if include is None else bool(include),
-        line_color=OUTLINE_COLORS.get(
-            line_color or DEFAULT_OUTLINE_COLOR_NAME, DEFAULT_OUTLINE_COLOR
-        ),
-        dot_color=OUTLINE_COLORS.get(
-            dot_color or DEFAULT_OUTLINE_COLOR_NAME, DEFAULT_OUTLINE_COLOR
-        ),
+        line_color=_hex_or_default(line_color),
+        dot_color=_hex_or_default(dot_color),
     )
 
 
@@ -148,14 +138,17 @@ class dataExportPanelIDS(indexedLayoutIDMapper):
         return self.full_id("-outlinedotcolor")
 
 
-def _color_dropdown(id_: str) -> dcc.Dropdown:
-    return dcc.Dropdown(
-        list(OUTLINE_COLORS),
-        value=DEFAULT_OUTLINE_COLOR_NAME,
+def _color_input(id_: str) -> dbc.Input:
+    # the browser's own colour picker. "color" is not among the types dbc
+    # declares for Input, but the component hands the type straight to the
+    # <input> element and reads the value back like any other; Bootstrap's
+    # form-control-color class sizes it as a swatch.
+    return dbc.Input(
         id=id_,
-        className="text-info",
-        searchable=False,
-        clearable=False,
+        type="color",
+        value=DEFAULT_OUTLINE_COLOR,
+        className="form-control-color",
+        debounce=True,
     )
 
 
@@ -173,19 +166,13 @@ def figure_settings_layout(layoutIDs: dataExportPanelIDS) -> html.Div:
             ),
             dbc.Row(
                 [
-                    dbc.Col("line colour", width=6),
-                    dbc.Col(_color_dropdown(layoutIDs.outlinelinecolor), width=6),
+                    dbc.Col("line colour", width="auto"),
+                    dbc.Col(_color_input(layoutIDs.outlinelinecolor), width="auto"),
+                    dbc.Col("corner dot colour", width="auto"),
+                    dbc.Col(_color_input(layoutIDs.outlinedotcolor), width="auto"),
                 ],
                 align="center",
-                className="mt-1",
-            ),
-            dbc.Row(
-                [
-                    dbc.Col("corner dot colour", width=6),
-                    dbc.Col(_color_dropdown(layoutIDs.outlinedotcolor), width=6),
-                ],
-                align="center",
-                className="mt-1",
+                className="mt-1 g-2",
             ),
         ],
         id=layoutIDs.figuresettings,

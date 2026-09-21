@@ -1,8 +1,6 @@
 import pytest
 
 from spectra_inspector.components.data_export_panel import (
-    DEFAULT_OUTLINE_COLOR_NAME,
-    OUTLINE_COLORS,
     RESTORE_SYMBOL,
     SUMMARY_WEIGHT_KEYS,
     WEIGHTS_UNAVAILABLE_MSG,
@@ -14,7 +12,7 @@ from spectra_inspector.components.data_export_panel import (
     get_layout,
     outline_style,
 )
-from spectra_inspector.utilities.selection import outlineStyle
+from spectra_inspector.utilities.selection import DEFAULT_OUTLINE_COLOR, outlineStyle
 
 
 @pytest.mark.parametrize(
@@ -66,10 +64,12 @@ def test_zero_element_id_is_keyed_on_the_element():
 def test_outline_style_reads_the_controls_and_defaults_to_white():
     # the states are None until the page has rendered the settings
     assert outline_style(None, None, None) == outlineStyle(True, "#ffffff", "#ffffff")
-    assert outline_style(False, "black", "red") == outlineStyle(
-        False, "#000000", "#ff0000"
+    assert outline_style(False, "#000000", "#FF0000") == outlineStyle(
+        False, "#000000", "#FF0000"
     )
-    assert outline_style(True, "not-a-colour", None).line_color == "#ffffff"
+    # only what a colour input reports is trusted
+    assert outline_style(True, "red", "#fff").line_color == "#ffffff"
+    assert outline_style(True, "red", "#fff").dot_color == "#ffffff"
 
 
 def _find(component, id_):
@@ -94,9 +94,10 @@ def test_figure_settings_start_hidden_with_the_outline_drawn_in_white():
     assert settings.hidden is True
     assert _find(settings, ids.includeoutline).value is True
     for prop in ("outlinelinecolor", "outlinedotcolor"):
-        dropdown = _find(settings, getattr(ids, prop))
-        assert dropdown.value == DEFAULT_OUTLINE_COLOR_NAME
-        assert dropdown.options == list(OUTLINE_COLORS)
+        picker = _find(settings, getattr(ids, prop))
+        assert picker.type == "color"
+        assert picker.value == DEFAULT_OUTLINE_COLOR
+        assert picker.className == "form-control-color"
 
 
 def test_apply_zeroed_elements():

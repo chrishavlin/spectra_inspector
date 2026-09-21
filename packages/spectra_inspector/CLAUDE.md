@@ -228,10 +228,15 @@ Several Dash/plotly behaviours here are not visible from the python side:
   summed, the polygon as an unfilled outline plus a dot per corner, shifted to
   the crop's origin on the subset and left off a box's own crop) in the
   `outlineStyle` the export panel's **Figure export settings** give: a "draw the
-  outline" checkbox and line / dot colour dropdowns (`OUTLINE_COLORS`, white by
-  default), shown by `toggle_figure_export_settings` only while a selection
-  exists. `plotly_to_matplotlib` draws `rect`, `path` and `circle` shapes in
-  their own colours (`mpl_color` turns `rgba(...)` into fractions).
+  outline" checkbox and line / dot colour pickers (white by default), shown by
+  `toggle_figure_export_settings` only while a selection exists. The pickers are
+  `dbc.Input(type="color")`, the browser's native picker: `color` is not in the
+  types dbc declares (its propTypes `oneOf` and the Python `Literal`), but the
+  component passes the type through to the `<input>` and reads the value like
+  any other, so it works and only a props-check in debug mode could object;
+  `outline_style` accepts nothing but `#rrggbb` from it. `plotly_to_matplotlib`
+  draws `rect`, `path` and `circle` shapes in their own colours (`mpl_color`
+  turns `rgba(...)` into fractions).
 - `components/toolbox.py` holds what the two toolboxes share: the button and row
   dataclasses, the view-control specs, the id mapper, the card builder
   (`toolbox_card`, whose `extras` slot ready-made components into a row) and the
