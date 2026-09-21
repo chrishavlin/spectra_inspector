@@ -51,7 +51,9 @@ IndexRange = tuple[int, int]
 
 @dataclass(frozen=True)
 class boxSelection:
-    """A rectangle, as half-open index ranges along each image axis."""
+    """A rectangle, as half-open index ranges along each image axis. The
+    ranges are the box as drawn, which may reach past the image; the server
+    sums only what lies inside, as ``bounding_box`` reports."""
 
     index0_range: IndexRange
     index1_range: IndexRange
@@ -60,10 +62,18 @@ class boxSelection:
         return {"index0_range": self.index0_range, "index1_range": self.index1_range}
 
     def bounding_box(
-        self,
-        image_shape: tuple[int, int] | None = None,  # noqa: ARG002
+        self, image_shape: tuple[int, int] | None = None
     ) -> tuple[IndexRange, IndexRange]:
-        return self.index0_range, self.index1_range
+        """The box clipped to the image when its shape is known: the pixels
+        actually summed, empty on an axis the box misses entirely."""
+        ranges = (self.index0_range, self.index1_range)
+        if image_shape is None:
+            return ranges
+        clipped: list[IndexRange] = []
+        for (lo, hi), size in zip(ranges, image_shape, strict=True):
+            start = min(max(lo, 0), size)
+            clipped.append((start, min(max(hi, start), size)))
+        return clipped[0], clipped[1]
 
 
 @dataclass(frozen=True)
@@ -139,7 +149,7 @@ def overlay_shapes(
     if isinstance(selection, boxSelection):
         if bounds is not None:
             return []
-        (r0, r1), (c0, c1) = selection.index0_range, selection.index1_range
+        (r0, r1), (c0, c1) = selection.bounding_box(image_shape)
         return [
             {
                 "type": "rect",

@@ -34,6 +34,16 @@ if TYPE_CHECKING:
 _DEFAULT_CHUNKSIZE = 128
 
 
+def clip_index_range(index_range: tuple[int, int], size: int) -> tuple[int, int]:
+    """The half-open ``(start, stop)`` range in ascending order and cut down
+    to the ``size`` elements of an axis. A selection dragged past the edge of
+    the image covers what lies inside it; one entirely outside is empty."""
+    lo, hi = sorted(int(v) for v in index_range)
+    lo = min(max(lo, 0), size)
+    hi = min(max(hi, lo), size)
+    return lo, hi
+
+
 class OperationEDAXStateHandler:
     """Loads EDAX datasets on demand and reduces them for the API.
 
@@ -113,11 +123,12 @@ class OperationEDAXStateHandler:
         valid_index_ranges: list[tuple[int, int]] = []
         physical_ranges: list[tuple[float, float]] = []
         for index_id, index_range in enumerate(input_index_ranges):
+            size = edax_ds.axes_by_index[index_id].size
             valid_range: tuple[int, int]
             if index_range is None:
-                valid_range = (0, edax_ds.axes_by_index[index_id].size)
+                valid_range = (0, size)
             else:
-                valid_range = (index_range[0], index_range[1])
+                valid_range = clip_index_range(index_range, size)
             valid_index_ranges.append(valid_range)
             physical_ranges.append(
                 edax_ds.axis_range(index_id, valid_range[0], valid_range[1])

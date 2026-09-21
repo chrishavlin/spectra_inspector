@@ -77,6 +77,60 @@ def test_image_spectrum(app_client: TestClient) -> None:
     assert np.all(np.isreal(spectrum.intensity))
 
 
+def test_image_spectrum_over_a_box_past_the_image_edge(app_client: TestClient) -> None:
+    # the mock map is 16 x 16; a box drawn out past its edge is answered
+    # with the spectrum of the part inside rather than a server error (the
+    # mock's counts are random, so the values are checked on the operation)
+    sample = _on_disc_mock.filenames[0]
+    full = app_client.get(
+        "/image-spectrum", params={"sample_name": sample, "include_weights": False}
+    )
+    past_edge = app_client.get(
+        "/image-spectrum",
+        params={
+            "sample_name": sample,
+            "include_weights": False,
+            "index0_0": -4,
+            "index0_1": 5,
+            "index1_0": 3,
+            "index1_1": 40,
+        },
+    )
+    outside = app_client.get(
+        "/image-spectrum",
+        params={
+            "sample_name": sample,
+            "include_weights": False,
+            "index0_0": 20,
+            "index0_1": 24,
+            "index1_0": 3,
+            "index1_1": 8,
+        },
+    )
+    assert full.status_code == 200
+    assert past_edge.status_code == 200
+    assert outside.status_code == 200
+    n_channels = len(Spectrum1dDict(**full.json()).intensity)
+    assert len(Spectrum1dDict(**past_edge.json()).intensity) == n_channels
+    assert Spectrum1dDict(**outside.json()).intensity == [0] * n_channels
+
+
+def test_image_data_over_a_box_past_the_image_edge(app_client: TestClient) -> None:
+    response = app_client.get(
+        "/image-data",
+        params={
+            "sample_name": _on_disc_mock.filenames[0],
+            "channel_index": 2,
+            "index0_0": -2,
+            "index0_1": 5,
+            "index1_0": 14,
+            "index1_1": 30,
+        },
+    )
+    assert response.status_code == 200
+    assert raveledImage(**response.json()).shape == (5, 2)
+
+
 def test_image_data(app_client: TestClient) -> None:
     response = app_client.get(
         "/image-data",
