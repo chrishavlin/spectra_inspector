@@ -60,15 +60,15 @@ def _axis(index: int, name: str, size: int, scale: float) -> m.EDAX_axis:
     )
 
 
-def combined_metadata() -> m.CombinedMetadata:
+def combined_metadata(shape: tuple[int, int] = (2, 2)) -> m.CombinedMetadata:
     return m.CombinedMetadata(
         metadata=_metadata_model(),
         axes_by_index={
-            "0": _axis(0, "y", 2, 1.5),
-            "1": _axis(1, "x", 2, 2.0),
+            "0": _axis(0, "y", shape[0], 1.5),
+            "1": _axis(1, "x", shape[1], 2.0),
             "2": _axis(2, "Energy", 3, 0.5),
         },
-        data_shape=[2, 2, 3],
+        data_shape=[*shape, 3],
     )
 
 
@@ -311,6 +311,203 @@ def test_zip_metadata_describes_the_sample_and_the_box(
     assert {"bitmap_00_subset.png", "bitmap_01_Fe_subset.png"} <= written
     for name in written:
         assert name in readme
+
+
+def test_polygon_export_crops_to_the_pixel_rectangle_and_draws_the_outline(
+    inspector, image_figures, spectrum_figure, spectrum_metadata, tmp_path, monkeypatch
+):
+    browser_figure = {
+        "data": [
+            {
+                "type": "heatmap",
+                "z": {
+                    "shape": "3, 3",
+                    "_inputArray": [
+                        {"0": 1, "1": 2, "2": 3},
+                        {"0": 4, "1": 5, "2": 6},
+                        {"0": 7, "1": 8, "2": 9},
+                    ],
+                },
+            }
+        ],
+        "layout": {},
+    }
+    fulls, subsets = _capture_image_figures(inspector, monkeypatch)
+    monkeypatch.setattr(
+        inspector.UserStore,
+        "conditionally_fetch_metadata",
+        lambda _self: combined_metadata(shape=(3, 3)),
+    )
+    # (x, y) corners of a triangle: only the centre of pixel (1, 1) is inside
+    # it, but its corners reach into the pixels around, so the crop is rows 1
+    # to 2 and columns 0 to 2
+    points = [[0.4, 0.6], [2.4, 1.0], [1.0, 2.4]]
+    _export(
+        inspector,
+        [browser_figure] * len(image_figures),
+        spectrum_figure,
+        spectrum_metadata,
+        shapes_store=inspector.polygon_store(points, points),
+        outline_dot_color="#ff0000",
+    )
+    record = _exported_metadata(tmp_path)
+    sub = record["subselection"]
+    assert sub["kind"] == "polygon"
+    assert sub["shape"] == [2, 3]
+    assert sub["axes"]["index0"]["index_range"] == [1, 3]
+    assert sub["axes"]["index1"]["index_range"] == [0, 3]
+    assert sub["polygon"]["vertices_index"] == [[0.6, 0.4], [1.0, 2.4], [2.4, 1.0]]
+    assert record["images"][1]["subset_file"] == "bitmap_01_Fe_subset.png"
+
+    # every image carries the unfilled outline and a dot per corner in the
+    # export's colours (the browser's translucent fill and start / end
+    # colours are not copied); the subset's are shifted onto the crop
+    assert len(fulls) == len(subsets) == len(image_figures)
+    for fig in fulls:
+        outline, *dots = fig["layout"]["shapes"]
+        assert coerce.path_vertices(outline["path"]) == pytest.approx(
+            [tuple(p) for p in points]
+        )
+        assert outline["fillcolor"] == "rgba(0,0,0,0)"
+        assert outline["line"]["color"] == "#ffffff"
+        assert [d["fillcolor"] for d in dots] == ["#ff0000"] * 3
+    for fig in subsets:
+        outline, *dots = fig["layout"]["shapes"]
+        assert outline["type"] == "path"
+        assert coerce.path_vertices(outline["path"]) == pytest.approx(
+            [(0.4, -0.4), (2.4, 0.0), (1.0, 1.4)]
+        )
+        assert outline["fillcolor"] == "rgba(0,0,0,0)"
+        assert [d["type"] for d in dots] == ["circle"] * 3
+
+    written = _written_files(tmp_path)
+    assert {"bitmap_00_subset.png", "bitmap_01_Fe_subset.png"} <= written
+    readme = _zip_file(tmp_path).read("README.txt").decode("utf-8")
+    assert "Polygon with 3 corners" in readme
+    assert "Bounding box shape (rows, columns): 2, 3" in readme
+
+
+def _capture_image_figures(inspector, monkeypatch) -> tuple[list, list]:
+    """Record every image figure handed to the matplotlib conversion, as
+    dicts: the panels' figures as the browser sent them (with the export's
+    shapes put on) and the subsets built in python, in panel order."""
+    fulls: list = []
+    subsets: list = []
+    convert = inspector.plotly_to_matplotlib
+
+    def capture(fig, **kwargs):
+        if fig["data"][0]["type"] == "heatmap":
+            if kwargs.get("im_data") is None:
+                fulls.append(fig)
+            else:
+                subsets.append(fig.to_plotly_json())
+        return convert(fig, **kwargs)
+
+    monkeypatch.setattr(inspector, "plotly_to_matplotlib", capture)
+    return fulls, subsets
+
+
+BOX_STORE = {
+    "active_shapes": [
+        {
+            "type": "rect",
+            "x0": 0.2,
+            "x1": 1.7,
+            "y0": 1.9,
+            "y1": 0.1,
+            "line": {"color": "orange"},
+        }
+    ]
+}
+
+
+def _browser_figure_with_box() -> dict:
+    """A 2x2 heatmap as the browser serialises it, with the dragged box drawn
+    on as plotly would."""
+    return {
+        "data": [
+            {
+                "type": "heatmap",
+                "z": {
+                    "shape": "2, 2",
+                    "_inputArray": [{"0": 1, "1": 2}, {"0": 3, "1": 4}],
+                },
+            }
+        ],
+        "layout": {"shapes": BOX_STORE["active_shapes"]},
+    }
+
+
+def test_box_export_draws_the_selected_pixels_in_the_chosen_colour(
+    inspector, image_figures, spectrum_figure, spectrum_metadata, monkeypatch
+):
+    fulls, subsets = _capture_image_figures(inspector, monkeypatch)
+    browser_figure = _browser_figure_with_box()
+    _export(
+        inspector,
+        [browser_figure] * len(image_figures),
+        spectrum_figure,
+        spectrum_metadata,
+        shapes_store=BOX_STORE,
+        outline_line_color="#000000",
+    )
+    # the box is the pixel it selected (row 0, column 0), drawn at that
+    # pixel's edges rather than where the drag happened to land
+    for fig in fulls:
+        (rect,) = fig["layout"]["shapes"]
+        assert (rect["x0"], rect["x1"], rect["y0"], rect["y1"]) == (
+            -0.5,
+            0.5,
+            -0.5,
+            0.5,
+        )
+        assert rect["line"]["color"] == "#000000"
+    # the crop is the box: nothing is drawn over it
+    assert len(subsets) == len(image_figures)
+    assert all(fig["layout"].get("shapes", []) == [] for fig in subsets)
+
+
+def test_export_leaves_the_selection_off_the_images_when_asked(
+    inspector, image_figures, spectrum_figure, spectrum_metadata, monkeypatch
+):
+    fulls, subsets = _capture_image_figures(inspector, monkeypatch)
+    browser_figure = _browser_figure_with_box()
+    _export(
+        inspector,
+        [browser_figure] * len(image_figures),
+        spectrum_figure,
+        spectrum_metadata,
+        shapes_store=BOX_STORE,
+        include_outline=False,
+    )
+    assert len(fulls) == len(subsets) == len(image_figures)
+    assert all(fig["layout"].get("shapes", []) == [] for fig in [*fulls, *subsets])
+
+
+def test_figure_export_settings_show_once_there_is_a_selection(inspector):
+    hidden = inspector.toggle_figure_export_settings
+    assert hidden(None) is True
+    assert hidden({"active_shapes": []}) is True
+    assert hidden(BOX_STORE) is False
+    points = [[0.0, 0.0], [1.0, 0.0], [1.0, 1.0]]
+    assert hidden(inspector.polygon_store(points, None)) is True
+    assert hidden(inspector.polygon_store(points, points)) is False
+
+
+def test_polygon_in_progress_exports_the_full_map(
+    inspector, image_figures, spectrum_figure, spectrum_metadata, tmp_path
+):
+    points = [[0.0, 1.0], [0.9, 1.0], [0.0, 1.9]]
+    _export(
+        inspector,
+        image_figures,
+        spectrum_figure,
+        spectrum_metadata,
+        shapes_store=inspector.polygon_store(points, None),
+    )
+    record = _exported_metadata(tmp_path)
+    assert record["subselection"] is None
+    assert all(im["subset_file"] is None for im in record["images"])
 
 
 def test_export_survives_an_unreachable_server(

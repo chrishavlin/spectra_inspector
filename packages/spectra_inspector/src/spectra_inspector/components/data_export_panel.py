@@ -1,3 +1,4 @@
+import re
 from collections.abc import Iterable
 
 import dash_bootstrap_components as dbc
@@ -9,6 +10,7 @@ from spectra_inspector.utilities.peak_windows import (
     spectrum_element_colors,
     visible_elements,
 )
+from spectra_inspector.utilities.selection import DEFAULT_OUTLINE_COLOR, outlineStyle
 
 WEIGHTS_UNAVAILABLE_MSG = "Weights unavailable for this map"
 
@@ -25,6 +27,28 @@ INTEGER_WEIGHT_KEYS: tuple[str, ...] = ("total_count", "counts_14_15_kev")
 ZERO_SYMBOL = "\u2715"
 RESTORE_SYMBOL = "\u21ba"
 
+# what a native colour input reports
+_HEX_COLOR = re.compile(r"#[0-9a-fA-F]{6}")
+
+
+def _hex_or_default(color: str | None) -> str:
+    return color if color and _HEX_COLOR.fullmatch(color) else DEFAULT_OUTLINE_COLOR
+
+
+def outline_style(
+    include: bool | None,
+    line_color: str | None,
+    dot_color: str | None,
+) -> outlineStyle:
+    """The figure export settings as the export draws them: an unset control
+    (the page not having rendered the settings yet) or anything that is not
+    a ``#rrggbb`` colour means its default."""
+    return outlineStyle(
+        show=True if include is None else bool(include),
+        line_color=_hex_or_default(line_color),
+        dot_color=_hex_or_default(dot_color),
+    )
+
 
 class dataExportPanelIDS(indexedLayoutIDMapper):
     prop_names: tuple[str, ...] = (
@@ -38,6 +62,10 @@ class dataExportPanelIDS(indexedLayoutIDMapper):
         "elementweightsdiv",
         "resetweights",
         "zeroelement",
+        "figuresettings",
+        "includeoutline",
+        "outlinelinecolor",
+        "outlinedotcolor",
     )
 
     def __init__(
@@ -92,6 +120,70 @@ class dataExportPanelIDS(indexedLayoutIDMapper):
     def zero_element_id(self, element: str) -> dict[str, str]:
         """The pattern-matching id of the button that zeroes one element."""
         return {"type": self.zeroelement, "index": element}
+
+    @property
+    def figuresettings(self) -> str:
+        return self.full_id("-figuresettings")
+
+    @property
+    def includeoutline(self) -> str:
+        return self.full_id("-includeoutline")
+
+    @property
+    def outlinelinecolor(self) -> str:
+        return self.full_id("-outlinelinecolor")
+
+    @property
+    def outlinedotcolor(self) -> str:
+        return self.full_id("-outlinedotcolor")
+
+
+def _color_input(id_: str) -> dbc.Input:
+    # the browser's own colour picker. "color" is not among the types dbc
+    # declares for Input, but the component hands the type straight to the
+    # <input> element and reads the value back like any other; Bootstrap's
+    # form-control-color class sizes it as a swatch.
+    return dbc.Input(
+        id=id_,
+        type="color",
+        value=DEFAULT_OUTLINE_COLOR,
+        className="form-control-color",
+        debounce=True,
+    )
+
+
+def figure_settings_layout(layoutIDs: dataExportPanelIDS) -> html.Div:
+    """The figure export settings: whether the exported images draw the
+    selected box or polygon, and in which colours. Hidden until a selection
+    exists (``toggle_figure_export_settings`` on the inspector page)."""
+    return html.Div(
+        [
+            html.H5("Figure settings", className="mt-3"),
+            dbc.Row(
+                [
+                    dbc.Col("Selection Outline: ", width="auto"),
+                    dbc.Col(
+                        dbc.Checkbox(
+                            id=layoutIDs.includeoutline,
+                            value=True,
+                            className="mb-0",
+                        ),
+                        width="auto",
+                        className="d-flex align-items-center",
+                    ),
+                    dbc.Col("line color", width="auto"),
+                    dbc.Col(_color_input(layoutIDs.outlinelinecolor), width="auto"),
+                    dbc.Col("dot color", width="auto"),
+                    dbc.Col(_color_input(layoutIDs.outlinedotcolor), width="auto"),
+                ],
+                justify="start",
+                align="center",
+                className="mt-1 g-2",
+            ),
+        ],
+        id=layoutIDs.figuresettings,
+        hidden=True,
+    )
 
 
 def get_layout(
@@ -171,10 +263,12 @@ def get_layout(
                         [
                             html.H3("Extract-a-comp!", className="card-title"),
                             html.Hr(),
-                            html.H5("Export summary", className="card-subtitle"),
-                            dbc.Container(summary_row),
+                            html.H4("Export summary", className="card-subtitle"),
+                            dbc.Container(
+                                [summary_row, figure_settings_layout(layoutIDs)]
+                            ),
                             html.Hr(),
-                            html.H5("Export Spectrum", className="card-subtitle"),
+                            html.H4("Export Spectrum", className="card-subtitle"),
                             dbc.Container(msa_row),
                         ],
                         width=6,
@@ -186,7 +280,7 @@ def get_layout(
                                 dbc.Row(
                                     [
                                         dbc.Col(
-                                            html.H5(
+                                            html.H4(
                                                 "Element weights",
                                                 className="card-subtitle",
                                             )

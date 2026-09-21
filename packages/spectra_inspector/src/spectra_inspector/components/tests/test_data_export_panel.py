@@ -9,7 +9,10 @@ from spectra_inspector.components.data_export_panel import (
     dataExportPanelIDS,
     get_element_weights,
     get_formatted_element_weights,
+    get_layout,
+    outline_style,
 )
+from spectra_inspector.utilities.selection import DEFAULT_OUTLINE_COLOR, outlineStyle
 
 
 @pytest.mark.parametrize(
@@ -56,6 +59,45 @@ def test_data_export_panel_ids_round_trip():
 def test_zero_element_id_is_keyed_on_the_element():
     ids = dataExportPanelIDS(index=0)
     assert ids.zero_element_id("Na") == {"type": ids.zeroelement, "index": "Na"}
+
+
+def test_outline_style_reads_the_controls_and_defaults_to_white():
+    # the states are None until the page has rendered the settings
+    assert outline_style(None, None, None) == outlineStyle(True, "#ffffff", "#ffffff")
+    assert outline_style(False, "#000000", "#FF0000") == outlineStyle(
+        False, "#000000", "#FF0000"
+    )
+    # only what a colour input reports is trusted
+    assert outline_style(True, "red", "#fff").line_color == "#ffffff"
+    assert outline_style(True, "red", "#fff").dot_color == "#ffffff"
+
+
+def _find(component, id_):
+    if getattr(component, "id", None) == id_:
+        return component
+    children = getattr(component, "children", None)
+    if children is None:
+        return None
+    if not isinstance(children, list | tuple):
+        children = [children]
+    for child in children:
+        found = _find(child, id_)
+        if found is not None:
+            return found
+    return None
+
+
+def test_figure_settings_start_hidden_with_the_outline_drawn_in_white():
+    layout, ids = get_layout()
+    settings = _find(layout, ids.figuresettings)
+    assert settings is not None
+    assert settings.hidden is True
+    assert _find(settings, ids.includeoutline).value is True
+    for prop in ("outlinelinecolor", "outlinedotcolor"):
+        picker = _find(settings, getattr(ids, prop))
+        assert picker.type == "color"
+        assert picker.value == DEFAULT_OUTLINE_COLOR
+        assert picker.className == "form-control-color"
 
 
 def test_apply_zeroed_elements():

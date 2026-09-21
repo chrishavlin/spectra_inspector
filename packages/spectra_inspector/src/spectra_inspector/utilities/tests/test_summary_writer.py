@@ -158,7 +158,7 @@ class TestMetadataExport:
         assert "Sample metadata" in text
         assert "dataset: C-12" in text
         assert "sample_id: S1" in text
-        assert "Box subselection" in text
+        assert "Subselection" in text
         assert "1.5 to 4.5" in text
 
     def test_pdf_without_a_record(self, writer):

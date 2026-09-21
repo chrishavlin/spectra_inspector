@@ -21,6 +21,39 @@ AXES = ("xaxis", "yaxis")
 # plotly's generic default (which would flip the y axis).
 DEFAULT_AUTORANGE: dict[str, bool | str] = {"xaxis": True, "yaxis": "reversed"}
 
+# The one tool that is not a plotly dragmode: the polygon is built from clicks
+# on the panels, so dragging is switched off and the axes are fixed, which
+# also stops plotly's double-click reset and leaves double clicks free to
+# remove a vertex.
+POLYGON_TOOL = "drawpolygon"
+
+
+def tool_layout(tool: str) -> dict[str, Any]:
+    """The layout a tool puts on a panel: the dragmode and whether the axes
+    can still be zoomed by hand."""
+    if tool == POLYGON_TOOL:
+        return {
+            "dragmode": False,
+            "xaxis": {"fixedrange": True},
+            "yaxis": {"fixedrange": True},
+        }
+    return {
+        "dragmode": tool,
+        "xaxis": {"fixedrange": False},
+        "yaxis": {"fixedrange": False},
+    }
+
+
+def apply_tool_to_patch(patch: Patch, tool: str) -> Patch:
+    """Add a tool's layout to a figure Patch, leaf by leaf so the axes' ranges
+    are left alone."""
+    layout = tool_layout(tool)
+    patch["layout"]["dragmode"] = layout["dragmode"]
+    for ax in AXES:
+        patch["layout"][ax]["fixedrange"] = layout[ax]["fixedrange"]
+    return patch
+
+
 _RANGE_INDEX = re.compile(r"^([xy]axis)\.range\[([01])\]$")
 _SHAPE_ATTR = re.compile(r"^shapes\[(\d+)\]\.(\w+)$")
 
@@ -182,7 +215,7 @@ def apply_view_to_figure(
         else:
             fig.update_layout({ax: {"range": list(axis["range"]), "autorange": False}})
     if view["dragmode"] is not None:
-        fig.update_layout(dragmode=view["dragmode"])
+        fig.update_layout(tool_layout(view["dragmode"]))
     if shapes is not None:
         fig.update_layout(shapes=shapes)
     return fig

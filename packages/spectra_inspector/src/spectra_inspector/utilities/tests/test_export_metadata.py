@@ -124,8 +124,31 @@ class TestSubselection:
         assert lines[1] == "index0 (y): indices [1, 4), 3.5 to 8 µm"
         assert lines[2] == "index1 (x): indices [2, 5), 4 to 10 µm"
         assert subselection_lines(None) == [
-            "No box drawn: the images cover the full map."
+            "No box or shape drawn: the images cover the full map."
         ]
+
+    def test_box_kind(self, combined_metadata):
+        sub = subselection_metadata(combined_metadata, [1, 4], [2, 5])
+        assert sub["kind"] == "box"
+        assert "polygon" not in sub
+
+    def test_polygon_records_its_corners(self, combined_metadata):
+        corners = [[1.0, 2.0], [1.0, 4.0], [3.5, 3.0]]
+        sub = subselection_metadata(combined_metadata, [1, 4], [2, 5], polygon=corners)
+        assert sub["kind"] == "polygon"
+        assert sub["shape"] == [3, 3]
+        assert sub["polygon"]["vertices_index"] == corners
+        # y: offset 2 scale 1.5; x: offset 0 scale 2
+        physical = sub["polygon"]["vertices_physical"]
+        for vertex, expected in zip(
+            physical, [[3.5, 4.0], [3.5, 8.0], [7.25, 6.0]], strict=True
+        ):
+            assert vertex == pytest.approx(expected)
+        lines = subselection_lines(sub)
+        assert lines[0] == "Bounding box shape (rows, columns): 3, 3"
+        assert lines[-1] == (
+            "Polygon with 3 corners, as (index0, index1): (1, 2); (1, 4); (3.5, 3)"
+        )
 
 
 def test_image_panel_metadata_names_the_files():
@@ -223,7 +246,7 @@ def test_readme_describes_every_file(combined_metadata, sample_sheet):
         "bitmap_00_Fe.png: map of the Fe window, 6.275, 6.54 keV, colormap turbo"
         in text
     )
-    assert "bitmap_00_Fe_subset.png: the box region of bitmap_00_Fe.png" in text
+    assert "bitmap_00_Fe_subset.png: the selected region of bitmap_00_Fe.png" in text
     assert "metadata.json: this record as JSON" in text
     assert "\nother.dat\n" in text
     assert "index0 (y): indices [1, 4), 3.5 to 8 µm" in text
@@ -235,4 +258,4 @@ def test_readme_describes_every_file(combined_metadata, sample_sheet):
 def test_readme_without_server_metadata():
     text = readme_text(build_export_metadata("C-12", None), ["spectrum.png"])
     assert "unavailable: the server could not be reached for it" in text
-    assert "No box drawn" in text
+    assert "No box or shape drawn" in text

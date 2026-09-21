@@ -1,10 +1,20 @@
 import numpy as np
 import pytest
+from matplotlib.colors import to_rgba
 
 from spectra_inspector.utilities.coerce import (
+    mpl_color,
+    path_vertices,
     placeholder_to_spaces,
     plotly_to_matplotlib,
     spaces_to_placeholder,
+)
+from spectra_inspector.utilities.selection import (
+    END_VERTEX_COLOR,
+    POLYGON_COLOR,
+    START_VERTEX_COLOR,
+    VERTEX_OUTLINE,
+    polygon_shapes,
 )
 
 
@@ -26,6 +36,76 @@ def test_plotly_to_matplotlib_preserves_heatmap_box_annotation():
     assert len(ax.patches) == 1
     assert ax.patches[0].get_edgecolor() == (0.0, 0.0, 0.0, 1.0)
     assert ax.patches[0].get_linewidth() == 2
+
+
+def test_path_vertices_reads_the_polygon_path():
+    assert path_vertices("M 2.0,1.0 L 8.5,1.0 L 5,6e0 Z") == [
+        (2.0, 1.0),
+        (8.5, 1.0),
+        (5.0, 6.0),
+    ]
+    assert path_vertices("M -1.5,2 L 3,-4") == [(-1.5, 2.0), (3.0, -4.0)]
+    assert path_vertices("") == []
+
+
+def test_mpl_color_passes_names_and_hex_and_converts_rgba():
+    assert mpl_color(None, "black") == "black"
+    assert mpl_color("", "black") == "black"
+    assert mpl_color("#ff0000", "black") == "#ff0000"
+    assert mpl_color("white", "black") == "white"
+    assert mpl_color("rgb(255, 0, 0)", "black") == (1.0, 0.0, 0.0)
+    assert mpl_color("rgba(0, 255, 0, 0.5)", "black") == (0.0, 1.0, 0.0, 0.5)
+
+
+def test_plotly_to_matplotlib_draws_the_polygon_outline_and_its_corner_dots():
+    # the path is drawn unfilled in its own line colour whatever fill it
+    # carries; each circle becomes a dot filled with its own colour
+    im_data = [[1, 2], [3, 4]]
+    points = [[0.0, 0.0], [1.0, 0.0], [1.0, 1.0]]
+    fig = {
+        "data": [{"type": "heatmap", "z": im_data}],
+        "layout": {"shapes": polygon_shapes(points, radius=0.25)},
+    }
+
+    mpl_fig = plotly_to_matplotlib(fig, im_data=np.asarray(im_data))
+    ax = mpl_fig.axes[0]
+
+    outline, *dots = ax.patches
+    assert outline.get_closed()
+    np.testing.assert_array_equal(outline.get_xy()[:3], points)
+    assert outline.get_edgecolor() == to_rgba(POLYGON_COLOR)
+    assert not outline.get_fill()
+
+    assert len(dots) == 3
+    for dot, (x, y) in zip(dots, points, strict=True):
+        assert dot.center == (x, y)
+        assert dot.radius == 0.25
+        assert dot.get_edgecolor() == to_rgba(VERTEX_OUTLINE)
+    assert dots[0].get_facecolor() == to_rgba(START_VERTEX_COLOR)
+    assert dots[-1].get_facecolor() == to_rgba(END_VERTEX_COLOR)
+
+
+def test_plotly_to_matplotlib_uses_the_rectangle_line_colour():
+    im_data = [[1, 2], [3, 4]]
+    fig = {
+        "data": [{"type": "heatmap", "z": im_data}],
+        "layout": {
+            "shapes": [
+                {
+                    "type": "rect",
+                    "x0": 0,
+                    "x1": 1,
+                    "y0": 0,
+                    "y1": 1,
+                    "line": {"color": "#ffffff"},
+                }
+            ]
+        },
+    }
+
+    mpl_fig = plotly_to_matplotlib(fig, im_data=np.asarray(im_data))
+    (rect,) = mpl_fig.axes[0].patches
+    assert rect.get_edgecolor() == (1.0, 1.0, 1.0, 1.0)
 
 
 def test_plotly_to_matplotlib_preserves_heatmap_overlay_trace_and_annotation():

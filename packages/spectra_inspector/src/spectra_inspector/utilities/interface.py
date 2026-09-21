@@ -1,4 +1,5 @@
 import functools
+import json
 import threading
 
 import requests
@@ -199,7 +200,11 @@ class SpectraInspectorServerInterface:
         include_weights: bool = True,
         directory_sync: dict | None = None,
         spectrum_only: bool = False,
+        polygon: list[list[float]] | None = None,
     ) -> model.Spectrum1dDict:
+        """The spectrum over the whole map, the box the index ranges give, or
+        the inside of ``polygon``, a list of ``[index0, index1]`` vertices in
+        pixel index units (sent as JSON, and taking precedence over a box)."""
 
         payload: dict
         payload = {
@@ -220,6 +225,9 @@ class SpectraInspectorServerInterface:
         if isinstance(index1_range, tuple):
             payload["index1_0"] = index1_range[0]
             payload["index1_1"] = index1_range[1]
+
+        if polygon is not None:
+            payload["polygon"] = json.dumps(polygon)
 
         uri = self._get_endpoint("image-spectrum")
         r = self._get(uri, params=payload)
