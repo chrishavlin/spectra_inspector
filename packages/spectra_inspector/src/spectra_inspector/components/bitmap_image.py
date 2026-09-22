@@ -163,10 +163,6 @@ def bitmap_image_layout(
                         "Delete bitmap image panel",
                         target=imIDs.get_id_with_index("delete"),
                     ),
-                    hover_tooltip(
-                        "Apply changes to energy bounds",
-                        target=imIDs.get_id_with_index("refresh"),
-                    ),
                 ],
                 className="p-2",
             ),

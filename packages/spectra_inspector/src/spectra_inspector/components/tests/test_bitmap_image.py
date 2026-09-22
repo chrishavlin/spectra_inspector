@@ -18,7 +18,7 @@ def test_panel_tooltips_follow_the_mouse_only():
     focus back to its button after a pick and the tooltip stays until a blur."""
     card, _ = bitmap_image_layout(0)
     tooltips = [c for c in card._traverse() if isinstance(c, dbc.Tooltip)]
-    assert len(tooltips) == 6
+    assert len(tooltips) == 5
     assert {t.trigger for t in tooltips} == {"hover"}
 
 
