@@ -193,16 +193,15 @@ def test_a_refresh_puts_the_apply_back(inspector, mocker, triggered_by):
     assert set_props.call_args_list == [mocker.call(refresh_ids[1], APPLY_IDLE_PROPS)]
 
 
-def test_a_panel_seeded_from_another_starts_pending(
+def test_a_later_panel_fetches_its_own_image_and_is_not_marked(
     inspector, mocker, monkeypatch, triggered_by
 ):
     refresh_ids = [{"type": SINGLE_APPLY, "index": i} for i in (0, 3)]
     set_props = mocker.patch.object(inspector, "set_props")
-    mocker.patch.object(inspector, "get_new_im", return_value={"seeded": True})
-    mocker.patch.object(
-        inspector, "plotly_im_trace_to_array", return_value=np.zeros((4, 4))
+    mocker.patch.object(inspector, "get_new_im", return_value={"fetched": True})
+    fetch = mocker.patch.object(
+        inspector, "fetch_im_data_parallel", return_value=[np.zeros((4, 4))]
     )
-    fetch = mocker.patch.object(inspector, "fetch_im_data_parallel")
     monkeypatch.setattr(
         inspector.UserStore, "conditionally_fetch_metadata", lambda _self: object()
     )
@@ -212,10 +211,13 @@ def test_a_panel_seeded_from_another_starts_pending(
         **_single_panel_args(refresh_ids, [{"data": [{"type": "heatmap"}]}, {}], (0,))
     )
 
-    assert figs == [no_update, {"seeded": True}]
+    assert figs == [no_update, {"fetched": True}]
     assert _graph(3) in processed["graph_ids"]
-    fetch.assert_not_called()
-    assert mocker.call(refresh_ids[1], APPLY_PENDING_PROPS) in set_props.call_args_list
+    fetch.assert_called_once()
+    assert fetch.call_args.args[1] == [[1.0, 2.0]]
+    assert not any(
+        call.args[1] == APPLY_PENDING_PROPS for call in set_props.call_args_list
+    )
 
 
 def test_the_composite_apply_goes_back_when_clicked(

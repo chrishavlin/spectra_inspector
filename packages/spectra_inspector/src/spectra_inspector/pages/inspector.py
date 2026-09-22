@@ -1,4 +1,4 @@
-from collections.abc import Callable
+from collections.abc import Callable, Collection
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any, Literal
 
@@ -55,7 +55,6 @@ from spectra_inspector.components.dataset_selector import (
 )
 from spectra_inspector.components.energy_range_slider import (
     APPLY_IDLE_PROPS,
-    APPLY_PENDING_PROPS,
     elementDropdownSliderIDS,
 )
 from spectra_inspector.components.image_toolbox import (
@@ -86,6 +85,9 @@ from spectra_inspector.utilities.coerce import (
     plotly_to_matplotlib,
 )
 from spectra_inspector.utilities.composite import compositeChannel
+from spectra_inspector.utilities.element_energy_ranges import (
+    get_element_energy_ranges,
+)
 from spectra_inspector.utilities.export_metadata import (
     build_export_metadata,
     composite_image_metadata,
@@ -862,17 +864,29 @@ def _selection_bounds(
     return selection.bounding_box(image_shape)
 
 
-def _new_panel(mode: str | None, index: int) -> tuple[dbc.Card, dict[str, str | int]]:
-    """A panel card of the current kind and its div id."""
+def _next_element(in_use: Collection[str]) -> str:
+    """The preset a new single panel opens on: the first of the usual three,
+    then the server's remaining presets, that no other panel shows. With
+    every preset on screen the first one comes round again."""
+    others = (
+        el for el in get_element_energy_ranges() if el not in _INITIAL_PANEL_ELEMENTS
+    )
+    candidates = (*_INITIAL_PANEL_ELEMENTS, *others)
+    return next((el for el in candidates if el not in in_use), candidates[0])
+
+
+def _new_panel(
+    mode: str | None, index: int, in_use: set[str]
+) -> tuple[dbc.Card, dict[str, str | int]]:
+    """A panel card of the current kind and its div id. ``in_use`` holds the
+    elements the other single panels show; the new panel's is added to it."""
     if mode == IMAGE_MODE_MULTI:
         card, imIDs = composite_image_layout(
             index, id_type_base=_IDS.image_container_type
         )
     else:
-        if index < len(_INITIAL_PANEL_ELEMENTS):
-            init_element = _INITIAL_PANEL_ELEMENTS[index]
-        else:
-            init_element = _INITIAL_PANEL_ELEMENTS[0]
+        init_element = _next_element(in_use)
+        in_use.add(init_element)
         card, imIDs = bitmap_image_layout(
             index,
             id_type_base=_IDS.image_container_type,
@@ -894,6 +908,7 @@ def _initial_panel_count(mode: str | None, n_clicks: int) -> int:
     Input({"type": _imageIDS.delete, "index": ALL}, "n_clicks"),
     State(_IDS.graph_id_store, "data"),
     State(_IDS.image_mode, "value"),
+    State({"type": _imageSliderIds.dropdown, "index": ALL}, "value"),
     running=[
         (Output(_ADD_IMAGE_ID, "disabled"), True, False),
     ],
@@ -904,6 +919,7 @@ def add_or_delete_image(
     n_clicks_delete: list[int | None],
     graph_id_store: dict,
     image_mode: str | None,
+    element_choices: list[str | None],
 ):
     """Append a panel card or drop one, as a patch on the container's children.
 
@@ -911,7 +927,8 @@ def add_or_delete_image(
     image data included, and a State is uploaded with the request whichever
     button fired. The position of the card to drop comes from the id store,
     which also hands out panel indices (``next_index``) so a panel never
-    reuses the index of one that was removed or replaced.
+    reuses the index of one that was removed or replaced. A single panel
+    opens on a preset none of the existing panels' dropdowns show.
     """
     button_clicked = ctx.triggered_id
     spectraLogger.info(f"add_or_delete_image button: {button_clicked}")
@@ -930,8 +947,9 @@ def add_or_delete_image(
             n_new = 1
 
         start = graph_id_store.get("next_index", 0)
+        in_use = {el for el in element_choices if el}
         for id_index in range(start, start + n_new):
-            new_image_div, new_div_id = _new_panel(image_mode, id_index)
+            new_image_div, new_div_id = _new_panel(image_mode, id_index, in_use)
             patched_children.append(new_image_div)
             graph_id_store["active_div_ids"].append(new_div_id)
         graph_id_store["next_index"] = start + n_new
@@ -981,8 +999,9 @@ def switch_image_mode(
     n_new = _initial_panel_count(image_mode, NUMBER_OF_INITIAL_FIGURES)
     children = []
     active_div_ids = []
+    in_use: set[str] = set()
     for index in range(n_new):
-        card, div_id = _new_panel(image_mode, index)
+        card, div_id = _new_panel(image_mode, index, in_use)
         children.append(card)
         active_div_ids.append(div_id)
     graph_id_store = {
@@ -1471,9 +1490,7 @@ def update_graph_figure(
     store is only returned when this call added to it, since the composite
     callback writes the same store and may be running at the same time.
 
-    The Apply button of a refreshed panel goes back to idle, and a later
-    panel seeded from another's figure is marked pending, since its image
-    is a copy rather than what its controls say.
+    The Apply button of a refreshed panel goes back to idle.
     """
 
     if "graph_ids" not in processed_graph_store:
@@ -1509,21 +1526,12 @@ def update_graph_figure(
         md = user_store.conditionally_fetch_metadata()
         assert md is not None
 
-        # On the first pass every panel needs its own image, and those fetches
-        # are the slow part -- run them concurrently. A panel added later is
-        # seeded from an existing figure and fetches nothing until refreshed.
-        seed = next((fig for fig in fig_list if fig and fig.get("data")), None)
-        im_arrays: list[npt.NDArray]
-        if seed is not None:
-            im_arrays = [plotly_im_trace_to_array(seed["data"][0])] * len(new_positions)
-        else:
-            im_arrays = list(
-                fetch_im_data_parallel(
-                    user_store,
-                    [slider_range_list[pos] for pos in new_positions],
-                    md,
-                )
-            )
+        # The fetches are the slow part -- run them concurrently.
+        im_arrays = fetch_im_data_parallel(
+            user_store,
+            [slider_range_list[pos] for pos in new_positions],
+            md,
+        )
 
         new_figs = list(no_updates)
         for pos, im_array in zip(new_positions, im_arrays, strict=True):
@@ -1543,10 +1551,6 @@ def update_graph_figure(
                 shapes=shapes,
             )
             set_props(graph_ids[pos], {"style": graph_style(im_array.shape)})
-            if seed is not None:
-                set_props(
-                    _apply_button_id(graph_ids[pos]["index"]), APPLY_PENDING_PROPS
-                )
         processed_graph_store["initialized"] = True
         return new_figs, processed_graph_store, no_update
 

@@ -270,7 +270,11 @@ it runs `switch_image_mode`, which replaces the container's children wholesale
 on the same zoom. `add_or_delete_image` reads the mode as a `State` and appends
 a panel of the current kind; panel indices come from the store's `next_index`
 rather than from the button's click count, so a panel never reuses the index of
-one that was replaced.
+one that was replaced. Every new panel fetches its own image (an added panel
+used to copy the first panel's pixels, which left its controls describing an
+image it was not showing, issue #30); a single panel opens on the first preset
+no other panel's dropdown shows (`_next_element`: the usual three, then the
+server's remaining presets), read off the dropdowns as a `State`.
 
 `components/composite_image.py` builds the composite card. Its card, graph,
 delete button and loading overlay carry the same `bitmap-image` ids as a single
@@ -299,10 +303,8 @@ or two props of one control index); a panel's insertion or removal never reaches
 them (`prevent_initial_call` covers a new panel's own outputs, and a removal
 re-fires neither, checked in the browser), and a call reporting several controls
 marks nothing. `update_graph_figure` and `update_composite_figure` send
-`APPLY_IDLE_PROPS` back with `set_props` for the panel they refreshed, and a
-single panel seeded from another's figure is sent `APPLY_PENDING_PROPS`, since
-its image is a copy of what its controls say. The extent reset leaves the marks
-alone: it re-fetches nothing.
+`APPLY_IDLE_PROPS` back with `set_props` for the panel they refreshed. The
+extent reset leaves the marks alone: it re-fetches nothing.
 
 Two consequences for the page callbacks:
 
