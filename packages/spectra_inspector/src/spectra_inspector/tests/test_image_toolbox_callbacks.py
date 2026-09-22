@@ -18,6 +18,10 @@ from spectra_inspector.components.image_toolbox import IMAGE_TOOLBOX
 from spectra_inspector.settings import ENV_PREFIX
 from spectra_inspector.tests.test_export_summary import combined_metadata
 from spectra_inspector.user_store_model import UserStore
+from spectra_inspector.utilities.scalebar_style import (
+    DEFAULT_SCALEBAR_COLOR,
+    DEFAULT_SCALEBAR_FONTSIZE,
+)
 from spectra_inspector.utilities.view_sync import empty_view
 
 GRAPH_TYPE = "bitmap-image-graph"
@@ -130,7 +134,11 @@ def test_scalebar_controls_restyle_built_panels_and_fill_the_store(inspector):
     assert _ops(patches[2]) == expected
     # a value the controls could not report means the default
     _, store = inspector.restyle_scalebar(None, "red", None, _graph_ids(0), {})
-    assert store == {"show": True, "color": "#ffffff", "fontsize": 12}
+    assert store == {
+        "show": True,
+        "color": DEFAULT_SCALEBAR_COLOR,
+        "fontsize": DEFAULT_SCALEBAR_FONTSIZE,
+    }
 
 
 def test_scalebar_callback_never_carries_figures(callbacks):

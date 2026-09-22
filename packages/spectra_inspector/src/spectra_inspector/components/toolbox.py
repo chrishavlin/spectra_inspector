@@ -61,17 +61,24 @@ RESET_EXTENT = toolButton(
 ZOOM_FACTORS = {ZOOM_IN.id: 0.5, ZOOM_OUT.id: 2.0}
 
 
+# how long after the last colour movement a picker reports its value
+COLOR_DEBOUNCE_MS = 300
+
+
 def color_input(id_: str, value: str) -> dbc.Input:
     """The browser's own colour picker. ``color`` is not among the types dbc
     declares for Input, but the component hands the type straight to the
     ``<input>`` element and reads the value back like any other; Bootstrap's
-    ``form-control-color`` class sizes it as a swatch."""
+    ``form-control-color`` class sizes it as a swatch. The value is sent a
+    moment after the user stops moving in the picker: a ``debounce=True``
+    input reports only on blur, and the native picker's popup does not blur
+    the input when it closes, so the change waited for a click elsewhere."""
     return dbc.Input(
         id=id_,
         type="color",
         value=value,
         className="form-control-color",
-        debounce=True,
+        debounce=COLOR_DEBOUNCE_MS,
     )
 
 

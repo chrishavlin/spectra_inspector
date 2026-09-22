@@ -47,12 +47,12 @@ def test_rows():
     assert first.groups == ((DRAW_BOX.id, DRAW_POLYGON.id, ERASE_SHAPE.id),)
     assert second.label == "View Controls"
     assert second.groups == (("zoom", "pan"), ("zoomin", "zoomout", "reset"))
-    assert third.label == "Panel Mode"
+    assert third.label == "Scalebar"
     assert third.groups == ()
-    assert IMAGE_TOOLBOX.rows[PANEL_MODE_ROW] is third
-    assert fourth.label == "Scalebar"
+    assert IMAGE_TOOLBOX.rows[SCALEBAR_ROW] is third
+    assert fourth.label == "Panel Mode"
     assert fourth.groups == ()
-    assert IMAGE_TOOLBOX.rows[SCALEBAR_ROW] is fourth
+    assert IMAGE_TOOLBOX.rows[PANEL_MODE_ROW] is fourth
     grouped = [b for row in IMAGE_TOOLBOX.rows for g in row.groups for b in g]
     assert ADD_IMAGE.id not in grouped
     assert SUBMIT_SHAPE.id not in grouped
