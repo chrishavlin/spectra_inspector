@@ -10,8 +10,8 @@ from typing import Any
 SCALEBAR_META_KEY = "scalebar"
 SCALEBAR_ANNOTATION_NAME = "scalebar"
 
-DEFAULT_SCALEBAR_COLOR = "#ffffff"
-DEFAULT_SCALEBAR_FONTSIZE = 12
+DEFAULT_SCALEBAR_COLOR = "#f32a2a"
+DEFAULT_SCALEBAR_FONTSIZE = 16
 # the label sizes (points) the text-size input accepts
 MIN_SCALEBAR_FONTSIZE = 4
 MAX_SCALEBAR_FONTSIZE = 40
