@@ -71,7 +71,14 @@ pixel centres, half-open in the row direction, over the polygon's bounding box
 clipped to the map; no shapely), and `get_spectrum` sums the masked pixels chunk
 by chunk like a box. The parameter is parsed and validated in `main.py`
 (`_parse_polygon`, 422 on anything malformed) rather than through a pydantic
-model so the frontend's generated `model.py` is unaffected.
+model so the frontend's generated `model.py` is unaffected. Index ranges must
+lie within the map: `_index_ranges_or_422` in `main.py` reads the axis sizes
+from the header (`get_axis_sizes`, no data load) and answers a range past them,
+or a descending one, with a 422 before anything is queued
+(`validate_index_range`; an empty `start == stop` range is fine and sums to
+nothing). The server never clips: a box dragged out over the image's edge is
+clipped to it by the frontend before it is asked for, and a worker exception
+would otherwise surface only as a 500 with the message in the log.
 
 `calibration.py` computes per-element peak weights over fixed keV windows plus
 the `DH_assessment` ratio; `Spectrum1d.get_weights()` attaches them to

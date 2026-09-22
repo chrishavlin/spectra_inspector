@@ -77,6 +77,56 @@ def test_image_spectrum(app_client: TestClient) -> None:
     assert np.all(np.isreal(spectrum.intensity))
 
 
+@pytest.mark.parametrize(
+    "endpoint",
+    ["/image-spectrum", "/image-data", "/image-data-summed"],
+)
+@pytest.mark.parametrize(
+    ("index0", "index1"),
+    [((-4, 5), (3, 8)), ((0, 5), (3, 40)), ((9, 3), (0, 8)), ((20, 24), (0, 3))],
+)
+def test_index_ranges_past_the_image_edge_are_rejected(
+    app_client: TestClient,
+    endpoint: str,
+    index0: tuple[int, int],
+    index1: tuple[int, int],
+) -> None:
+    # the mock map is 16 x 16; the frontend clips a box to it before asking,
+    # so a range past the map (or a descending one) is a caller error
+    response = app_client.get(
+        endpoint,
+        params={
+            "sample_name": _on_disc_mock.filenames[0],
+            "channel_index": 2,
+            "channel_0": 0,
+            "channel_1": 3,
+            "include_weights": False,
+            "index0_0": index0[0],
+            "index0_1": index0[1],
+            "index1_0": index1[0],
+            "index1_1": index1[1],
+        },
+    )
+    assert response.status_code == 422
+    assert "range" in response.json()["detail"]
+
+
+def test_an_empty_index_range_sums_to_nothing(app_client: TestClient) -> None:
+    response = app_client.get(
+        "/image-spectrum",
+        params={
+            "sample_name": _on_disc_mock.filenames[0],
+            "include_weights": False,
+            "index0_0": 5,
+            "index0_1": 5,
+            "index1_0": 0,
+            "index1_1": 16,
+        },
+    )
+    assert response.status_code == 200
+    assert not any(Spectrum1dDict(**response.json()).intensity)
+
+
 def test_image_data(app_client: TestClient) -> None:
     response = app_client.get(
         "/image-data",

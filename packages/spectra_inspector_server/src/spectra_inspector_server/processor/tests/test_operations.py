@@ -4,7 +4,9 @@ import pytest
 from spectra_inspector_server._file_tree_handling import EDAXPathHandler
 from spectra_inspector_server._testing import _on_disc_mock
 from spectra_inspector_server.processor.operations import (
+    IndexRangeError,
     OperationEDAXStateHandler,
+    validate_index_range,
 )
 
 
@@ -93,3 +95,46 @@ def test_get_spectrum(edax_path_handler: EDAXPathHandler) -> None:
     assert np.all(np.isreal(s1d.energy))
     assert np.all(np.isreal(s1d.intensity))
     assert len(s1d_2.energy) == 4
+
+
+@pytest.mark.parametrize(
+    "index_range",
+    [(0, 16), (0, 0), (16, 16), (3, 9), (5, 5)],
+)
+def test_validate_index_range_accepts_ranges_within_the_axis(
+    index_range: tuple[int, int],
+) -> None:
+    assert validate_index_range(index_range, 16, 0) == index_range
+
+
+@pytest.mark.parametrize(
+    "index_range",
+    [(-1, 5), (0, 17), (-4, 20), (9, 3), (20, 24)],
+)
+def test_validate_index_range_rejects_ranges_past_the_axis(
+    index_range: tuple[int, int],
+) -> None:
+    with pytest.raises(IndexRangeError, match="index1 range"):
+        validate_index_range(index_range, 16, 1)
+
+
+def test_operations_reject_a_box_past_the_image_edge(
+    edax_path_handler: EDAXPathHandler,
+) -> None:
+    # the frontend clips a box to the image before asking; a range past the
+    # map is refused rather than clipped or wrapped by numpy
+    fake_filename = _on_disc_mock.filenames[0]
+    ops = OperationEDAXStateHandler(edax_path_handler, allow_mock_files=True)
+    with pytest.raises(IndexRangeError):
+        ops.get_spectrum(fake_filename, index0_range=(-4, 5), index1_range=(3, 8))
+    with pytest.raises(IndexRangeError):
+        ops.get_image(fake_filename, 2, index0_range=(0, 4), index1_range=(10, 30))
+
+
+def test_get_axis_sizes(edax_path_handler: EDAXPathHandler) -> None:
+    fake_filename = _on_disc_mock.filenames[0]
+    ops = OperationEDAXStateHandler(edax_path_handler, allow_mock_files=True)
+    sizes = ops.get_axis_sizes(fake_filename)
+    assert len(sizes) == 3
+    assert all(size > 0 for size in sizes)
+    assert ops.get_image(fake_filename, 0).shape == sizes[:2]

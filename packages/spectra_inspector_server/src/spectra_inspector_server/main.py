@@ -35,7 +35,11 @@ from spectra_inspector_server.model import (
     sampleMetadata,
 )
 from spectra_inspector_server.processor._polygon import MIN_VERTICES, Vertex
-from spectra_inspector_server.processor.operations import OperationEDAXStateHandler
+from spectra_inspector_server.processor.operations import (
+    IndexRangeError,
+    OperationEDAXStateHandler,
+    validate_index_range,
+)
 from spectra_inspector_server.settings import Settings
 
 if TYPE_CHECKING:
@@ -395,6 +399,41 @@ async def image_metadata_combined(
     return ops.get_combined_metadata(sample_name, spectrum_only=spectrum_only)
 
 
+_RawIndex = int | None | Literal["none"]
+
+
+def _index_range(raw: tuple[_RawIndex, _RawIndex]) -> tuple[int, int] | None:
+    start, stop = raw
+    if isinstance(start, int) and isinstance(stop, int):
+        return (int(start), int(stop))
+    return None
+
+
+def _index_ranges_or_422(
+    ph: EDAXPathHandler,
+    sample_name: str,
+    index0: tuple[_RawIndex, _RawIndex],
+    index1: tuple[_RawIndex, _RawIndex],
+    spectrum_only: bool = False,
+) -> tuple[tuple[int, int] | None, tuple[int, int] | None]:
+    """The spatial index ranges of a request, None for an axis not given,
+    checked against the map's axes: a range past the map is a 422, never
+    clipped (a box drawn out over the image's edge is clipped to it by the
+    frontend). A standalone spectrum has no spatial axes to check against."""
+    ranges = (_index_range(index0), _index_range(index1))
+    if spectrum_only or all(rng is None for rng in ranges):
+        return ranges
+    ops = OperationEDAXStateHandler(ph, allow_mock_files=pytest_running())
+    sizes = ops.get_axis_sizes(sample_name)
+    try:
+        for axis, rng in enumerate(ranges):
+            if rng is not None:
+                validate_index_range(rng, sizes[axis], axis)
+    except IndexRangeError as err:
+        raise HTTPException(422, detail=str(err)) from err
+    return ranges
+
+
 def _parse_polygon(polygon: str) -> list[Vertex]:
     """The vertices of the ``polygon`` query parameter: a JSON list of at
     least three ``[index0, index1]`` pairs of finite numbers."""
@@ -451,17 +490,9 @@ async def image_spectrum(
     q = request.app.state.q
     assert isinstance(q, asyncio.Queue)
 
-    index0_range: None | tuple[int, int]
-    if isinstance(index0_0, int) and isinstance(index0_1, int):
-        index0_range = (int(index0_0), int(index0_1))
-    else:
-        index0_range = None
-
-    index1_range: None | tuple[int, int]
-    if isinstance(index1_0, int) and isinstance(index1_1, int):
-        index1_range = (int(index1_0), int(index1_1))
-    else:
-        index1_range = None
+    index0_range, index1_range = _index_ranges_or_422(
+        ph, sample_name, (index0_0, index0_1), (index1_0, index1_1), spectrum_only
+    )
 
     channel_range: None | tuple[int, int]
     if isinstance(channel_0, int) and isinstance(channel_1, int):
@@ -512,17 +543,9 @@ async def image_data(
         msg = f"{sample_name} is not a valid sample"
         raise HTTPException(404, detail=msg)
 
-    index0_range: None | tuple[int, int]
-    if isinstance(index0_0, int) and isinstance(index0_1, int):
-        index0_range = (int(index0_0), int(index0_1))
-    else:
-        index0_range = None
-
-    index1_range: None | tuple[int, int]
-    if isinstance(index1_0, int) and isinstance(index1_1, int):
-        index1_range = (int(index1_0), int(index1_1))
-    else:
-        index1_range = None
+    index0_range, index1_range = _index_ranges_or_422(
+        ph, sample_name, (index0_0, index0_1), (index1_0, index1_1)
+    )
 
     item = queueOpsItem(
         ops_func="get_single_image",
@@ -571,17 +594,9 @@ async def image_data_summed(
         msg = f"{sample_name} is not a valid sample"
         raise HTTPException(404, detail=msg)
 
-    index0_range: None | tuple[int, int]
-    if isinstance(index0_0, int) and isinstance(index0_1, int):
-        index0_range = (int(index0_0), int(index0_1))
-    else:
-        index0_range = None
-
-    index1_range: None | tuple[int, int]
-    if isinstance(index1_0, int) and isinstance(index1_1, int):
-        index1_range = (int(index1_0), int(index1_1))
-    else:
-        index1_range = None
+    index0_range, index1_range = _index_ranges_or_422(
+        ph, sample_name, (index0_0, index0_1), (index1_0, index1_1)
+    )
 
     channel_range = (channel_0, channel_1)
     msg = f"fetching summed channel intensity for {sample_name} with {channel_range=}, {index0_range=}, {index1_range=}"

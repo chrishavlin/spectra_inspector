@@ -467,6 +467,58 @@ def test_box_export_draws_the_selected_pixels_in_the_chosen_colour(
     assert all(fig["layout"].get("shapes", []) == [] for fig in subsets)
 
 
+def test_box_past_the_image_edge_exports_the_part_inside(
+    inspector, image_figures, spectrum_figure, spectrum_metadata, tmp_path, monkeypatch
+):
+    # a box dragged out past the 2x2 map's edge (rows -1..1, columns -1..5):
+    # the crop, the outline and the record are the row of pixels inside it
+    fulls: list = []
+    crops: list = []
+    convert = inspector.plotly_to_matplotlib
+
+    def capture(fig, **kwargs):
+        if fig["data"][0]["type"] == "heatmap":
+            if kwargs.get("im_data") is None:
+                fulls.append(fig)
+            else:
+                crops.append(kwargs["im_data"])
+        return convert(fig, **kwargs)
+
+    monkeypatch.setattr(inspector, "plotly_to_matplotlib", capture)
+    store = {
+        "active_shapes": [
+            {"type": "rect", "x0": -0.7, "x1": 5.0, "y0": 1.3, "y1": -1.0}
+        ]
+    }
+    browser_figure = _browser_figure_with_box()
+    browser_figure["layout"]["shapes"] = store["active_shapes"]
+    _export(
+        inspector,
+        [browser_figure] * len(image_figures),
+        spectrum_figure,
+        spectrum_metadata,
+        shapes_store=store,
+    )
+
+    box = _exported_metadata(tmp_path)["subselection"]
+    assert box["shape"] == [1, 2]
+    assert box["axes"]["index0"]["index_range"] == [0, 1]
+    assert box["axes"]["index1"]["index_range"] == [0, 2]
+    for fig in fulls:
+        (rect,) = fig["layout"]["shapes"]
+        assert (rect["x0"], rect["x1"], rect["y0"], rect["y1"]) == (
+            -0.5,
+            1.5,
+            -0.5,
+            0.5,
+        )
+    assert len(crops) == len(image_figures)
+    assert all(crop.tolist() == [[1, 2]] for crop in crops)
+    assert {"bitmap_00_subset.png", "bitmap_01_Fe_subset.png"} <= _written_files(
+        tmp_path
+    )
+
+
 def test_export_leaves_the_selection_off_the_images_when_asked(
     inspector, image_figures, spectrum_figure, spectrum_metadata, monkeypatch
 ):

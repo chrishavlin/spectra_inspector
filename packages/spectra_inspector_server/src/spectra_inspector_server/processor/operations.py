@@ -34,6 +34,28 @@ if TYPE_CHECKING:
 _DEFAULT_CHUNKSIZE = 128
 
 
+class IndexRangeError(ValueError):
+    """An index range that does not lie within its axis."""
+
+
+def validate_index_range(
+    index_range: tuple[int, int], size: int, axis: int
+) -> tuple[int, int]:
+    """The half-open ``(start, stop)`` range as given, checked to satisfy
+    ``0 <= start <= stop <= size`` for an axis of ``size`` elements. A range
+    past the axis is the caller's error, not something to clip: a box drawn
+    out over the image's edge is clipped to it before it is asked for. An
+    empty range (``start == stop``) is allowed and sums to nothing."""
+    start, stop = (int(v) for v in index_range)
+    if not 0 <= start <= stop <= size:
+        msg = (
+            f"index{axis} range ({start}, {stop}) must satisfy "
+            f"0 <= start <= stop <= {size}"
+        )
+        raise IndexRangeError(msg)
+    return start, stop
+
+
 class OperationEDAXStateHandler:
     """Loads EDAX datasets on demand and reduces them for the API.
 
@@ -113,11 +135,12 @@ class OperationEDAXStateHandler:
         valid_index_ranges: list[tuple[int, int]] = []
         physical_ranges: list[tuple[float, float]] = []
         for index_id, index_range in enumerate(input_index_ranges):
+            size = edax_ds.axes_by_index[index_id].size
             valid_range: tuple[int, int]
             if index_range is None:
-                valid_range = (0, edax_ds.axes_by_index[index_id].size)
+                valid_range = (0, size)
             else:
-                valid_range = (index_range[0], index_range[1])
+                valid_range = validate_index_range(index_range, size, index_id)
             valid_index_ranges.append(valid_range)
             physical_ranges.append(
                 edax_ds.axis_range(index_id, valid_range[0], valid_range[1])
@@ -577,6 +600,14 @@ class OperationEDAXStateHandler:
             metadata=_make_serializeable_dict(edax_ds.metadata),
             original_metadata=_make_serializeable_dict(edax_ds.original_metadata),
         )
+
+    def get_axis_sizes(
+        self, sample_name: str, spectrum_only: bool = False
+    ) -> tuple[int, ...]:
+        """The size of each axis of a sample, in array order, read from the
+        header without loading the data."""
+        ds = self._load(sample_name, metadata_only=True, spectrum_only=spectrum_only)
+        return tuple(ds.axes_by_index[i].size for i in sorted(ds.axes_by_index))
 
     def get_refined_metadata(
         self, sample_name: str, spectrum_only: bool = False
