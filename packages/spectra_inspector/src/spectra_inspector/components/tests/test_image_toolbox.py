@@ -12,11 +12,21 @@ from spectra_inspector.components.image_toolbox import (
     POLYGON_CONTROLS_ID,
     POLYGON_INSTRUCTIONS,
     POLYGON_NOTE_ID,
+    SCALEBAR_COLOR_ID,
+    SCALEBAR_FONTSIZE_ID,
+    SCALEBAR_ROW,
+    SCALEBAR_SHOW_ID,
     SUBMIT_SHAPE,
     image_toolbox_layout,
 )
 from spectra_inspector.components.tests.test_toolbox import find, rows_of
 from spectra_inspector.components.toolbox import ZOOM_FACTORS
+from spectra_inspector.utilities.scalebar_style import (
+    DEFAULT_SCALEBAR_COLOR,
+    DEFAULT_SCALEBAR_FONTSIZE,
+    MAX_SCALEBAR_FONTSIZE,
+    MIN_SCALEBAR_FONTSIZE,
+)
 from spectra_inspector.utilities.view_sync import POLYGON_TOOL, empty_view, tool_layout
 
 
@@ -32,7 +42,7 @@ def test_ids_are_the_page_wide_spellings():
 
 
 def test_rows():
-    first, second, third = IMAGE_TOOLBOX.rows
+    first, second, third, fourth = IMAGE_TOOLBOX.rows
     assert first.label == "Extract Spectrum"
     assert first.groups == ((DRAW_BOX.id, DRAW_POLYGON.id, ERASE_SHAPE.id),)
     assert second.label == "View Controls"
@@ -40,16 +50,37 @@ def test_rows():
     assert third.label == "Panel Mode"
     assert third.groups == ()
     assert IMAGE_TOOLBOX.rows[PANEL_MODE_ROW] is third
+    assert fourth.label == "Scalebar"
+    assert fourth.groups == ()
+    assert IMAGE_TOOLBOX.rows[SCALEBAR_ROW] is fourth
     grouped = [b for row in IMAGE_TOOLBOX.rows for g in row.groups for b in g]
     assert ADD_IMAGE.id not in grouped
     assert SUBMIT_SHAPE.id not in grouped
+
+
+def test_layout_fills_the_scalebar_row_with_its_controls():
+    card, _ = image_toolbox_layout()
+    row = rows_of(card)[SCALEBAR_ROW]
+    (show,) = find(row, lambda c: getattr(c, "id", None) == SCALEBAR_SHOW_ID)
+    (color,) = find(row, lambda c: getattr(c, "id", None) == SCALEBAR_COLOR_ID)
+    (size,) = find(row, lambda c: getattr(c, "id", None) == SCALEBAR_FONTSIZE_ID)
+    # drawn by default, in the shared default colour and label size
+    assert isinstance(show, dbc.Checkbox)
+    assert show.value is True
+    assert color.type == "color"
+    assert color.value == DEFAULT_SCALEBAR_COLOR
+    assert size.type == "number"
+    assert size.value == DEFAULT_SCALEBAR_FONTSIZE
+    assert (size.min, size.max) == (MIN_SCALEBAR_FONTSIZE, MAX_SCALEBAR_FONTSIZE)
+    # plain ids, so the page's callbacks can name them
+    assert SCALEBAR_SHOW_ID.startswith(IMAGE_TOOLBOX.ids.id_type_base)
 
 
 def test_layout_puts_add_at_the_right_of_the_first_row():
     card, ids = image_toolbox_layout()
     assert ids.div == IMAGE_TOOLBOX.ids.div
     rows = rows_of(card)
-    assert len(rows) == 3
+    assert len(rows) == 4
     add_button = rows[0].children[-2]
     assert add_button.id == ids.button_id(ADD_IMAGE.id)
     assert "ms-auto" in add_button.className

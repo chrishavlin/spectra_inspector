@@ -1,8 +1,6 @@
 import pytest
 
 from spectra_inspector.components.data_export_panel import (
-    MAX_SCALEBAR_FONTSIZE,
-    MIN_SCALEBAR_FONTSIZE,
     RESTORE_SYMBOL,
     SUMMARY_WEIGHT_KEYS,
     WEIGHTS_UNAVAILABLE_MSG,
@@ -13,12 +11,6 @@ from spectra_inspector.components.data_export_panel import (
     get_formatted_element_weights,
     get_layout,
     outline_style,
-    scalebar_style,
-)
-from spectra_inspector.utilities.scalebar_style import (
-    DEFAULT_SCALEBAR_COLOR,
-    DEFAULT_SCALEBAR_FONTSIZE,
-    scalebarStyle,
 )
 from spectra_inspector.utilities.selection import DEFAULT_OUTLINE_COLOR, outlineStyle
 
@@ -95,44 +87,17 @@ def _find(component, id_):
     return None
 
 
-def test_figure_settings_show_the_scalebar_row_and_hide_the_outline_row():
+def test_figure_settings_start_hidden_with_the_outline_drawn_in_white():
     layout, ids = get_layout()
     settings = _find(layout, ids.figuresettings)
     assert settings is not None
-    assert not getattr(settings, "hidden", False)
-
-    # the scalebar is drawn by default, in white with a 10 pt label
-    assert _find(settings, ids.includescalebar).value is True
-    picker = _find(settings, ids.scalebarcolor)
-    assert picker.type == "color"
-    assert picker.value == DEFAULT_SCALEBAR_COLOR
-    size = _find(settings, ids.scalebarfontsize)
-    assert size.type == "number"
-    assert size.value == DEFAULT_SCALEBAR_FONTSIZE
-    assert (size.min, size.max) == (MIN_SCALEBAR_FONTSIZE, MAX_SCALEBAR_FONTSIZE)
-
-    # the outline row waits for a selection
-    outline_row = _find(settings, ids.outlinerow)
-    assert outline_row.hidden is True
-    assert _find(outline_row, ids.includeoutline).value is True
+    assert settings.hidden is True
+    assert _find(settings, ids.includeoutline).value is True
     for prop in ("outlinelinecolor", "outlinedotcolor"):
-        picker = _find(outline_row, getattr(ids, prop))
+        picker = _find(settings, getattr(ids, prop))
         assert picker.type == "color"
         assert picker.value == DEFAULT_OUTLINE_COLOR
         assert picker.className == "form-control-color"
-
-
-def test_scalebar_style_reads_the_controls_and_defaults():
-    assert scalebar_style(None, None, None) == scalebarStyle(True, "#ffffff", 10)
-    assert scalebar_style(False, "#000000", 14) == scalebarStyle(False, "#000000", 14)
-    # a number input reports a string in some browsers
-    assert scalebar_style(True, "#000000", "12").fontsize == 12
-    # a colour the picker would not report, a cleared size or one outside the
-    # input's range all mean the default
-    assert scalebar_style(True, "red", "").color == "#ffffff"
-    assert scalebar_style(True, "red", "").fontsize == 10
-    assert scalebar_style(True, None, MAX_SCALEBAR_FONTSIZE + 1).fontsize == 10
-    assert scalebar_style(True, None, 0).fontsize == 10
 
 
 def test_apply_zeroed_elements():

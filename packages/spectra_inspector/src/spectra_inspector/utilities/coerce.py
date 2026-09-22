@@ -175,21 +175,26 @@ def _draw_paper_spanning_shapes(ax, layout: dict) -> None:
 
 def _find_scalebar_trace(data: list[dict]) -> dict | None:
     """The scalebar's line trace: the one tagged as such, else the first line
-    trace after the image (how figures were built before the tag)."""
+    trace after the image (how figures were built before the tag). None when
+    the panel has hidden it."""
     tagged = next((trace for trace in data if is_scalebar_trace(trace)), None)
-    if tagged is not None:
-        return tagged
-    return next(
-        (trace for trace in data[1:] if trace.get("type") in {"scatter", "line"}),
-        None,
-    )
+    if tagged is None:
+        tagged = next(
+            (trace for trace in data[1:] if trace.get("type") in {"scatter", "line"}),
+            None,
+        )
+    if tagged is None or tagged.get("visible") is False:
+        return None
+    return tagged
 
 
 def _find_scalebar_annotation(annotations: list[dict]) -> dict | None:
     tagged = next((a for a in annotations if is_scalebar_annotation(a)), None)
-    if tagged is not None:
-        return tagged
-    return annotations[0] if annotations else None
+    if tagged is None and annotations:
+        tagged = annotations[0]
+    if tagged is None or tagged.get("visible") is False:
+        return None
+    return tagged
 
 
 # the bar's thickness as a fraction of the image's height, so it comes out

@@ -24,12 +24,19 @@ from spectra_inspector.components.toolbox import (
     ZOOM,
     ZOOM_IN,
     ZOOM_OUT,
+    color_input,
     icon_button,
     toolbox_card,
     toolboxLayoutIDs,
     toolboxRow,
     toolboxSpec,
     toolButton,
+)
+from spectra_inspector.utilities.scalebar_style import (
+    DEFAULT_SCALEBAR_COLOR,
+    DEFAULT_SCALEBAR_FONTSIZE,
+    MAX_SCALEBAR_FONTSIZE,
+    MIN_SCALEBAR_FONTSIZE,
 )
 from spectra_inspector.utilities.view_sync import POLYGON_TOOL
 
@@ -86,14 +93,54 @@ IMAGE_TOOLBOX = toolboxSpec(
             "Panel Mode",
             "One element map per panel, or one panel blending up to three maps",
         ),
+        toolboxRow(
+            "Scalebar",
+            "The scalebar drawn on every panel, and on the exported images",
+        ),
     ),
     # what get_new_im puts on a fresh figure
     default_tool=DRAW_BOX.id,
 )
 
 
-# the row the page's mode switch is added to
+# the row the page's mode switch is added to, and the one the scalebar's
+# controls fill
 PANEL_MODE_ROW = 2
+SCALEBAR_ROW = 3
+
+# the scalebar controls: shown or not, colour and label size, on every panel
+# and in the export alike (``restyle_scalebar`` on the inspector page)
+SCALEBAR_SHOW_ID = IMAGE_TOOLBOX.ids.full_id("-scalebar-show")
+SCALEBAR_COLOR_ID = IMAGE_TOOLBOX.ids.full_id("-scalebar-color")
+SCALEBAR_FONTSIZE_ID = IMAGE_TOOLBOX.ids.full_id("-scalebar-fontsize")
+
+
+def scalebar_controls() -> list[Any]:
+    """The Scalebar row's controls, left to right: the show switch, the
+    colour picker and the label's size in points."""
+    return [
+        dbc.Checkbox(
+            id=SCALEBAR_SHOW_ID,
+            value=True,
+            label="show",
+            className="mb-0 small",
+        ),
+        html.Span("color", className="small"),
+        color_input(SCALEBAR_COLOR_ID, DEFAULT_SCALEBAR_COLOR),
+        html.Span("text size", className="small"),
+        dbc.Input(
+            id=SCALEBAR_FONTSIZE_ID,
+            type="number",
+            min=MIN_SCALEBAR_FONTSIZE,
+            max=MAX_SCALEBAR_FONTSIZE,
+            step=1,
+            value=DEFAULT_SCALEBAR_FONTSIZE,
+            size="sm",
+            debounce=True,
+            style={"width": "4.5rem"},
+        ),
+    ]
+
 
 # the polygon tool's controls: shown only while that tool is pressed
 POLYGON_CONTROLS_ID = IMAGE_TOOLBOX.ids.full_id("-polygon-controls")
@@ -134,5 +181,6 @@ def image_toolbox_layout(
     extras = {
         0: [polygon_controls(), add_button, polygon_note()],
         PANEL_MODE_ROW: mode_controls or [],
+        SCALEBAR_ROW: scalebar_controls(),
     }
     return toolbox_card(IMAGE_TOOLBOX, extras=extras), IMAGE_TOOLBOX.ids

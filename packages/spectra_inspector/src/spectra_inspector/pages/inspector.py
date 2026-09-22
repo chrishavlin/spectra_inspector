@@ -64,9 +64,12 @@ from spectra_inspector.components.image_toolbox import (
     IMAGE_TOOLBOX,
     POLYGON_CONTROLS_ID,
     POLYGON_NOTE_ID,
+    SCALEBAR_COLOR_ID,
+    SCALEBAR_FONTSIZE_ID,
+    SCALEBAR_SHOW_ID,
     SUBMIT_SHAPE,
 )
-from spectra_inspector.components.scalebar import scalebarHandler
+from spectra_inspector.components.scalebar import apply_style_to_patch, scalebarHandler
 from spectra_inspector.components.spectrum_toolbox import (
     SPECTRUM_TOOLBOX,
     spectrum_toolbox_layout,
@@ -100,7 +103,12 @@ from spectra_inspector.utilities.peak_windows import (
     apply_peak_windows,
     peak_windows,
 )
-from spectra_inspector.utilities.scalebar_style import scalebar_styled, scalebarStyle
+from spectra_inspector.utilities.scalebar_style import (
+    scalebar_style,
+    scalebar_style_from_store,
+    scalebar_styled,
+    scalebarStyle,
+)
 from spectra_inspector.utilities.scaling import get_image_shape
 from spectra_inspector.utilities.selection import (
     Selection,
@@ -145,6 +153,12 @@ dash.register_page(__name__, order=1, path_template="/inspector/<sample_name>")
 NUMBER_OF_INITIAL_FIGURES = 3
 
 scalebar_handler = scalebarHandler()
+
+
+def _scalebar(scalebar_store: dict | None) -> scalebarHandler:
+    """The scalebar handler drawing as the toolbox's scalebar store says."""
+    return scalebar_handler.styled(scalebar_style_from_store(scalebar_store))
+
 
 secondDatasetSelector = datasetSelectorLayoutIDs(index=1)
 
@@ -245,6 +259,8 @@ class inspectorIDs(BaseModel):
     # where the click listener in assets/toolbox.js reports polygon clicks
     polygon_click_store: str = "polygon-click"
     view_store: str = "image-view-store"
+    # how the panels and the export draw the scalebar (the toolbox's controls)
+    scalebar_style_store: str = "scalebar-style"
     processed_graph_id_store: str = "processed-graph-ids"
     graph_id_store: str = "graph-id-store"
     full_spectrum_store: str = "full-spectrum-store"
@@ -302,6 +318,11 @@ def _get_div_store() -> html.Div:
                 id=_IDS.view_store,  # zoom + tool shared by the image panels
                 storage_type="memory",
                 data=empty_view(),
+            ),
+            dcc.Store(
+                id=_IDS.scalebar_style_store,
+                storage_type="memory",
+                data=scalebarStyle().to_store(),
             ),
             dcc.Store(
                 id=_IDS.spectrum_view_store,
@@ -1054,9 +1075,7 @@ def export_msa(
     State(_dataExportIDS.includeoutline, "value"),
     State(_dataExportIDS.outlinelinecolor, "value"),
     State(_dataExportIDS.outlinedotcolor, "value"),
-    State(_dataExportIDS.includescalebar, "value"),
-    State(_dataExportIDS.scalebarcolor, "value"),
-    State(_dataExportIDS.scalebarfontsize, "value"),
+    State(_IDS.scalebar_style_store, "data"),
     prevent_initial_call=True,
     running=[
         (Output(_dataExportIDS.exportsummary, "disabled"), True, False),
@@ -1094,9 +1113,7 @@ def export_summary(
     include_outline: bool | None = None,
     outline_line_color: str | None = None,
     outline_dot_color: str | None = None,
-    include_scalebar: bool | None = None,
-    scalebar_color: str | None = None,
-    scalebar_fontsize: float | None = None,
+    scalebar_store: dict | None = None,
 ):
     """Write the summary export: the spectrum plus, for a map, every image
     panel (and its box subset). A spectrum-only dataset has no images, so the
@@ -1141,9 +1158,7 @@ def export_summary(
         style = data_export_panel.outline_style(
             include_outline, outline_line_color, outline_dot_color
         )
-        scalebar = data_export_panel.scalebar_style(
-            include_scalebar, scalebar_color, scalebar_fontsize
-        )
+        scalebar = scalebar_style_from_store(scalebar_store)
         figs_to_write.update(
             _image_figures_to_write(user_store, panels, shapes_store, style, scalebar)
         )
@@ -1338,6 +1353,7 @@ def _image_figures_to_write(
     (``scalebar_styled``) rather than as the panels colour it."""
     style = style or outlineStyle()
     scalebar = scalebar or scalebarStyle()
+    handler = scalebar_handler.styled(scalebar)
 
     def styled(figure: dict, shapes: list[dict]) -> dict:
         return scalebar_styled(_with_shapes(figure, shapes), scalebar)
@@ -1387,7 +1403,7 @@ def _image_figures_to_write(
                 rgb,
                 panel.channels,
                 md,
-                scalebar_handler=scalebar_handler,
+                scalebar_handler=handler,
                 shapes=subset_shapes,
             )
             figs_to_write[subset_name] = plotly_to_matplotlib(
@@ -1407,7 +1423,7 @@ def _image_figures_to_write(
             panel.energy_range,
             panel.colormap,
             im,
-            scalebar_handler=scalebar_handler,
+            scalebar_handler=handler,
             zmin=zmin,
             zmax=zmax,
             shapes=subset_shapes,
@@ -1454,6 +1470,7 @@ def _active_shapes(shapes_store: dict | None) -> list[dict]:
     State({"type": _imageIDS.graph, "index": ALL}, "figure"),
     State(_IDS.view_store, "data"),
     State(_IDS.shapes_store, "data"),
+    State(_IDS.scalebar_style_store, "data"),
     running=[
         (Output("full-im-container-loading", "display"), "show", "hide"),
         (Output(_ADD_IMAGE_ID, "disabled"), True, False),
@@ -1477,6 +1494,7 @@ def update_graph_figure(
     fig_list: list,
     view_store: dict | None,
     shapes_store: dict | None,
+    scalebar_store: dict | None = None,
 ):
     """Build image figures: new panels, a refreshed panel, or a reset of the
     shared view.
@@ -1504,6 +1522,7 @@ def update_graph_figure(
     user_store = UserStore(**user_store_dict)
     view = ensure_view(view_store)
     shapes = _active_shapes(shapes_store)
+    scalebar = _scalebar(scalebar_store)
     no_updates = [no_update] * len(fig_list)
 
     triggered_id = ctx.triggered_id
@@ -1559,7 +1578,7 @@ def update_graph_figure(
                 slider_range_list[pos],
                 colormap,
                 im_data=im_array,
-                scalebar_handler=scalebar_handler,
+                scalebar_handler=scalebar,
                 md=md,
                 view=view,
                 shapes=shapes,
@@ -1580,7 +1599,7 @@ def update_graph_figure(
         patches = list(no_updates)
         for pos, graph_id in enumerate(graph_ids):
             if _graph_dict(graph_id["index"]) in processed_graph_store["graph_ids"]:
-                patches[pos] = _view_patch(view, md)
+                patches[pos] = _view_patch(view, md, scalebar)
         return patches, no_update, view
 
     # Removing a panel also fires this callback, with every remaining panel's
@@ -1605,7 +1624,7 @@ def update_graph_figure(
         user_store,
         slider_range_list[pos],
         colormap,
-        scalebar_handler=scalebar_handler,
+        scalebar_handler=scalebar,
         view=view,
         shapes=shapes,
     )
@@ -1632,6 +1651,7 @@ def update_graph_figure(
     State("sample-name", "children"),
     State(_IDS.view_store, "data"),
     State(_IDS.shapes_store, "data"),
+    State(_IDS.scalebar_style_store, "data"),
     running=[
         (Output("full-im-container-loading", "display"), "show", "hide"),
         (Output(_ADD_IMAGE_ID, "disabled"), True, False),
@@ -1659,6 +1679,7 @@ def update_composite_figure(
     sample_name: str,
     view_store: dict | None,
     shapes_store: dict | None,
+    scalebar_store: dict | None = None,
 ):
     """Build composite figures: every new composite panel, or the one whose
     Apply was clicked.
@@ -1744,7 +1765,7 @@ def update_composite_figure(
             specs.get(index, []),
             panel_arrays,
             md,
-            scalebar_handler=scalebar_handler,
+            scalebar_handler=_scalebar(scalebar_store),
             view=view,
             shapes=shapes,
         )
@@ -1798,11 +1819,16 @@ def recolor_image(
     return patches
 
 
-def _view_patch(view: dict, md: "CombinedMetadata | None") -> Patch:
-    """A figure patch moving a panel to the shared view, scalebar included."""
+def _view_patch(
+    view: dict,
+    md: "CombinedMetadata | None",
+    scalebar: scalebarHandler | None = None,
+) -> Patch:
+    """A figure patch moving a panel to the shared view, scalebar included,
+    drawn by ``scalebar`` (the toolbox's style) or the default handler."""
     patch = apply_axes_to_patch(Patch(), view)
     if md is not None:
-        trace, annotation = scalebar_handler.get_pieces(
+        trace, annotation = (scalebar or scalebar_handler).get_pieces(
             md,
             x_range=sorted_axis_range(view, "xaxis"),
             y_range=sorted_axis_range(view, "yaxis"),
@@ -1823,6 +1849,7 @@ def _view_patch(view: dict, md: "CombinedMetadata | None") -> Patch:
     State(_IDS.shapes_store, "data"),
     State(USER_STORE_DIV_ID, "data"),
     State("sample-name", "children"),
+    State(_IDS.scalebar_style_store, "data"),
     prevent_initial_call=True,
 )
 def sync_image_views(
@@ -1833,6 +1860,7 @@ def sync_image_views(
     shapes_store: dict | None,
     user_store_dict: dict,
     sample_name: str,
+    scalebar_store: dict | None = None,
 ):
     """Mirror a zoom, pan, tool change or box annotation onto every panel.
 
@@ -1878,11 +1906,12 @@ def sync_image_views(
         md = fetch_metadata()
 
     processed = processed_graph_store.get("graph_ids", [])
+    scalebar = _scalebar(scalebar_store)
     patches = list(no_updates)
     for ipos, graph_id in enumerate(graph_ids):
         if _graph_dict(graph_id["index"]) not in processed:
             continue
-        patch = _view_patch(view, md) if axes_changed else Patch()
+        patch = _view_patch(view, md, scalebar) if axes_changed else Patch()
         if dragmode_changed:
             patch["layout"]["dragmode"] = view["dragmode"]
         if shapes_changed:
@@ -1938,9 +1967,11 @@ def action_results(
     graph_ids: list,
     processed_graph_store: dict,
     md: "CombinedMetadata",
+    scalebar: scalebarHandler | None = None,
 ) -> tuple[list, object, object]:
     """The figure patches, view and shapes an action leaves behind (the last
-    two ``no_update`` when untouched)."""
+    two ``no_update`` when untouched); a zoom redraws the scalebar with
+    ``scalebar``."""
     no_updates: list = [no_update] * len(graph_ids)
     positions = _processed_positions(graph_ids, processed_graph_store)
     nothing = (no_updates, no_update, no_update)
@@ -1961,7 +1992,7 @@ def action_results(
         zoomed = zoom_view(ensure_view(view), ZOOM_FACTORS[action], get_image_shape(md))
         patches = list(no_updates)
         for pos in positions:
-            patches[pos] = _view_patch(zoomed, md)
+            patches[pos] = _view_patch(zoomed, md, scalebar)
         return patches, zoomed, no_update
 
     return nothing
@@ -2016,6 +2047,7 @@ def highlight_image_tool(view_store: dict | None, button_ids: list[dict]):
     State(_IDS.shapes_store, "data"),
     State(USER_STORE_DIV_ID, "data"),
     State("sample-name", "children"),
+    State(_IDS.scalebar_style_store, "data"),
     prevent_initial_call=True,
 )
 def run_image_action(
@@ -2026,6 +2058,7 @@ def run_image_action(
     shapes_store: dict | None,
     user_store_dict: dict,
     sample_name: str,
+    scalebar_store: dict | None = None,
 ):
     """Zoom in, zoom out or erase the box on every panel at once.
 
@@ -2041,7 +2074,13 @@ def run_image_action(
     md = UserStore(**user_store_dict).conditionally_fetch_metadata()
     assert md is not None
     return action_results(
-        action, view_store, shapes_store, graph_ids, processed_graph_store, md
+        action,
+        view_store,
+        shapes_store,
+        graph_ids,
+        processed_graph_store,
+        md,
+        scalebar=_scalebar(scalebar_store),
     )
 
 
@@ -2179,24 +2218,40 @@ def toggle_polygon_controls(view_store: dict | None, shapes_store: dict | None):
 
 
 @callback(
-    Output(_dataExportIDS.outlinerow, "hidden"),
+    Output(_dataExportIDS.figuresettings, "hidden"),
     Input(_IDS.shapes_store, "data"),
 )
 def toggle_figure_export_settings(shapes_store: dict | None) -> bool:
-    """The selection-outline export settings only matter once a box or a
-    polygon is the selection the export would draw; a polygon still being
-    placed is not."""
+    """The figure export settings only matter once a box or a polygon is the
+    selection the export would draw; a polygon still being placed is not."""
     return selection_from_store(shapes_store) is None
 
 
 @callback(
-    Output(_dataExportIDS.figuresettings, "hidden"),
-    Input(_IDS.image_section, "hidden"),
+    Output({"type": _imageIDS.graph, "index": ALL}, "figure", allow_duplicate=True),
+    Output(_IDS.scalebar_style_store, "data"),
+    Input(SCALEBAR_SHOW_ID, "value"),
+    Input(SCALEBAR_COLOR_ID, "value"),
+    Input(SCALEBAR_FONTSIZE_ID, "value"),
+    State({"type": _imageIDS.graph, "index": ALL}, "id"),
+    State(_IDS.processed_graph_id_store, "data"),
+    prevent_initial_call=True,
 )
-def toggle_figure_export_settings_with_images(image_section_hidden: bool) -> bool:
-    """The figure export settings describe the exported images, so they go
-    with the image section in spectrum-only mode."""
-    return bool(image_section_hidden)
+def restyle_scalebar(
+    show: bool | None,
+    color: str | None,
+    fontsize: float | str | None,
+    graph_ids: list[dict[str, str | int]],
+    processed_graph_store: dict,
+):
+    """The toolbox's scalebar controls restyle the bar and its label on every
+    built panel, as a layout patch, and are remembered in the scalebar store
+    that every figure builder and the export read."""
+    style = scalebar_style(show, color, fontsize)
+    patches: list = [no_update] * len(graph_ids)
+    for pos in _processed_positions(graph_ids, processed_graph_store):
+        patches[pos] = apply_style_to_patch(Patch(), style)
+    return patches, style.to_store()
 
 
 @callback(

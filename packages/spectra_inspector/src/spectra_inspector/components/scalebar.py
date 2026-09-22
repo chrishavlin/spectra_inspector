@@ -1,16 +1,40 @@
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from typing import Any
 
 import numpy as np
+from dash import Patch
 from plotly.graph_objects import Figure
 from unyt import unyt_quantity
 
 from spectra_inspector.utilities.model import CombinedMetadata, EDAX_axis
 from spectra_inspector.utilities.scalebar_style import (
+    DEFAULT_SCALEBAR_COLOR,
+    DEFAULT_SCALEBAR_FONTSIZE,
     SCALEBAR_ANNOTATION_NAME,
     SCALEBAR_META_KEY,
+    scalebarStyle,
 )
 from spectra_inspector.utilities.scaling import get_axis
+
+
+def format_length(length: unyt_quantity) -> str:
+    """A length as the scalebar labels it: ``100 μm`` for a whole number,
+    ``2.5 μm`` otherwise, never a trailing ``.0``."""
+    value = float(length.value)
+    number = f"{int(value)}" if value.is_integer() else f"{value:g}"
+    return f"{number} {length.units}"
+
+
+def apply_style_to_patch(patch: Patch, style: scalebarStyle) -> Patch:
+    """Restyle the scalebar of a built panel in place: its trace is the
+    figure's second and its label the first annotation (``scalebarHandler``
+    always draws both, hidden or not, so a patch can reach them)."""
+    patch["data"][1]["visible"] = style.show
+    patch["data"][1]["line"]["color"] = style.color
+    patch["layout"]["annotations"][0]["visible"] = style.show
+    patch["layout"]["annotations"][0]["font"]["color"] = style.color
+    patch["layout"]["annotations"][0]["font"]["size"] = style.fontsize
+    return patch
 
 
 def get_pixel_scalebar(ax: EDAX_axis, scalebar_length: unyt_quantity) -> int:
@@ -58,11 +82,18 @@ class scalebarHandler:
     pixel_height: int = 5
     pixel_offset_factor: float = 0.01
     pixel_offset_initial: int = 5
-    color: str = "green"
-    fontsize: int = 12
+    color: str = DEFAULT_SCALEBAR_COLOR
+    fontsize: int = DEFAULT_SCALEBAR_FONTSIZE
+    visible: bool = True
     auto_rescale: bool = True
     # the most of the visible width the bar may span before it is shrunk
     max_view_fraction: float = 0.4
+
+    def styled(self, style: scalebarStyle) -> "scalebarHandler":
+        """This handler drawing the bar as ``style`` says."""
+        return replace(
+            self, color=style.color, fontsize=style.fontsize, visible=style.show
+        )
 
     @property
     def unyt_width(self) -> unyt_quantity:
@@ -89,9 +120,10 @@ class scalebarHandler:
             "x": [x0, x0 + scalebar_wid_pixels],
             "y": [y0, y0],
             "type": "scatter",
-            "name": f"{width_.value} {width_.units}",
+            "name": format_length(width_),
             "line": {"width": self.pixel_height, "color": self.color},
             "meta": {SCALEBAR_META_KEY: True},
+            "visible": self.visible,
         }
 
         return new_trace
@@ -142,9 +174,12 @@ class scalebarHandler:
             "name": SCALEBAR_ANNOTATION_NAME,
             "x": text_x_loc,
             "y": scalebar_pos["y"],
-            "text": f"{override_width}",
+            "text": format_length(override_width),
+            "visible": self.visible,
             "showarrow": False,
-            "yshift": -10,
+            # the label hangs from just under the bar, whatever its font size
+            "yanchor": "top",
+            "yshift": -(self.pixel_height / 2 + 4),
             "font": {
                 "size": self.fontsize,
                 "color": self.color,

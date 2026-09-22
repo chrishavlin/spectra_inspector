@@ -5,15 +5,11 @@ import dash_bootstrap_components as dbc
 from dash import Input, Output, State, callback, dcc, html
 
 from spectra_inspector.components.layout_ids import indexedLayoutIDMapper
+from spectra_inspector.components.toolbox import color_input
 from spectra_inspector.utilities.peak_windows import (
     element_swatch,
     spectrum_element_colors,
     visible_elements,
-)
-from spectra_inspector.utilities.scalebar_style import (
-    DEFAULT_SCALEBAR_COLOR,
-    DEFAULT_SCALEBAR_FONTSIZE,
-    scalebarStyle,
 )
 from spectra_inspector.utilities.selection import DEFAULT_OUTLINE_COLOR, outlineStyle
 
@@ -36,8 +32,8 @@ RESTORE_SYMBOL = "\u21ba"
 _HEX_COLOR = re.compile(r"#[0-9a-fA-F]{6}")
 
 
-def _hex_or_default(color: str | None, default: str = DEFAULT_OUTLINE_COLOR) -> str:
-    return color if color and _HEX_COLOR.fullmatch(color) else default
+def _hex_or_default(color: str | None) -> str:
+    return color if color and _HEX_COLOR.fullmatch(color) else DEFAULT_OUTLINE_COLOR
 
 
 def outline_style(
@@ -55,36 +51,6 @@ def outline_style(
     )
 
 
-# the label sizes (points) the scalebar text-size input accepts
-MIN_SCALEBAR_FONTSIZE = 4
-MAX_SCALEBAR_FONTSIZE = 40
-
-
-def scalebar_style(
-    include: bool | None,
-    color: str | None,
-    fontsize: float | str | None,
-) -> scalebarStyle:
-    """The scalebar export settings as the export draws them: an unset control
-    or a value that is not a ``#rrggbb`` colour or a size within the input's
-    range means its default."""
-    size = DEFAULT_SCALEBAR_FONTSIZE
-    try:
-        candidate = round(float(fontsize))  # type: ignore[arg-type]
-    except (TypeError, ValueError):
-        candidate = None
-    if (
-        candidate is not None
-        and MIN_SCALEBAR_FONTSIZE <= candidate <= MAX_SCALEBAR_FONTSIZE
-    ):
-        size = candidate
-    return scalebarStyle(
-        show=True if include is None else bool(include),
-        color=_hex_or_default(color, DEFAULT_SCALEBAR_COLOR),
-        fontsize=size,
-    )
-
-
 class dataExportPanelIDS(indexedLayoutIDMapper):
     prop_names: tuple[str, ...] = (
         "div",
@@ -98,13 +64,9 @@ class dataExportPanelIDS(indexedLayoutIDMapper):
         "resetweights",
         "zeroelement",
         "figuresettings",
-        "outlinerow",
         "includeoutline",
         "outlinelinecolor",
         "outlinedotcolor",
-        "includescalebar",
-        "scalebarcolor",
-        "scalebarfontsize",
     )
 
     def __init__(
@@ -176,103 +138,47 @@ class dataExportPanelIDS(indexedLayoutIDMapper):
     def outlinedotcolor(self) -> str:
         return self.full_id("-outlinedotcolor")
 
-    @property
-    def outlinerow(self) -> str:
-        return self.full_id("-outlinerow")
 
-    @property
-    def includescalebar(self) -> str:
-        return self.full_id("-includescalebar")
-
-    @property
-    def scalebarcolor(self) -> str:
-        return self.full_id("-scalebarcolor")
-
-    @property
-    def scalebarfontsize(self) -> str:
-        return self.full_id("-scalebarfontsize")
-
-
-def _color_input(id_: str, value: str = DEFAULT_OUTLINE_COLOR) -> dbc.Input:
-    # the browser's own colour picker. "color" is not among the types dbc
-    # declares for Input, but the component hands the type straight to the
-    # <input> element and reads the value back like any other; Bootstrap's
-    # form-control-color class sizes it as a swatch.
-    return dbc.Input(
-        id=id_,
-        type="color",
-        value=value,
-        className="form-control-color",
-        debounce=True,
-    )
-
-
-def _include_checkbox(id_: str) -> dbc.Col:
-    return dbc.Col(
-        dbc.Checkbox(id=id_, value=True, className="mb-0"),
-        width="auto",
-        className="d-flex align-items-center",
-    )
+def _outline_color_input(id_: str) -> dbc.Input:
+    return color_input(id_, DEFAULT_OUTLINE_COLOR)
 
 
 def figure_settings_layout(layoutIDs: dataExportPanelIDS) -> html.Div:
     """The figure export settings: whether the exported images draw the
-    scalebar, in which colour and with how large a label, and whether they
-    draw the selected box or polygon, and in which colours. The selection
-    row is hidden until a selection exists (``toggle_figure_export_settings``
-    on the inspector page); the whole block goes with the image section in
-    spectrum-only mode."""
+    selected box or polygon, and in which colours. Hidden until a selection
+    exists (``toggle_figure_export_settings`` on the inspector page). The
+    scalebar's style is the image toolbox's, shared with the panels."""
     return html.Div(
         [
             html.H5("Figure settings", className="mt-3"),
             dbc.Row(
                 [
-                    dbc.Col("Scalebar: ", width="auto"),
-                    _include_checkbox(layoutIDs.includescalebar),
-                    dbc.Col("color", width="auto"),
+                    dbc.Col("Selection Outline: ", width="auto"),
                     dbc.Col(
-                        _color_input(layoutIDs.scalebarcolor, DEFAULT_SCALEBAR_COLOR),
-                        width="auto",
-                    ),
-                    dbc.Col("text size", width="auto"),
-                    dbc.Col(
-                        dbc.Input(
-                            id=layoutIDs.scalebarfontsize,
-                            type="number",
-                            min=MIN_SCALEBAR_FONTSIZE,
-                            max=MAX_SCALEBAR_FONTSIZE,
-                            step=1,
-                            value=DEFAULT_SCALEBAR_FONTSIZE,
-                            size="sm",
-                            debounce=True,
-                            style={"width": "5rem"},
+                        dbc.Checkbox(
+                            id=layoutIDs.includeoutline,
+                            value=True,
+                            className="mb-0",
                         ),
                         width="auto",
+                        className="d-flex align-items-center",
+                    ),
+                    dbc.Col("line color", width="auto"),
+                    dbc.Col(
+                        _outline_color_input(layoutIDs.outlinelinecolor), width="auto"
+                    ),
+                    dbc.Col("dot color", width="auto"),
+                    dbc.Col(
+                        _outline_color_input(layoutIDs.outlinedotcolor), width="auto"
                     ),
                 ],
                 justify="start",
                 align="center",
                 className="mt-1 g-2",
             ),
-            html.Div(
-                dbc.Row(
-                    [
-                        dbc.Col("Selection Outline: ", width="auto"),
-                        _include_checkbox(layoutIDs.includeoutline),
-                        dbc.Col("line color", width="auto"),
-                        dbc.Col(_color_input(layoutIDs.outlinelinecolor), width="auto"),
-                        dbc.Col("dot color", width="auto"),
-                        dbc.Col(_color_input(layoutIDs.outlinedotcolor), width="auto"),
-                    ],
-                    justify="start",
-                    align="center",
-                    className="mt-1 g-2",
-                ),
-                id=layoutIDs.outlinerow,
-                hidden=True,
-            ),
         ],
         id=layoutIDs.figuresettings,
+        hidden=True,
     )
 
 

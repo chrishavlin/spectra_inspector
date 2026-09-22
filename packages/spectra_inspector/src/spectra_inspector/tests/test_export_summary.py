@@ -546,12 +546,6 @@ def test_figure_export_settings_show_once_there_is_a_selection(inspector):
     assert hidden(inspector.polygon_store(points, points)) is False
 
 
-def test_figure_export_settings_go_with_the_image_section(inspector):
-    hidden = inspector.toggle_figure_export_settings_with_images
-    assert hidden(True) is True
-    assert hidden(False) is False
-
-
 def _browser_figure_with_scalebar() -> dict:
     """The boxed 2x2 heatmap with the scalebar as a panel draws it: a green
     bar and label, tagged for the export."""
@@ -599,8 +593,7 @@ def test_export_draws_the_scalebar_as_the_figure_settings_say(
         spectrum_figure,
         spectrum_metadata,
         shapes_store=BOX_STORE,
-        scalebar_color="#ff0000",
-        scalebar_fontsize=14,
+        scalebar_store={"show": True, "color": "#ff0000", "fontsize": 14},
     )
     # the panels' figures and the subsets built here alike: the browser's
     # green is replaced, the label resized, the bar's length left alone
@@ -625,7 +618,7 @@ def test_export_leaves_the_scalebar_off_the_images_when_asked(
         spectrum_figure,
         spectrum_metadata,
         shapes_store=BOX_STORE,
-        include_scalebar=False,
+        scalebar_store={"show": False},
     )
     assert len(fulls) == len(subsets) == len(image_figures)
     for figure in [*fulls, *subsets]:

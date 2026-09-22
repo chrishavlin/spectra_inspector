@@ -196,6 +196,31 @@ def test_plotly_to_matplotlib_draws_no_scalebar_without_a_trace():
     assert not [a for a in ax.artists if isinstance(a, AnchoredOffsetbox)]
 
 
+def test_plotly_to_matplotlib_skips_a_hidden_scalebar():
+    # a panel whose scalebar is switched off keeps the pieces, invisible
+    im_data = [[1, 2], [3, 4]]
+    fig = {
+        "data": [
+            {"type": "heatmap", "z": im_data},
+            {
+                "type": "scatter",
+                "x": [0, 1],
+                "y": [0, 0],
+                "visible": False,
+                "meta": {"scalebar": True},
+            },
+        ],
+        "layout": {
+            "annotations": [{"name": "scalebar", "text": "1 μm", "visible": False}]
+        },
+    }
+
+    mpl_fig = plotly_to_matplotlib(fig, im_data=np.asarray(im_data))
+    ax = mpl_fig.axes[0]
+
+    assert not [a for a in ax.artists if isinstance(a, AnchoredOffsetbox)]
+
+
 @pytest.mark.parametrize(
     ("color", "expected"),
     [
