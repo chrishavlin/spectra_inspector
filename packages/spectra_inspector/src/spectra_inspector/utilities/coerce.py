@@ -10,8 +10,23 @@ from matplotlib import colormaps
 from PIL import Image
 
 from spectra_inspector.logging import spectraLogger
-from spectra_inspector.utilities.matplotib_importer import Circle, Polygon, Rectangle
+from spectra_inspector.utilities.matplotib_importer import (
+    AnchoredOffsetbox,
+    AuxTransformBox,
+    Circle,
+    FontProperties,
+    Polygon,
+    Rectangle,
+    TextArea,
+    VPacker,
+    to_rgb,
+    withStroke,
+)
 from spectra_inspector.utilities.matplotib_importer import mpl_pyplot as plt
+from spectra_inspector.utilities.scalebar_style import (
+    is_scalebar_annotation,
+    is_scalebar_trace,
+)
 
 _PATH_NUMBER = re.compile(r"[-+]?(?:\d+\.?\d*|\.\d+)(?:[eE][-+]?\d+)?")
 
@@ -158,6 +173,93 @@ def _draw_paper_spanning_shapes(ax, layout: dict) -> None:
         )
 
 
+def _find_scalebar_trace(data: list[dict]) -> dict | None:
+    """The scalebar's line trace: the one tagged as such, else the first line
+    trace after the image (how figures were built before the tag)."""
+    tagged = next((trace for trace in data if is_scalebar_trace(trace)), None)
+    if tagged is not None:
+        return tagged
+    return next(
+        (trace for trace in data[1:] if trace.get("type") in {"scatter", "line"}),
+        None,
+    )
+
+
+def _find_scalebar_annotation(annotations: list[dict]) -> dict | None:
+    tagged = next((a for a in annotations if is_scalebar_annotation(a)), None)
+    if tagged is not None:
+        return tagged
+    return annotations[0] if annotations else None
+
+
+# the bar's thickness as a fraction of the image's height, so it comes out
+# the same on the page whatever the map's pixel count
+SCALEBAR_HEIGHT_FRACTION = 0.012
+
+
+def contrasting_color(color) -> str:
+    """Black or white, whichever stands out against ``color``."""
+    r, g, b = to_rgb(color)
+    luminance = 0.299 * r + 0.587 * g + 0.114 * b
+    return "black" if luminance > 0.5 else "white"
+
+
+def _draw_scalebar(
+    ax, trace: dict, annotation: dict | None, n_rows: int
+) -> AnchoredOffsetbox | None:
+    """Draw the scalebar as an anchored box in the image's upper-left corner:
+    the bar (its length in pixels from the trace) with the label centred
+    below it and a gap between the two, both in the trace's colour and the
+    label at the annotation's font size, edged in black or white so they read
+    on any colormap."""
+    x = trace.get("x", [])
+    if len(x) < 2:
+        return None
+    length = float(np.max(x) - np.min(x))
+    if length <= 0:
+        return None
+
+    color = mpl_color((trace.get("line") or {}).get("color"), "white")
+    font = (annotation or {}).get("font") or {}
+    fontsize = float(font.get("size") or 10)
+    edge = contrasting_color(color)
+
+    bar = AuxTransformBox(ax.transData)
+    bar.add_artist(
+        Rectangle(
+            (0, 0),
+            length,
+            SCALEBAR_HEIGHT_FRACTION * n_rows,
+            facecolor=color,
+            edgecolor=edge,
+            linewidth=0.6,
+        )
+    )
+    children = [bar]
+    text = (annotation or {}).get("text")
+    if isinstance(text, str) and text:
+        children.append(
+            TextArea(
+                text,
+                textprops={
+                    "color": mpl_color(font.get("color"), color),
+                    "fontsize": fontsize,
+                    "path_effects": [withStroke(linewidth=1.5, foreground=edge)],
+                },
+            )
+        )
+    box = AnchoredOffsetbox(
+        loc="upper left",
+        child=VPacker(children=children, align="center", pad=0, sep=0.35 * fontsize),
+        pad=0,
+        borderpad=0.8,
+        frameon=False,
+        prop=FontProperties(size=fontsize),
+    )
+    ax.add_artist(box)
+    return box
+
+
 def plotly_to_matplotlib(
     fig: dict | go.Figure | None,
     im_data: npt.NDArray | None = None,
@@ -263,50 +365,14 @@ def plotly_to_matplotlib(
             )
             ax.add_patch(rect)
 
-        # scale bar
-        if len(data) > 1:
-            scalebar_trace = next(
-                (
-                    trace
-                    for trace in data[1:]
-                    if trace.get("type") in {"scatter", "line"}
-                ),
-                None,
+        scalebar_trace = _find_scalebar_trace(data)
+        if scalebar_trace is not None:
+            _draw_scalebar(
+                ax,
+                scalebar_trace,
+                _find_scalebar_annotation(layout.get("annotations", []) or []),
+                n_rows=z.shape[0],
             )
-            if scalebar_trace is not None:
-                x = scalebar_trace.get("x", [])
-                if len(x) >= 2:
-                    start_x = 0.0
-
-                    xmin = np.min(x)
-                    xmax = np.max(x)
-                    start_x = 0
-                    end_x = xmax - xmin
-                    bar_y = float(im.get_extent()[3]) if im is not None else 0.0
-                    ax.plot(
-                        [start_x, end_x],
-                        [bar_y, bar_y],
-                        color="black",
-                        linewidth=1.5,
-                    )
-
-                    bar_center = (start_x + end_x) / 2.0
-                    text_y = bar_y  # - 0.08 * max(1.0, xmax-xmin)
-
-                    annotations = layout.get("annotations", []) or []
-                    if annotations:
-                        annotation = annotations[0]
-                        text = annotation.get("text")
-                        if isinstance(text, str):
-                            ax.text(
-                                bar_center,
-                                text_y,
-                                text,
-                                color="black",
-                                fontsize=10,
-                                ha="center",
-                                va="top",
-                            )
 
         ax.set_axis_off()
         if include_colorbar and z.ndim == 2:

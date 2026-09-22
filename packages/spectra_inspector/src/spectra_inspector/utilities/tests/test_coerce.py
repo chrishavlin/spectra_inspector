@@ -3,12 +3,14 @@ import pytest
 from matplotlib.colors import to_rgba
 
 from spectra_inspector.utilities.coerce import (
+    contrasting_color,
     mpl_color,
     path_vertices,
     placeholder_to_spaces,
     plotly_to_matplotlib,
     spaces_to_placeholder,
 )
+from spectra_inspector.utilities.matplotib_importer import AnchoredOffsetbox
 from spectra_inspector.utilities.selection import (
     END_VERTEX_COLOR,
     POLYGON_COLOR,
@@ -108,7 +110,18 @@ def test_plotly_to_matplotlib_uses_the_rectangle_line_colour():
     assert rect.get_edgecolor() == (1.0, 1.0, 1.0, 1.0)
 
 
+def _scalebar_pieces(ax):
+    """The bar rectangle and the label text of the export's scalebar box."""
+    (box,) = [a for a in ax.artists if isinstance(a, AnchoredOffsetbox)]
+    bar, label = box.get_child().get_children()
+    (rect,) = bar.get_children()
+    (text,) = label.get_children()
+    return rect, text
+
+
 def test_plotly_to_matplotlib_preserves_heatmap_overlay_trace_and_annotation():
+    # a figure from before the scalebar carried its tags: the first line
+    # trace after the image and the first annotation are the scalebar
     im_data = [[1, 2], [3, 4]]
     fig = {
         "data": [
@@ -121,10 +134,79 @@ def test_plotly_to_matplotlib_preserves_heatmap_overlay_trace_and_annotation():
     }
 
     mpl_fig = plotly_to_matplotlib(fig, im_data=np.asarray(im_data))
+    rect, text = _scalebar_pieces(mpl_fig.axes[0])
+
+    assert rect.get_width() == 1
+    assert text.get_text() == "scale"
+
+
+def test_plotly_to_matplotlib_draws_the_scalebar_in_its_own_colour_and_size():
+    im_data = np.zeros((512, 512), dtype=int)
+    fig = {
+        "data": [
+            {"type": "heatmap"},
+            {
+                "type": "scatter",
+                "x": [6, 68],
+                "y": [6, 6],
+                "line": {"color": "#ff0000", "width": 5},
+                "meta": {"scalebar": True},
+            },
+        ],
+        "layout": {
+            "shapes": [{"type": "rect", "x0": 0, "x1": 1, "y0": 0, "y1": 1}],
+            "annotations": [
+                {"text": "other", "x": 0, "y": 0},
+                {
+                    "name": "scalebar",
+                    "text": "100.0 µm",
+                    "x": 37,
+                    "y": 6,
+                    "font": {"color": "#ff0000", "size": 14},
+                },
+            ],
+        },
+    }
+
+    mpl_fig = plotly_to_matplotlib(fig, im_data=im_data)
+    ax = mpl_fig.axes[0]
+    rect, text = _scalebar_pieces(ax)
+
+    # the bar is as many pixels long as the trace spans, in the trace's
+    # colour, edged in the contrasting shade; the label matches the
+    # annotation, so a red bar carries a red label
+    assert rect.get_width() == 62
+    assert rect.get_facecolor() == to_rgba("#ff0000")
+    assert rect.get_edgecolor() == to_rgba("white")
+    assert text.get_text() == "100.0 µm"
+    assert text.get_color() == "#ff0000"
+    assert text.get_fontsize() == 14
+    # the selection is still drawn, and the scalebar is not a line on the axes
+    assert len(ax.patches) == 1
+    assert len(ax.lines) == 0
+
+
+def test_plotly_to_matplotlib_draws_no_scalebar_without_a_trace():
+    im_data = [[1, 2], [3, 4]]
+    fig = {"data": [{"type": "heatmap", "z": im_data}], "layout": {}}
+
+    mpl_fig = plotly_to_matplotlib(fig, im_data=np.asarray(im_data))
     ax = mpl_fig.axes[0]
 
-    assert len(ax.lines) == 1
-    assert ax.texts[0].get_text() == "scale"
+    assert not [a for a in ax.artists if isinstance(a, AnchoredOffsetbox)]
+
+
+@pytest.mark.parametrize(
+    ("color", "expected"),
+    [
+        ("#ffffff", "black"),
+        ("#000000", "white"),
+        ("#ff0000", "white"),
+        ("yellow", "black"),
+    ],
+)
+def test_contrasting_color(color, expected):
+    assert contrasting_color(color) == expected
 
 
 def test_plotly_to_matplotlib_carries_log_yaxis_to_spectrum_export():

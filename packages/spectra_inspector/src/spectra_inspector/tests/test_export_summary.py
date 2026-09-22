@@ -400,7 +400,7 @@ def _capture_image_figures(inspector, monkeypatch) -> tuple[list, list]:
             if kwargs.get("im_data") is None:
                 fulls.append(fig)
             else:
-                subsets.append(fig.to_plotly_json())
+                subsets.append(fig)
         return convert(fig, **kwargs)
 
     monkeypatch.setattr(inspector, "plotly_to_matplotlib", capture)
@@ -544,6 +544,95 @@ def test_figure_export_settings_show_once_there_is_a_selection(inspector):
     points = [[0.0, 0.0], [1.0, 0.0], [1.0, 1.0]]
     assert hidden(inspector.polygon_store(points, None)) is True
     assert hidden(inspector.polygon_store(points, points)) is False
+
+
+def test_figure_export_settings_go_with_the_image_section(inspector):
+    hidden = inspector.toggle_figure_export_settings_with_images
+    assert hidden(True) is True
+    assert hidden(False) is False
+
+
+def _browser_figure_with_scalebar() -> dict:
+    """The boxed 2x2 heatmap with the scalebar as a panel draws it: a green
+    bar and label, tagged for the export."""
+    figure = _browser_figure_with_box()
+    figure["data"].append(
+        {
+            "type": "scatter",
+            "x": [0, 1],
+            "y": [0, 0],
+            "line": {"color": "green", "width": 5},
+            "meta": {"scalebar": True},
+        }
+    )
+    figure["layout"]["annotations"] = [
+        {
+            "name": "scalebar",
+            "text": "1.6 µm",
+            "x": 0.5,
+            "y": 0,
+            "font": {"color": "green", "size": 12, "weight": 1000},
+        }
+    ]
+    return figure
+
+
+def _scalebar_of(figure: dict) -> tuple[dict | None, dict | None]:
+    bars = [t for t in figure["data"] if (t.get("meta") or {}).get("scalebar")]
+    labels = [
+        a
+        for a in figure["layout"].get("annotations", [])
+        if a.get("name") == "scalebar"
+    ]
+    assert len(bars) <= 1
+    assert len(labels) <= 1
+    return (bars[0] if bars else None, labels[0] if labels else None)
+
+
+def test_export_draws_the_scalebar_as_the_figure_settings_say(
+    inspector, image_figures, spectrum_figure, spectrum_metadata, monkeypatch
+):
+    fulls, subsets = _capture_image_figures(inspector, monkeypatch)
+    _export(
+        inspector,
+        [_browser_figure_with_scalebar()] * len(image_figures),
+        spectrum_figure,
+        spectrum_metadata,
+        shapes_store=BOX_STORE,
+        scalebar_color="#ff0000",
+        scalebar_fontsize=14,
+    )
+    # the panels' figures and the subsets built here alike: the browser's
+    # green is replaced, the label resized, the bar's length left alone
+    assert len(fulls) == len(subsets) == len(image_figures)
+    for figure in [*fulls, *subsets]:
+        bar, label = _scalebar_of(figure)
+        assert bar is not None
+        assert label is not None
+        assert bar["line"]["color"] == "#ff0000"
+        assert label["font"]["color"] == "#ff0000"
+        assert label["font"]["size"] == 14
+    assert fulls[0]["data"][1]["x"] == [0, 1]
+
+
+def test_export_leaves_the_scalebar_off_the_images_when_asked(
+    inspector, image_figures, spectrum_figure, spectrum_metadata, monkeypatch
+):
+    fulls, subsets = _capture_image_figures(inspector, monkeypatch)
+    _export(
+        inspector,
+        [_browser_figure_with_scalebar()] * len(image_figures),
+        spectrum_figure,
+        spectrum_metadata,
+        shapes_store=BOX_STORE,
+        include_scalebar=False,
+    )
+    assert len(fulls) == len(subsets) == len(image_figures)
+    for figure in [*fulls, *subsets]:
+        assert _scalebar_of(figure) == (None, None)
+        assert figure["data"][0]["type"] == "heatmap"
+    # the box is still drawn on the full images
+    assert all(len(figure["layout"]["shapes"]) == 1 for figure in fulls)
 
 
 def test_polygon_in_progress_exports_the_full_map(

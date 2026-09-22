@@ -100,6 +100,7 @@ from spectra_inspector.utilities.peak_windows import (
     apply_peak_windows,
     peak_windows,
 )
+from spectra_inspector.utilities.scalebar_style import scalebar_styled, scalebarStyle
 from spectra_inspector.utilities.scaling import get_image_shape
 from spectra_inspector.utilities.selection import (
     Selection,
@@ -1053,6 +1054,9 @@ def export_msa(
     State(_dataExportIDS.includeoutline, "value"),
     State(_dataExportIDS.outlinelinecolor, "value"),
     State(_dataExportIDS.outlinedotcolor, "value"),
+    State(_dataExportIDS.includescalebar, "value"),
+    State(_dataExportIDS.scalebarcolor, "value"),
+    State(_dataExportIDS.scalebarfontsize, "value"),
     prevent_initial_call=True,
     running=[
         (Output(_dataExportIDS.exportsummary, "disabled"), True, False),
@@ -1090,6 +1094,9 @@ def export_summary(
     include_outline: bool | None = None,
     outline_line_color: str | None = None,
     outline_dot_color: str | None = None,
+    include_scalebar: bool | None = None,
+    scalebar_color: str | None = None,
+    scalebar_fontsize: float | None = None,
 ):
     """Write the summary export: the spectrum plus, for a map, every image
     panel (and its box subset). A spectrum-only dataset has no images, so the
@@ -1097,7 +1104,8 @@ def export_summary(
 
     The spectrum carries its peaks into the export exactly as the page shows
     them: the "peak windows" switch and the zeroed-out elements both apply.
-    The images draw the selection as the figure export settings say."""
+    The images draw the scalebar and the selection as the figure export
+    settings say."""
 
     if export_clicks is None or export_clicks == 0:
         return None
@@ -1133,8 +1141,11 @@ def export_summary(
         style = data_export_panel.outline_style(
             include_outline, outline_line_color, outline_dot_color
         )
+        scalebar = data_export_panel.scalebar_style(
+            include_scalebar, scalebar_color, scalebar_fontsize
+        )
         figs_to_write.update(
-            _image_figures_to_write(user_store, panels, shapes_store, style)
+            _image_figures_to_write(user_store, panels, shapes_store, style, scalebar)
         )
     figs_to_write["spectrum"] = plotly_to_matplotlib(
         apply_peak_windows(
@@ -1317,13 +1328,20 @@ def _image_figures_to_write(
     panels: list[panelExport],
     shapes_store: dict | None,
     style: outlineStyle | None = None,
+    scalebar: scalebarStyle | None = None,
 ) -> dict:
     """Matplotlib versions of every image panel, plus the subset of each when
     a selection is drawn, keyed by output file stem. The subset is the box,
     or the pixel rectangle around the polygon. The selection is drawn on the
     images as ``style`` says (``overlay_shapes``), never as the browser
-    happened to draw it."""
+    happened to draw it, and the scalebar as ``scalebar`` says
+    (``scalebar_styled``) rather than as the panels colour it."""
     style = style or outlineStyle()
+    scalebar = scalebar or scalebarStyle()
+
+    def styled(figure: dict, shapes: list[dict]) -> dict:
+        return scalebar_styled(_with_shapes(figure, shapes), scalebar)
+
     index0_range = None
     index1_range = None
     full_shapes: list[dict] = []
@@ -1348,7 +1366,7 @@ def _image_figures_to_write(
     figs_to_write = {}
     for panel in panels:
         figs_to_write[panel.stem] = plotly_to_matplotlib(
-            _with_shapes(panel.figure, full_shapes), cmap=panel.colormap
+            styled(panel.figure, full_shapes), cmap=panel.colormap
         )
         if not (index0_range and index1_range):
             continue
@@ -1372,7 +1390,9 @@ def _image_figures_to_write(
                 scalebar_handler=scalebar_handler,
                 shapes=subset_shapes,
             )
-            figs_to_write[subset_name] = plotly_to_matplotlib(newfig, im_data=rgb)
+            figs_to_write[subset_name] = plotly_to_matplotlib(
+                scalebar_styled(newfig.to_plotly_json(), scalebar), im_data=rgb
+            )
             continue
 
         im = plotly_im_trace_to_array(panel.figure["data"][0])
@@ -1393,7 +1413,9 @@ def _image_figures_to_write(
             shapes=subset_shapes,
         )
         figs_to_write[subset_name] = plotly_to_matplotlib(
-            newfig, im_data=im, cmap=panel.colormap
+            scalebar_styled(newfig.to_plotly_json(), scalebar),
+            im_data=im,
+            cmap=panel.colormap,
         )
 
     return figs_to_write
@@ -2157,13 +2179,24 @@ def toggle_polygon_controls(view_store: dict | None, shapes_store: dict | None):
 
 
 @callback(
-    Output(_dataExportIDS.figuresettings, "hidden"),
+    Output(_dataExportIDS.outlinerow, "hidden"),
     Input(_IDS.shapes_store, "data"),
 )
 def toggle_figure_export_settings(shapes_store: dict | None) -> bool:
-    """The figure export settings only matter once a box or a polygon is the
-    selection the export would draw; a polygon still being placed is not."""
+    """The selection-outline export settings only matter once a box or a
+    polygon is the selection the export would draw; a polygon still being
+    placed is not."""
     return selection_from_store(shapes_store) is None
+
+
+@callback(
+    Output(_dataExportIDS.figuresettings, "hidden"),
+    Input(_IDS.image_section, "hidden"),
+)
+def toggle_figure_export_settings_with_images(image_section_hidden: bool) -> bool:
+    """The figure export settings describe the exported images, so they go
+    with the image section in spectrum-only mode."""
+    return bool(image_section_hidden)
 
 
 @callback(

@@ -6,6 +6,10 @@ from plotly.graph_objects import Figure
 from unyt import unyt_quantity
 
 from spectra_inspector.utilities.model import CombinedMetadata, EDAX_axis
+from spectra_inspector.utilities.scalebar_style import (
+    SCALEBAR_ANNOTATION_NAME,
+    SCALEBAR_META_KEY,
+)
 from spectra_inspector.utilities.scaling import get_axis
 
 
@@ -67,6 +71,7 @@ class scalebarHandler:
             "type": "scatter",
             "name": f"{width_.value} {width_.units}",
             "line": {"width": self.pixel_height, "color": self.color},
+            "meta": {SCALEBAR_META_KEY: True},
         }
 
         return new_trace
@@ -114,6 +119,7 @@ class scalebarHandler:
         )
 
         text_annotate_dict = {
+            "name": SCALEBAR_ANNOTATION_NAME,
             "x": text_x_loc,
             "y": scalebar_pos["y"],
             "text": f"{override_width}",

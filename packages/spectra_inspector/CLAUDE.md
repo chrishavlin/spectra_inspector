@@ -228,15 +228,31 @@ Several Dash/plotly behaviours here are not visible from the python side:
   summed, the polygon as an unfilled outline plus a dot per corner, shifted to
   the crop's origin on the subset and left off a box's own crop) in the
   `outlineStyle` the export panel's **Figure export settings** give: a "draw the
-  outline" checkbox and line / dot colour pickers (white by default), shown by
-  `toggle_figure_export_settings` only while a selection exists. The pickers are
-  `dbc.Input(type="color")`, the browser's native picker: `color` is not in the
-  types dbc declares (its propTypes `oneOf` and the Python `Literal`), but the
-  component passes the type through to the `<input>` and reads the value like
-  any other, so it works and only a props-check in debug mode could object;
-  `outline_style` accepts nothing but `#rrggbb` from it. `plotly_to_matplotlib`
-  draws `rect`, `path` and `circle` shapes in their own colours (`mpl_color`
-  turns `rgba(...)` into fractions).
+  outline" checkbox and line / dot colour pickers (white by default), in a row
+  (`outlinerow`) shown by `toggle_figure_export_settings` only while a selection
+  exists. The pickers are `dbc.Input(type="color")`, the browser's native
+  picker: `color` is not in the types dbc declares (its propTypes `oneOf` and
+  the Python `Literal`), but the component passes the type through to the
+  `<input>` and reads the value like any other, so it works and only a
+  props-check in debug mode could object; `outline_style` accepts nothing but
+  `#rrggbb` from it. `plotly_to_matplotlib` draws `rect`, `path` and `circle`
+  shapes in their own colours (`mpl_color` turns `rgba(...)` into fractions).
+- The same settings block has a **Scalebar** row (issue #47): a checkbox, a
+  colour picker (white by default) and a text-size input, read by
+  `data_export_panel.scalebar_style` into a `scalebarStyle`
+  (`utilities/scalebar_style.py`, next to the tags). The panels keep drawing
+  their green bar; the export never copies its colours. `scalebarHandler` tags
+  its pieces (`meta.scalebar` on the trace, `name: "scalebar"` on the
+  annotation) and `scalebar_styled` recolours or strips both on every figure
+  dict the export writes, panels and subsets alike, before
+  `plotly_to_matplotlib`. That converter draws the bar as a matplotlib
+  `AnchoredOffsetbox` in the upper-left corner rather than a line on the axes:
+  the bar's length in pixels comes from the trace, the label sits centred below
+  it with a gap, both in the trace's colour at the annotation's font size, and
+  edged in black or white (`contrasting_color`) so they read on any colormap. It
+  still falls back to the first line trace and first annotation for a figure
+  without the tags. The whole block hides with the image section in
+  spectrum-only mode (`toggle_figure_export_settings_with_images`).
 - `components/toolbox.py` holds what the two toolboxes share: the button and row
   dataclasses, the view-control specs, the id mapper, the card builder
   (`toolbox_card`, whose `extras` slot ready-made components into a row) and the
