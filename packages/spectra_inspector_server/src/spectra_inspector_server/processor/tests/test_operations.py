@@ -2,10 +2,11 @@ import numpy as np
 import pytest
 
 from spectra_inspector_server._file_tree_handling import EDAXPathHandler
-from spectra_inspector_server._testing import _on_disc_mock, createEDAXMock
-from spectra_inspector_server.model import EDAX_raw_ds
+from spectra_inspector_server._testing import _on_disc_mock
 from spectra_inspector_server.processor.operations import (
+    IndexRangeError,
     OperationEDAXStateHandler,
+    validate_index_range,
 )
 
 
@@ -96,47 +97,44 @@ def test_get_spectrum(edax_path_handler: EDAXPathHandler) -> None:
     assert len(s1d_2.energy) == 4
 
 
-@pytest.fixture
-def fixed_mock(monkeypatch: pytest.MonkeyPatch) -> EDAX_raw_ds:
-    """the on-disc mock rebuilds its random data on every load -- pin it down."""
-    ds = createEDAXMock(im_shape=(16, 12, 10))
-    monkeypatch.setattr(_on_disc_mock, "load", lambda _name, **_kwargs: ds)
-    return ds
-
-
-def test_spectrum_over_a_box_past_the_image_edge_sums_the_part_inside(
-    edax_path_handler: EDAXPathHandler, fixed_mock: EDAX_raw_ds
+@pytest.mark.parametrize(
+    "index_range",
+    [(0, 16), (0, 0), (16, 16), (3, 9), (5, 5)],
+)
+def test_validate_index_range_accepts_ranges_within_the_axis(
+    index_range: tuple[int, int],
 ) -> None:
-    # a box dragged out past the map's edge reaches the server with indices
-    # below zero or beyond the axis; it is summed over what lies inside
-    cube = fixed_mock.data
-    assert cube is not None
+    assert validate_index_range(index_range, 16, 0) == index_range
+
+
+@pytest.mark.parametrize(
+    "index_range",
+    [(-1, 5), (0, 17), (-4, 20), (9, 3), (20, 24)],
+)
+def test_validate_index_range_rejects_ranges_past_the_axis(
+    index_range: tuple[int, int],
+) -> None:
+    with pytest.raises(IndexRangeError, match="index1 range"):
+        validate_index_range(index_range, 16, 1)
+
+
+def test_operations_reject_a_box_past_the_image_edge(
+    edax_path_handler: EDAXPathHandler,
+) -> None:
+    # the frontend clips a box to the image before asking; a range past the
+    # map is refused rather than clipped or wrapped by numpy
     fake_filename = _on_disc_mock.filenames[0]
     ops = OperationEDAXStateHandler(edax_path_handler, allow_mock_files=True)
-
-    past_edge = ops.get_spectrum(
-        fake_filename, index0_range=(-4, 5), index1_range=(3, 40)
-    )
-    np.testing.assert_array_equal(past_edge.intensity, cube[0:5, 3:12].sum(axis=(0, 1)))
-    inside = ops.get_spectrum(fake_filename, index0_range=(0, 5), index1_range=(3, 12))
-    assert past_edge.energy_min == inside.energy_min
-    assert past_edge.energy_max == inside.energy_max
-
-    outside = ops.get_spectrum(
-        fake_filename, index0_range=(20, 24), index1_range=(0, 3)
-    )
-    assert len(outside.intensity) == cube.shape[2]
-    assert not np.any(outside.intensity)
+    with pytest.raises(IndexRangeError):
+        ops.get_spectrum(fake_filename, index0_range=(-4, 5), index1_range=(3, 8))
+    with pytest.raises(IndexRangeError):
+        ops.get_image(fake_filename, 2, index0_range=(0, 4), index1_range=(10, 30))
 
 
-def test_image_over_a_box_past_the_image_edge_is_the_part_inside(
-    edax_path_handler: EDAXPathHandler, fixed_mock: EDAX_raw_ds
-) -> None:
-    cube = fixed_mock.data
-    assert cube is not None
+def test_get_axis_sizes(edax_path_handler: EDAXPathHandler) -> None:
     fake_filename = _on_disc_mock.filenames[0]
     ops = OperationEDAXStateHandler(edax_path_handler, allow_mock_files=True)
-
-    im = ops.get_image(fake_filename, 2, index0_range=(-3, 4), index1_range=(10, 30))
-    assert im.shape == (4, 2)
-    np.testing.assert_array_equal(im, cube[0:4, 10:12, 2])
+    sizes = ops.get_axis_sizes(fake_filename)
+    assert len(sizes) == 3
+    assert all(size > 0 for size in sizes)
+    assert ops.get_image(fake_filename, 0).shape == sizes[:2]

@@ -1,3 +1,4 @@
+from collections.abc import Callable
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any, Literal
 
@@ -100,6 +101,8 @@ from spectra_inspector.utilities.selection import (
     Selection,
     active_shapes,
     add_point,
+    box_misses_image,
+    boxSelection,
     insert_point_on_nearest_segment,
     move_point,
     outlineStyle,
@@ -670,7 +673,7 @@ def update_spectrum(
         return no_update, no_update
 
     if shapes_store is not None:
-        selection = selection_from_store(shapes_store)
+        selection = _selection_for_request(shapes_store, user_store_dict, sample_name)
         name = "full spectrum"
 
         if active_spectrum_metadata is None:
@@ -804,6 +807,44 @@ def _find_id_in_list(
     if id_to_find2 in el_list:
         return el_list.index(id_to_find2)
     return None
+
+
+def _image_shape_or_none(md: "CombinedMetadata | None") -> tuple[int, int] | None:
+    return get_image_shape(md) if md is not None else None
+
+
+def _selection_for_request(
+    shapes_store: dict | None, user_store_dict: dict | None, sample_name: str | None
+) -> Selection | None:
+    """The store's selection as the server takes it: a box is clipped to the
+    map (the server rejects index ranges past it), which needs the metadata;
+    a polygon and no selection need nothing."""
+    selection = selection_from_store(shapes_store)
+    if not isinstance(selection, boxSelection):
+        return selection
+    user_store_dict = user_store_dict or {}
+    _ensure_dataset(user_store_dict, sample_name)
+    md = UserStore(**user_store_dict).conditionally_fetch_metadata()
+    return selection_from_store(shapes_store, _image_shape_or_none(md))
+
+
+def _shapes_after_relayout(
+    relay: dict, shapes_store: dict | None, fetch_metadata: Callable[[], Any]
+) -> tuple[list[dict], bool, bool]:
+    """``(shapes, redraw, keep)``: the shapes a relayout event leaves on the
+    panels, whether they differ from what the panels show, and whether they
+    are the selection to store. A box dragged wholly off the map is no
+    selection: the panels are put back to the stored shapes and the store is
+    left alone, so nothing is synced, shown or requested for it."""
+    current = _active_shapes(shapes_store)
+    shapes, changed = shapes_from_relayout(relay, current)
+    if not changed:
+        return shapes, False, False
+    if shapes and shapes[0].get("type") == "rect":
+        md = fetch_metadata()
+        if md is not None and box_misses_image(shapes, get_image_shape(md)):
+            return current, True, False
+    return shapes, True, True
 
 
 def _selection_bounds(
@@ -1243,7 +1284,7 @@ def _export_metadata(
     polygon = None
     images = None
     if not spectrum_only:
-        selection = selection_from_store(shapes_store)
+        selection = selection_from_store(shapes_store, _image_shape_or_none(md))
         index_ranges = _selection_bounds(selection, md)
         if isinstance(selection, polygonSelection):
             polygon = selection.vertices
@@ -1289,6 +1330,8 @@ def _image_figures_to_write(
         md = user_store.conditionally_fetch_metadata()
         assert md is not None
         image_shape = get_image_shape(md)
+        selection = selection_from_store(shapes_store, image_shape)
+        assert selection is not None
         bounds = selection.bounding_box(image_shape)
         index0_range, index1_range = bounds
         full_shapes = overlay_shapes(selection, style, image_shape)
@@ -1775,14 +1818,20 @@ def sync_image_views(
     set_props(triggered_id, {"relayoutData": None})
 
     view, axes_changed, dragmode_changed = update_view_from_relayout(view_store, relay)
-    shapes, shapes_changed = shapes_from_relayout(relay, _active_shapes(shapes_store))
+
+    def fetch_metadata() -> "CombinedMetadata | None":
+        _ensure_dataset(user_store_dict, sample_name)
+        return UserStore(**user_store_dict).conditionally_fetch_metadata()
+
+    shapes, shapes_changed, store_shapes = _shapes_after_relayout(
+        relay, shapes_store, fetch_metadata
+    )
     if not (axes_changed or dragmode_changed or shapes_changed):
         return nothing
 
     md: CombinedMetadata | None = None
     if axes_changed:
-        _ensure_dataset(user_store_dict, sample_name)
-        md = UserStore(**user_store_dict).conditionally_fetch_metadata()
+        md = fetch_metadata()
 
     processed = processed_graph_store.get("graph_ids", [])
     patches = list(no_updates)
@@ -1799,7 +1848,7 @@ def sync_image_views(
     return (
         patches,
         view if (axes_changed or dragmode_changed) else no_update,
-        {"active_shapes": shapes} if shapes_changed else no_update,
+        {"active_shapes": shapes} if store_shapes else no_update,
     )
 
 

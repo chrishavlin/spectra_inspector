@@ -338,7 +338,15 @@ Other things worth knowing:
 - Figures are Plotly `px.imshow` with `dragmode="drawrect"` (the toolbox's
   default tool); user rectangles come back through `relayoutData` and become
   index ranges sent to the backend, a submitted polygon becomes the `polygon`
-  query parameter (`utilities/selection.py`).
+  query parameter (`utilities/selection.py`). The server answers an index range
+  past the map with a 422 and never clips, so a box dragged out over the image's
+  edge is stored and drawn as the user left it but clipped to the image when it
+  becomes a request (`box_from_shape` with the image shape, via
+  `_selection_for_request` for the spectrum and `selection_from_store` with the
+  metadata's shape in the export). A box with no pixel inside the map is never a
+  selection: `_shapes_after_relayout` puts the panels back to the stored shapes
+  and leaves the store alone. A polygon needs none of this: it is sent as
+  geometry and the server intersects it with the map itself.
 - On a fresh load the figure callbacks can run before `update_selected_dataset`
   has written the user store, which then still names the `UserStore` default
   dataset `"none"`; `_ensure_dataset` puts the page's sample in for the

@@ -51,9 +51,9 @@ IndexRange = tuple[int, int]
 
 @dataclass(frozen=True)
 class boxSelection:
-    """A rectangle, as half-open index ranges along each image axis. The
-    ranges are the box as drawn, which may reach past the image; the server
-    sums only what lies inside, as ``bounding_box`` reports."""
+    """A rectangle, as half-open index ranges along each image axis. Built
+    by ``box_from_shape``, which clips the drawn rectangle to the image when
+    it knows the image's shape: the server rejects ranges past the map."""
 
     index0_range: IndexRange
     index1_range: IndexRange
@@ -61,19 +61,16 @@ class boxSelection:
     def request_kwargs(self) -> dict[str, Any]:
         return {"index0_range": self.index0_range, "index1_range": self.index1_range}
 
+    @property
+    def is_empty(self) -> bool:
+        """No pixel on at least one axis."""
+        return any(hi <= lo for lo, hi in (self.index0_range, self.index1_range))
+
     def bounding_box(
-        self, image_shape: tuple[int, int] | None = None
+        self,
+        image_shape: tuple[int, int] | None = None,  # noqa: ARG002
     ) -> tuple[IndexRange, IndexRange]:
-        """The box clipped to the image when its shape is known: the pixels
-        actually summed, empty on an axis the box misses entirely."""
-        ranges = (self.index0_range, self.index1_range)
-        if image_shape is None:
-            return ranges
-        clipped: list[IndexRange] = []
-        for (lo, hi), size in zip(ranges, image_shape, strict=True):
-            start = min(max(lo, 0), size)
-            clipped.append((start, min(max(hi, start), size)))
-        return clipped[0], clipped[1]
+        return self.index0_range, self.index1_range
 
 
 @dataclass(frozen=True)
@@ -149,7 +146,7 @@ def overlay_shapes(
     if isinstance(selection, boxSelection):
         if bounds is not None:
             return []
-        (r0, r1), (c0, c1) = selection.bounding_box(image_shape)
+        (r0, r1), (c0, c1) = selection.index0_range, selection.index1_range
         return [
             {
                 "type": "rect",
@@ -222,26 +219,53 @@ def polygon_is_submittable(store: dict | None) -> bool:
     return len(points) >= MIN_POLYGON_POINTS and points != submitted_polygon(store)
 
 
-def box_from_shape(shp: dict) -> boxSelection:
+def clip_index_range(index_range: IndexRange, size: int) -> IndexRange:
+    """``index_range`` cut down to the ``size`` pixels of an axis, empty
+    (``start == stop``) when it lies entirely outside them."""
+    lo, hi = index_range
+    start = min(max(lo, 0), size)
+    return start, min(max(hi, start), size)
+
+
+def box_from_shape(
+    shp: dict, image_shape: tuple[int, int] | None = None
+) -> boxSelection:
     """The index ranges a plotly rectangle covers: the pixels whose centres
-    fall between its floored corners."""
+    fall between its floored corners, clipped to the image when its shape is
+    given. The rectangle itself may hang out past the image; only the request
+    is clipped."""
     if shp.get("type") != "rect":
         msg = f"Unsupported shape type of {shp.get('type')}"
         raise TypeError(msg)
     index1 = sorted(int(np.floor(v)) for v in (shp["x0"], shp["x1"]))
     index0 = sorted(int(np.floor(v)) for v in (shp["y0"], shp["y1"]))
-    return boxSelection((index0[0], index0[1]), (index1[0], index1[1]))
+    index0_range: IndexRange = (index0[0], index0[1])
+    index1_range: IndexRange = (index1[0], index1[1])
+    if image_shape is not None:
+        index0_range = clip_index_range(index0_range, image_shape[0])
+        index1_range = clip_index_range(index1_range, image_shape[1])
+    return boxSelection(index0_range, index1_range)
 
 
-def selection_from_store(store: dict | None) -> Selection | None:
+def box_misses_image(shapes: list[dict], image_shape: tuple[int, int]) -> bool:
+    """Whether ``shapes`` is a rectangle with no pixel inside the image."""
+    if not shapes or shapes[0].get("type") != "rect":
+        return False
+    return box_from_shape(shapes[0], image_shape).is_empty
+
+
+def selection_from_store(
+    store: dict | None, image_shape: tuple[int, int] | None = None
+) -> Selection | None:
     """What the spectrum should be summed over: the submitted polygon, else
-    the box, else nothing (the full map)."""
+    the box (clipped to the image when its shape is given), else nothing
+    (the full map)."""
     submitted = submitted_polygon(store)
     if submitted is not None and len(submitted) >= MIN_POLYGON_POINTS:
         return polygonSelection(tuple((float(x), float(y)) for x, y in submitted))
     shapes = active_shapes(store)
     if shapes and shapes[0].get("type") == "rect":
-        return box_from_shape(shapes[0])
+        return box_from_shape(shapes[0], image_shape)
     return None
 
 

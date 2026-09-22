@@ -77,58 +77,54 @@ def test_image_spectrum(app_client: TestClient) -> None:
     assert np.all(np.isreal(spectrum.intensity))
 
 
-def test_image_spectrum_over_a_box_past_the_image_edge(app_client: TestClient) -> None:
-    # the mock map is 16 x 16; a box drawn out past its edge is answered
-    # with the spectrum of the part inside rather than a server error (the
-    # mock's counts are random, so the values are checked on the operation)
-    sample = _on_disc_mock.filenames[0]
-    full = app_client.get(
-        "/image-spectrum", params={"sample_name": sample, "include_weights": False}
-    )
-    past_edge = app_client.get(
-        "/image-spectrum",
-        params={
-            "sample_name": sample,
-            "include_weights": False,
-            "index0_0": -4,
-            "index0_1": 5,
-            "index1_0": 3,
-            "index1_1": 40,
-        },
-    )
-    outside = app_client.get(
-        "/image-spectrum",
-        params={
-            "sample_name": sample,
-            "include_weights": False,
-            "index0_0": 20,
-            "index0_1": 24,
-            "index1_0": 3,
-            "index1_1": 8,
-        },
-    )
-    assert full.status_code == 200
-    assert past_edge.status_code == 200
-    assert outside.status_code == 200
-    n_channels = len(Spectrum1dDict(**full.json()).intensity)
-    assert len(Spectrum1dDict(**past_edge.json()).intensity) == n_channels
-    assert Spectrum1dDict(**outside.json()).intensity == [0] * n_channels
-
-
-def test_image_data_over_a_box_past_the_image_edge(app_client: TestClient) -> None:
+@pytest.mark.parametrize(
+    "endpoint",
+    ["/image-spectrum", "/image-data", "/image-data-summed"],
+)
+@pytest.mark.parametrize(
+    ("index0", "index1"),
+    [((-4, 5), (3, 8)), ((0, 5), (3, 40)), ((9, 3), (0, 8)), ((20, 24), (0, 3))],
+)
+def test_index_ranges_past_the_image_edge_are_rejected(
+    app_client: TestClient,
+    endpoint: str,
+    index0: tuple[int, int],
+    index1: tuple[int, int],
+) -> None:
+    # the mock map is 16 x 16; the frontend clips a box to it before asking,
+    # so a range past the map (or a descending one) is a caller error
     response = app_client.get(
-        "/image-data",
+        endpoint,
         params={
             "sample_name": _on_disc_mock.filenames[0],
             "channel_index": 2,
-            "index0_0": -2,
+            "channel_0": 0,
+            "channel_1": 3,
+            "include_weights": False,
+            "index0_0": index0[0],
+            "index0_1": index0[1],
+            "index1_0": index1[0],
+            "index1_1": index1[1],
+        },
+    )
+    assert response.status_code == 422
+    assert "range" in response.json()["detail"]
+
+
+def test_an_empty_index_range_sums_to_nothing(app_client: TestClient) -> None:
+    response = app_client.get(
+        "/image-spectrum",
+        params={
+            "sample_name": _on_disc_mock.filenames[0],
+            "include_weights": False,
+            "index0_0": 5,
             "index0_1": 5,
-            "index1_0": 14,
-            "index1_1": 30,
+            "index1_0": 0,
+            "index1_1": 16,
         },
     )
     assert response.status_code == 200
-    assert raveledImage(**response.json()).shape == (5, 2)
+    assert not any(Spectrum1dDict(**response.json()).intensity)
 
 
 def test_image_data(app_client: TestClient) -> None:
