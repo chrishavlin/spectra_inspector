@@ -1,7 +1,8 @@
 import plotly.express as px
 import pytest
+from unyt import unyt_quantity
 
-from spectra_inspector.components.scalebar import scalebarHandler
+from spectra_inspector.components.scalebar import fitting_width, scalebarHandler
 from spectra_inspector.utilities.model import CombinedMetadata, EDAX_axis
 from spectra_inspector.utilities.scalebar_style import (
     is_scalebar_annotation,
@@ -62,8 +63,63 @@ def test_pieces_follow_a_zoom(md):
 
 def test_pieces_shrink_the_bar_for_a_narrow_view(md):
     handler = scalebarHandler(width=100, units="um")
-    trace, _ = handler.get_pieces(md, x_range=[0, 50], y_range=[0, 50])
-    assert trace["name"].startswith("10.0")
+    # 50 pixels at 1.6 um is 80 um across: the bar may take 40% of that, so
+    # the largest round width that fits is 20 um
+    trace, annotation = handler.get_pieces(md, x_range=[0, 50], y_range=[0, 50])
+    assert trace["name"].startswith("20.0")
+    assert annotation["text"].startswith("20.0")
+    assert trace["x"][1] <= 50
+
+
+@pytest.mark.parametrize(
+    ("view_um", "expected_um"),
+    [(1000, 100), (250, 100), (200, 50), (96, 20), (30, 10), (2.6, 1), (0, 100)],
+)
+def test_fitting_width(view_um, expected_um):
+    default = unyt_quantity(100, "um")
+    fitted = fitting_width(default, unyt_quantity(view_um, "um"), 0.4)
+    assert fitted.value == expected_um
+    assert str(fitted.units) == "μm"
+
+
+def test_bar_never_exceeds_a_view_at_a_fine_pixel_scale():
+    # at 0.5 um per pixel a 150-pixel view is 75 um across: the default 100 um
+    # bar would be 200 pixels, wider than the view
+    axes = {
+        str(i): EDAX_axis(
+            size=512,
+            index_in_array=i,
+            name=name,
+            scale=0.5,
+            offset=0,
+            units="µm",
+            navigate=True,
+        )
+        for i, name in enumerate("yx")
+    }
+    md = CombinedMetadata.model_construct(axes_by_index=axes)
+    handler = scalebarHandler(width=100, units="um")
+    trace, _ = handler.get_pieces(md, x_range=[100, 250], y_range=[0, 150])
+    assert trace["name"].startswith("20.0")
+    assert trace["x"] == [102, 102 + 40]
+
+
+def test_figure_without_ranges_is_sized_to_the_image_drawn(md):
+    # a crop of the map (an exported subset) carries no axis ranges, and the
+    # metadata still describes the whole map: the bar must fit the crop
+    crop = [[0] * 60] * 40
+    handler = scalebarHandler(width=100, units="um")
+
+    fig = px.imshow(crop)
+    handler.add_to_or_update_figure(fig, md, image_shape=(40, 60))
+    assert fig.data[1].x[1] <= 60
+    assert fig.layout.annotations[0].text.startswith("20.0")
+    assert fig.data[1].y == (1, 1)
+
+    # without the shape the bar is the full map's, wider than the crop
+    fig = px.imshow(crop)
+    handler.add_to_or_update_figure(fig, md)
+    assert fig.data[1].x[1] > 60
 
 
 def test_figure_update_matches_pieces(md):
@@ -87,8 +143,8 @@ def test_figure_update_matches_pieces(md):
     handler.add_to_or_update_figure(fig, md)
     assert len(fig.data) == 2
     assert len(fig.layout.annotations) == 1
-    assert fig.data[1].name.startswith("10.0")
-    assert fig.layout.annotations[0].text.startswith("10.0")
+    assert fig.data[1].name.startswith("20.0")
+    assert fig.layout.annotations[0].text.startswith("20.0")
 
 
 def test_pieces_are_tagged_for_the_export(md):
