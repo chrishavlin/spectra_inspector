@@ -3,7 +3,18 @@ from dataclasses import dataclass, field
 from typing import Any
 
 import dash_bootstrap_components as dbc
-from dash import MATCH, Input, Output, State, callback, ctx, dcc, no_update
+from dash import (
+    MATCH,
+    ClientsideFunction,
+    Input,
+    Output,
+    State,
+    callback,
+    clientside_callback,
+    ctx,
+    dcc,
+    no_update,
+)
 from dash.development.base_component import Component
 
 from spectra_inspector.components.layout_ids import indexedLayoutIDMapper
@@ -67,6 +78,17 @@ class elementDropdownSliderParts:
 
 CUSTOM_RANGE_LABEL = "none"
 
+# The Apply button's props while the panel's image matches its controls, and
+# once a control has changed. The browser marks a button pending
+# (assets/apply_button.js mirrors these; the pulse on the class is in
+# assets/layout.css) and the figure builders of the inspector page put the
+# idle props back with the figure.
+APPLY_IDLE_PROPS: dict[str, str] = {"color": "secondary", "className": ""}
+APPLY_PENDING_PROPS: dict[str, str] = {
+    "color": "primary",
+    "className": "si-apply-pending",
+}
+
 
 def build_element_dropdown_and_slider(
     id_type_base: str = "element-dropdown-slider",
@@ -125,7 +147,7 @@ def build_element_dropdown_and_slider(
     apply_button = dbc.Button(
         "Apply",
         id=layoutIDs.get_id_with_index("refreshbutton"),
-        color="secondary",
+        **APPLY_IDLE_PROPS,
     )
 
     collapse_button = dbc.Button(
@@ -261,5 +283,23 @@ def register_element_selector_callbacks(
     return sync_element_selector_dropdown
 
 
+def register_apply_pending_callback(
+    id_type_base: str = "element-dropdown-slider",
+) -> None:
+    """Mark a panel's Apply as pending whenever its dropdown or slider
+    changes, in the browser. The three share an index, so ``MATCH`` lines
+    them up; see ``markPending`` in ``assets/apply_button.js``."""
+    ids = elementDropdownSliderIDS(id_type_base)
+    clientside_callback(
+        ClientsideFunction("applyButton", "markPending"),
+        Output({"type": ids.refreshbutton, "index": MATCH}, "color"),
+        Output({"type": ids.refreshbutton, "index": MATCH}, "className"),
+        Input({"type": ids.dropdown, "index": MATCH}, "value"),
+        Input({"type": ids.slider, "index": MATCH}, "value"),
+        prevent_initial_call=True,
+    )
+
+
 _imageSliderIds = elementDropdownSliderIDS()
 sync_element_selector_dropdown = register_element_selector_callbacks()
+register_apply_pending_callback()
