@@ -14,6 +14,7 @@ import json
 import dash
 import pytest
 
+from spectra_inspector.components.energy_range_slider import elementDropdownSliderIDS
 from spectra_inspector.settings import ENV_PREFIX
 
 GRAPH_TYPE = "bitmap-image-graph"
@@ -195,7 +196,7 @@ class TestAddOrDeleteImage:
     def test_first_batch_in_multi_mode_is_one_composite(self, inspector, triggered_by):
         triggered_by(inspector._ADD_IMAGE_ID)
         patch, store = inspector.add_or_delete_image(
-            3, [], {"initialized": False}, inspector.IMAGE_MODE_MULTI
+            3, [], {"initialized": False}, inspector.IMAGE_MODE_MULTI, []
         )
         assert self._added(patch) == 1
         assert store["next_index"] == 1
@@ -204,7 +205,7 @@ class TestAddOrDeleteImage:
     def test_first_batch_in_single_mode_is_three(self, inspector, triggered_by):
         triggered_by(inspector._ADD_IMAGE_ID)
         patch, store = inspector.add_or_delete_image(
-            3, [], {"initialized": False}, inspector.IMAGE_MODE_SINGLE
+            3, [], {"initialized": False}, inspector.IMAGE_MODE_SINGLE, []
         )
         assert self._added(patch) == 3
         assert store["next_index"] == 3
@@ -217,8 +218,74 @@ class TestAddOrDeleteImage:
             "next_index": 1,
         }
         patch, store = inspector.add_or_delete_image(
-            9, [], store, inspector.IMAGE_MODE_MULTI
+            9, [], store, inspector.IMAGE_MODE_MULTI, []
         )
         assert self._added(patch) == 1
         assert store["active_div_ids"][-1] == {"type": "bitmap-image-div", "index": 1}
         assert store["next_index"] == 2
+
+    def test_a_later_single_panel_opens_on_an_unused_element(
+        self, inspector, triggered_by
+    ):
+        triggered_by(inspector._ADD_IMAGE_ID)
+        store = {
+            "initialized": True,
+            "active_div_ids": [
+                {"type": "bitmap-image-div", "index": i} for i in range(3)
+            ],
+            "next_index": 3,
+        }
+        patch, _ = inspector.add_or_delete_image(
+            4, [], store, inspector.IMAGE_MODE_SINGLE, ["Mg", "Custom", "Si"]
+        )
+        [op] = patch.to_plotly_json()["operations"]
+        assert _dropdown_values(op["params"]["value"]) == ["Al"]
+
+
+def _dropdown_values(component) -> list:
+    """The values of every element dropdown in a component tree."""
+    dropdown_type = elementDropdownSliderIDS().dropdown
+    found = []
+
+    def walk(node):
+        if hasattr(node, "to_plotly_json"):
+            node = node.to_plotly_json()
+        if isinstance(node, list):
+            for child in node:
+                walk(child)
+            return
+        if isinstance(node, dict):
+            props = node.get("props", node)
+            id_ = props.get("id")
+            if isinstance(id_, dict) and id_.get("type") == dropdown_type:
+                found.append(props.get("value"))
+            walk(props.get("children"))
+            return
+
+    walk(component)
+    return found
+
+
+class TestNextElement:
+    def test_the_first_three_come_in_order(self, inspector):
+        in_use: set[str] = set()
+        picked = []
+        for _ in range(3):
+            picked.append(inspector._next_element(in_use))
+            in_use.add(picked[-1])
+        assert picked == list(inspector._INITIAL_PANEL_ELEMENTS)
+
+    def test_a_removed_element_is_offered_again(self, inspector):
+        assert inspector._next_element({"Mg", "Si"}) == "Al"
+
+    def test_then_the_remaining_server_presets(self, inspector):
+        first_three = set(inspector._INITIAL_PANEL_ELEMENTS)
+        nxt = inspector._next_element(first_three)
+        assert nxt not in first_three
+        assert nxt in inspector.get_element_energy_ranges()
+
+    def test_everything_shown_wraps_round(self, inspector):
+        assert (
+            inspector._next_element(set(inspector.get_element_energy_ranges()))
+            == inspector._INITIAL_PANEL_ELEMENTS[0]
+        )
