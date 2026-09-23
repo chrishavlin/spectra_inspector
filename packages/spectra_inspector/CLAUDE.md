@@ -332,6 +332,21 @@ marks nothing. `update_graph_figure` and `update_composite_figure` send
 `APPLY_IDLE_PROPS` back with `set_props` for the panel they refreshed. The
 extent reset leaves the marks alone: it re-fetches nothing.
 
+Every tooltip goes through `components/tooltip.hover_tooltip`, never a bare
+`dbc.Tooltip`. It sets `trigger="hover"` (the default `focus` half keeps a
+tooltip up after a dropdown pick hands focus back) and gives the tooltip the id
+`{"type": "hover-tooltip", "index": <target DOM id>}`. `dbc.Tooltip` has a race
+in its hover handling: it mirrors its open flag into a ref from a passive effect
+and its mouseout handler consults the ref, so a quick pass over a button
+(mouseout between the show timer and the effect) leaves the tooltip open with
+the pointer gone, and `is_open` only seeds its state so nothing outside can
+close it. `assets/hover_tooltip.js` sweeps while any tooltip is mounted: every
+200 ms a shown tooltip whose target and body are both away from the pointer
+(`document.elementFromPoint`) gets a non-bubbling `mouseout` on its target, the
+one event the component does honour. The id convention is how the script finds
+the target; `components/tests/test_tooltip.py` checks every layout's tooltips
+resolve.
+
 Two consequences for the page callbacks:
 
 - `update_graph_figure` only builds panels that have a single-panel Apply button

@@ -43,6 +43,7 @@ from spectra_inspector.components.energy_range_slider import (
 )
 from spectra_inspector.components.layout_ids import indexedLayoutIDMapper
 from spectra_inspector.components.scalebar import scalebarHandler
+from spectra_inspector.components.tooltip import hover_tooltip
 from spectra_inspector.utilities.composite import (
     CHANNEL_COLORS,
     CHANNEL_OFF,
@@ -257,16 +258,16 @@ def composite_image_layout(
         )
         tooltips.extend(
             [
-                dbc.Tooltip(
+                hover_tooltip(
                     f"Element map for channel {channel + 1} ({CHANNEL_OFF} leaves "
                     "it out of the blend)",
                     target=selectorIDs.get_id_with_index("dropdown"),
                 ),
-                dbc.Tooltip(
+                hover_tooltip(
                     "Adjust endpoints to set energy bounds (keV)",
                     target=selectorIDs.get_id_with_index("slider"),
                 ),
-                dbc.Tooltip(
+                hover_tooltip(
                     "Percentiles of the map shown as black and as full colour",
                     target=chIDs.get_id_with_index("stretch"),
                 ),
@@ -313,15 +314,15 @@ def composite_image_layout(
 
     tooltips.extend(
         [
-            dbc.Tooltip(
+            hover_tooltip(
                 "Delete composite image panel",
                 target=imIDs.get_id_with_index("delete"),
             ),
-            dbc.Tooltip(
+            hover_tooltip(
                 "Blend the channels with their current elements, colours and ranges",
                 target=panelIDs.get_id_with_index("apply"),
             ),
-            dbc.Tooltip(
+            hover_tooltip(
                 "Show or hide each channel's colour, energy range and stretch",
                 target=panelIDs.get_id_with_index("detailsbutton"),
             ),
