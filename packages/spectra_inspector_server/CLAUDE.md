@@ -4,6 +4,10 @@ Backend-specific guidance for Claude Code. The root `CLAUDE.md` covers the
 repository layout, commands, configuration, conventions, and commit rules; this
 file is loaded only when working on files under this package.
 
+Each module's docstring explains its own design (`processor/_polygon.py`,
+`processor/_reductions.py`, `calibration.py`, `processor/file_loaders.py`, ...);
+read it before changing the module. This file keeps the cross-module picture.
+
 ## Backend architecture
 
 Data source is a filesystem scan, not a real database:
@@ -12,36 +16,33 @@ Data source is a filesystem scan, not a real database:
   both `@lru_cache`) → `EDAXPathHandler` (`_file_tree_handling.py`) →
   `OnDiskDatabase` (`_database/on_disk_db.py`).
 - `OnDiskDatabase` recursively walks `SPECTRA_INSPECTOR_DATA_ROOT` for `.spd`
-  files that have sibling `.spc`/`.ipr` (required) plus optional `.bmp`/`.xml`,
-  keyed by **file basename**; a basename seen a second time anywhere in the tree
-  is skipped with a warning (`OnDiskDatabase.add_fileset` returns False), so the
-  first one found wins rather than the scan erroring out. Rescanning only
-  happens via `/available-datasets?refresh_db=true` and only when
-  `SPECTRA_INSPECTOR_ALLOW_DB_REFRESH=true`.
-- `SPECTRA_INSPECTOR_DESKTOP_MODE=true` skips that startup walk entirely
-  (`dependencies.get_database_session` passes `init_db=False`) and enables
-  `/browse-directory` + `/datasets-in-directory`, which let a client walk the
-  tree and scan one directory into the database
-  (`OnDiskDatabase.set_working_directory`, replacing the previous contents).
-  Every client path goes through `_file_browser.resolve_within_root`, which is
-  the only thing confining browsing to the data root — new endpoints taking a
-  path must use it. Both endpoints 403 when desktop mode is off.
+  files with sibling `.spc`/`.ipr` (required) plus optional `.bmp`/`.xml`, keyed
+  by **file basename**; a duplicate basename anywhere in the tree is skipped
+  with a warning, first one wins. It also registers **every** `.spc` in
+  `available_spectra`, so a name can be both a map and a spectrum; the
+  per-sample endpoints take `spectrum_only: bool` to say which is meant.
+  Rescanning only happens via `/available-datasets?refresh_db=true` and only
+  when `SPECTRA_INSPECTOR_ALLOW_DB_REFRESH=true`.
+- `SPECTRA_INSPECTOR_DESKTOP_MODE=true` skips the startup walk and enables
+  `/browse-directory` + `/datasets-in-directory` (403 otherwise). Every client
+  path goes through `_file_browser.resolve_within_root`, which is the only thing
+  confining browsing to the data root — new endpoints taking a path must use it.
 - An optional `sample_metadata.csv` at the data root supplies lat/lon/group
-  metadata used by the frontend's sample map. `_map_to_sample_name` derives a
-  sample id from a map name by splitting on `"Map"`.
+  metadata for the frontend's sample map.
 - `processor/file_loaders.py` loads metadata lazily through
   `rsciio.edax.file_reader`, then mmaps the `.spd` payload directly
   (`np.memmap`, deliberately bypassing rsciio's dask wrapper). Array axis order
-  is `(index0, index1, channel)`.
+  is `(index0, index1, channel)`; a spectrum-only dataset is 1D with the energy
+  axis as its only axis.
 
 Request flow for anything expensive: the `lifespan` context creates an
 `asyncio.Queue` and a long-running `process_requests` consumer that dispatches
 each item into a `ProcessPoolExecutor`. Endpoints build a `queueOpsItem`
 (`ops_func` is the **string name of a method on `OperationEDAXStateHandler`**,
 dispatched via `getattr`), push it with `submit_op`, then wait in
-`await_op_result` on the `asyncio.Event` `submit_op` registered for that
-`ops_id` (2-minute timeout → HTTP 404). `/info`, `/available-datasets`, and the
-metadata endpoints skip the queue and run inline.
+`await_op_result` on the `asyncio.Event` registered for that `ops_id` (2-minute
+timeout → HTTP 404). `/info`, `/available-datasets`, and the metadata endpoints
+skip the queue and run inline.
 
 The pool holds a single worker and outlives the requests it serves, because
 `load_edax_spd` caches the filesets it has opened (bounded, invalidated on
@@ -54,69 +55,30 @@ So adding a heavy endpoint means: add a method to
 `model.py`, enqueue a `queueOpsItem` naming that method, regenerate the frontend
 models (see the root `CLAUDE.md`), and mirror the client call in the frontend's
 `utilities/interface.py`. Large reductions chunk over axis 0
-(`_DEFAULT_CHUNKSIZE = 128`) to avoid materializing the full cube, and go
-through `processor/_reductions.py::accumulator_dtype` for what dominates them:
-the narrowest accumulator that provably cannot overflow, because numpy's 32 bit
-reduce loop runs about twice as fast as the 64 bit one. The reductions are
-deliberately single-threaded.
+(`_DEFAULT_CHUNKSIZE`) and pick their accumulator through
+`processor/_reductions.py::accumulator_dtype`; they are deliberately
+single-threaded.
+
+Request validation that needs no data load (index ranges against the header's
+axis sizes, the `polygon` query parameter) happens in `main.py` and answers 422
+before anything is queued. The `polygon` parameter is parsed by hand there
+rather than through a pydantic model so the frontend's generated `model.py` is
+unaffected. The server never clips a selection: the frontend clips boxes to the
+image before asking, and a polygon is intersected with the map by
+`processor/_polygon.py`.
 
 Images cross the wire as `raveledImage` (flat list + shape), reshaped
 client-side.
 
-`/image-spectrum` sums a region given either as index ranges (a box) or as
-`polygon`, a JSON list of at least three `[index0, index1]` vertices in pixel
-index units (pixel centres on the integers), which takes precedence over the
-ranges. `processor/_polygon.py` rasterises it in numpy (even-odd rule over the
-pixel centres, half-open in the row direction, over the polygon's bounding box
-clipped to the map; no shapely), and `get_spectrum` sums the masked pixels chunk
-by chunk like a box. The parameter is parsed and validated in `main.py`
-(`_parse_polygon`, 422 on anything malformed) rather than through a pydantic
-model so the frontend's generated `model.py` is unaffected. Index ranges must
-lie within the map: `_index_ranges_or_422` in `main.py` reads the axis sizes
-from the header (`get_axis_sizes`, no data load) and answers a range past them,
-or a descending one, with a 422 before anything is queued
-(`validate_index_range`; an empty `start == stop` range is fine and sums to
-nothing). The server never clips: a box dragged out over the image's edge is
-clipped to it by the frontend before it is asked for, and a worker exception
-would otherwise surface only as a 500 with the message in the log.
-
-`calibration.py` computes per-element peak weights over fixed keV windows plus
-the `DH_assessment` ratio; `Spectrum1d.get_weights()` attaches them to
-`/image-spectrum` responses when `include_weights=true`, together with the
-windows themselves as `integration_ranges_keV` so the frontend draws the peaks
-the weights were actually summed over (issue #120). Both are null when the
-spectrum cannot be calibrated.
-
-### Spectrum-only datasets (issue #115)
-
-Besides maps, the scan registers **every** `.spc` it sees in
-`OnDiskDatabase.available_spectra` (`_recursive_inspection` / `find_spc_files`),
-whether the file is standalone or the sidecar of a full set.
-`AvailableDatasets.available_spectra` lists them next to `available_files`, and
-`directoryListing.spectrum_count` counts them per directory. The two name spaces
-overlap (`C-12` is both a map and its spectrum), so the per-sample endpoints
-(`/image-metadata`, `/image-metadata-combined`, `/image-spectrum`) take
-`spectrum_only: bool` to say which is meant; the image endpoints only ever serve
-maps. With `spectrum_only`, `EDAXPathHandler.load_edax` goes through
-`file_loaders.load_edax_spc`, which reads the lone `.spc` via rsciio into an
-`EDAX_raw_ds` whose `data` is 1D and whose only axis is the energy axis, so
-`CombinedMetadata.data_shape` is `(channel,)` and `axes_by_index` has key 0
-only. `get_spectrum(..., spectrum_only=True)` returns the stored counts (index
-ranges are ignored) and the weights / DH assessment come out as for a map.
-
 ### Testing without EDAX data
 
-`_testing.py` exposes `onDiscMock` with two synthetic sample names
-(`faked-dataset-C12`, `faked-dataset-2`) and `createEDAXMock()`, which builds a
-full `EDAX_raw_ds` including realistic `original_metadata` headers.
-`pytest_running()` sniffs `PYTEST_VERSION`; `main._valid_sample_name` and
-`OperationEDAXStateHandler._require_sample` accept mock names only when it is
-true, so `TestClient` tests hit every endpoint without a data root. Keep new
-endpoints going through those two guards or they will be untestable.
-
-For spectra, `onDiscMock.is_mock(name, spectrum_only=...)` accepts the map names
-in both modes plus `faked-spectrum-only` as a spectrum with no map behind it
-(`createEDAXSpectrumMock()`, 4096 channels of 10 eV so the calibration windows
-are covered). `write_mock_spc(path)` writes a **genuine** `.spc` using rsciio's
-own header dtype, so the real loader can be exercised on a `tmp_path` without
-checking EDAX data into the repo (`tests/test_spectrum_only.py`).
+`_testing.py` exposes `onDiscMock` with synthetic sample names
+(`faked-dataset-C12`, `faked-dataset-2`, and `faked-spectrum-only` for a
+spectrum with no map behind it) and `createEDAXMock()` /
+`createEDAXSpectrumMock()`, which build full `EDAX_raw_ds` objects with
+realistic headers. `pytest_running()` sniffs `PYTEST_VERSION`;
+`main._valid_sample_name` and `OperationEDAXStateHandler._require_sample` accept
+mock names only when it is true, so `TestClient` tests hit every endpoint
+without a data root. Keep new endpoints going through those two guards or they
+will be untestable. `write_mock_spc(path)` writes a genuine `.spc` so the real
+loader can be exercised on a `tmp_path`.

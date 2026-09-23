@@ -3,12 +3,26 @@
 This file provides guidance to Claude Code (claude.ai/code) when working with
 code in this repository.
 
+## What belongs in a CLAUDE.md
+
+These files are loaded into context on every session, so they are budgeted. Keep
+only what is **not derivable** from the code, docstrings, tests or git history,
+**would cause a wrong change** if unknown, and is **stable** across features.
+Concretely:
+
+- Do not narrate a feature's implementation here when it lands. Put the design
+  and the behaviour it works around in the module's docstring, and keep the
+  tests as the specification. A CLAUDE.md is not a changelog.
+- Do not document that another file is stale; fix that file.
+- Prefer a one-line rule with a pointer to the code over a paragraph that
+  repeats what the code says.
+- If a note here has become false, delete it rather than annotating it.
+
 ## Repository layout
 
 Two **independent** uv projects under `packages/`. There is no root
 `pyproject.toml` and no uv workspace — every `uv` command must be run from
-inside one of the package directories (the README's "run `uv sync` from the
-repository root" is stale).
+inside one of the package directories.
 
 - `packages/spectra_inspector_server/` — FastAPI backend (Python >=3.12) that
   reads EDAX filesets off a local filesystem.
@@ -46,7 +60,7 @@ Run from the relevant package directory.
 uv run --group test pytest src
 uv run --group test pytest src/spectra_inspector_server/tests/test_calibration.py::test_sum_in_range_with_shift  # single test
 
-# type checking — server only, strict mypy (CI); the server README's `ty check` is stale
+# type checking — server only, strict mypy (CI)
 cd packages/spectra_inspector_server && uv sync --group typing && uv run mypy src/*
 
 # lint/format — pre-commit (ruff check+format, prettier, etc.), run from repo root
@@ -63,56 +77,26 @@ cd packages/spectra_inspector_server && uv run fastapi run src/spectra_inspector
 cd packages/spectra_inspector           && uv run python serve.py                                # :8050
 ```
 
-Docker: `./start_docker.sh [dev|prod]` (`stop_docker.sh` tears down) wraps
-`docker compose` and passes both packages' `.env` files, which compose both
-interpolates (`${...}` in the compose files) and hands to the containers via
-`env_file` -- the images carry no configuration (`.dockerignore` excludes
-`.env`). `./compose.sh [prod] <args>` runs any other compose command with the
-same flags, and the start/stop scripts call it; a bare `docker compose` fails
-interpolation. All three are bash only; Windows users run the app natively with
-uv (the README's `start_uv_local.bat`). `compose.yaml` is the shared base with
-no published ports; `compose.override.yaml` (auto-loaded, dev) adds root user,
-dev deps, the Dash debugger, watch sync, and publishes 8050 on all interfaces
-plus 8000 on loopback; `compose.prod.yaml` adds a `caddy` reverse-proxy service
-that is the only thing published (80/443; Let's Encrypt, campus IP allowlist and
-basic auth all live in `proxy/Caddyfile`, untracked, copied from
-`proxy/Caddyfile.example`) plus restart policies, a `/info` health check and log
-rotation. The frontend reaches the backend by service name
-(`SPECTRA_INSPECTOR_SERVER_HOST=fastapi` set in `compose.yaml`), so the backend
-never needs a host port, and caddy reaches the frontend the same way
-(`frontend:8050`). The frontend Dockerfile's `CMD` serves
-`spectra_inspector.main:server` (the Flask app) with gunicorn
-(`SPECTRA_INSPECTOR_N_FRONTEND_WORKERS` gthread workers, 180 s timeout); the dev
-overlay's `command` swaps in `serve.py --debug 1`, the Flask development server
-with the reloader.
-
-`DEPLOYMENT.md` is the operator's document for `prod`: prerequisites, the
-Caddyfile, staging-then-production certificate issuance, and how to update a
-running deployment. Put deployment procedure there, not in the README.
-
-Note: `[tool.pytest]` in the server's `pyproject.toml` is not a table pytest
-reads (`[tool.pytest.ini_options]` is), so `testpaths`/`filterwarnings` there
-have no effect — always pass `src` explicitly.
+Docker: `./start_docker.sh [dev|prod]`, `./stop_docker.sh`, and
+`./compose.sh [prod] <args>` for any other compose command. The scripts pass
+both packages' `.env` files, which compose interpolates, so a bare
+`docker compose` fails. `compose.yaml` is the base, `compose.override.yaml` the
+auto-loaded dev overlay, `compose.prod.yaml` adds the caddy proxy
+(`proxy/Caddyfile`, untracked). The frontend reaches the backend by service
+name. `DEPLOYMENT.md` is the operator's document for `prod`; put deployment
+procedure there, not in the README.
 
 ### Configuration gotcha
 
-Each package reads its own `.env` (pydantic-settings, `env_file=".env"`,
-untracked; templates are `defaults.env`). Settings models forbid extra keys, so
-a `.env` containing names that don't match the model's fields raises
-`extra_forbidden` and **fails tests and app startup**. If frontend tests fail
-with pydantic validation errors, check `packages/spectra_inspector/.env` against
-`spectra_inspector/settings.py` — CI passes because no `.env` exists there.
+Each package reads its own `.env` (pydantic-settings, untracked; templates are
+`defaults.env`). Every key carries the `SPECTRA_INSPECTOR_` prefix
+(`SPECTRA_INSPECTOR_DATA_ROOT` <- `Settings.data_root`). Settings models forbid
+extra keys and a validator rejects unprefixed spellings, so a bad `.env` **fails
+tests and app startup** with a pydantic error. If frontend tests fail that way,
+check `packages/spectra_inspector/.env` against `spectra_inspector/settings.py`
+— CI passes because no `.env` exists there.
 
-Both packages' `Settings` set `env_prefix="SPECTRA_INSPECTOR_"` over unprefixed
-field names, so every key in either `.env` carries that prefix (`data_root` <-
-`SPECTRA_INSPECTOR_DATA_ROOT`). Because pydantic _ignores_ rather than rejects
-env names outside the prefix, each package also duplicates a
-`Settings._reject_unprefixed_env_file_keys` validator that re-reads `.env` and
-errors on unprefixed spellings instead of silently falling back to the defaults.
-Both arrived with issue #89 — before it the frontend's names were unprefixed
-entirely and the server baked the prefix into its field names.
-
-Note the server's `Info` response model still spells its field
+The server's `Info` response model spells its field
 `spectra_inspector_data_root`; that is the wire format (mirrored in the
 frontend's `utilities/model.py`) and is deliberately decoupled from
 `Settings.data_root`.
@@ -126,11 +110,10 @@ Claude Code loads on demand once a file in that package is read or edited:
   the request queue and process pool, how to add a heavy endpoint, and testing
   without EDAX data.
 - `packages/spectra_inspector/CLAUDE.md` — Dash page/callback structure, the
-  user store, the component id convention, browser-only Dash/plotly behaviours
-  (panel syncing, issue #65), and headless browser testing.
+  user store, the component id convention, the Dash/plotly rules that only fail
+  in a browser, and headless browser testing.
 
-Read the relevant one before changing anything inside that package. Keep
-package-specific detail there rather than in this file.
+Read the relevant one before changing anything inside that package.
 
 ## Conventions
 
