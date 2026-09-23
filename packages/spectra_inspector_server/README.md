@@ -164,7 +164,7 @@ picker turns the flag into a warning next to the sample dropdown.
 
 ```
 uv sync --group typing
-uv run ty check
+uv run mypy src/*
 ```
 
 ### Deployment

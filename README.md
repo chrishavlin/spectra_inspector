@@ -152,12 +152,14 @@ See [DEPLOYMENT.md](DEPLOYMENT.md) for more information.
 
 ## Running via uv
 
-### Initialize the Python environment
+### Initialize the Python environments
 
-From the repository root:
+The two packages are independent uv projects; there is no root `pyproject.toml`,
+so sync each one from its own directory:
 
 ```sh
-uv sync
+(cd packages/spectra_inspector_server && uv sync)
+(cd packages/spectra_inspector && uv sync)
 ```
 
 ### Start the server and frontend
