@@ -18,6 +18,10 @@ from spectra_inspector.components.image_toolbox import IMAGE_TOOLBOX
 from spectra_inspector.settings import ENV_PREFIX
 from spectra_inspector.tests.test_export_summary import combined_metadata
 from spectra_inspector.user_store_model import UserStore
+from spectra_inspector.utilities.scalebar_style import (
+    DEFAULT_SCALEBAR_COLOR,
+    DEFAULT_SCALEBAR_FONTSIZE,
+)
 from spectra_inspector.utilities.view_sync import empty_view
 
 GRAPH_TYPE = "bitmap-image-graph"
@@ -109,6 +113,45 @@ def _graph_ids(n: int) -> list[dict]:
 
 def _processed(*indices: int) -> dict:
     return {"graph_ids": [{"type": GRAPH_TYPE, "index": i} for i in indices]}
+
+
+def test_scalebar_controls_restyle_built_panels_and_fill_the_store(inspector):
+    # the controls' values, validated, land in the store and on every built
+    # panel as a layout patch; a panel without a figure yet is left alone
+    patches, store = inspector.restyle_scalebar(
+        False, "#ff0000", "16", _graph_ids(3), _processed(0, 2)
+    )
+    assert store == {"show": False, "color": "#ff0000", "fontsize": 16}
+    assert patches[1] is no_update
+    expected = {
+        "data.1.visible": False,
+        "data.1.line.color": "#ff0000",
+        "layout.annotations.0.visible": False,
+        "layout.annotations.0.font.color": "#ff0000",
+        "layout.annotations.0.font.size": 16,
+    }
+    assert _ops(patches[0]) == expected
+    assert _ops(patches[2]) == expected
+    # a value the controls could not report means the default
+    _, store = inspector.restyle_scalebar(None, "red", None, _graph_ids(0), {})
+    assert store == {
+        "show": True,
+        "color": DEFAULT_SCALEBAR_COLOR,
+        "fontsize": DEFAULT_SCALEBAR_FONTSIZE,
+    }
+
+
+def test_scalebar_callback_never_carries_figures(callbacks):
+    restylers = [
+        cb
+        for cb in callbacks
+        if any(dep["id"] == "image-toolbox-scalebar-color" for dep in cb["inputs"])
+    ]
+    assert len(restylers) == 1
+    (restyler,) = restylers
+    assert GRAPH_TYPE in restyler["output"]
+    assert "scalebar-style.data" in restyler["output"]
+    assert not any(_mentions(dep, GRAPH_TYPE, "figure") for dep in restyler["state"])
 
 
 def test_tool_patches_only_built_panels(inspector):

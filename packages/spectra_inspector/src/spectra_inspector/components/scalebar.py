@@ -1,12 +1,40 @@
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from typing import Any
 
 import numpy as np
+from dash import Patch
 from plotly.graph_objects import Figure
 from unyt import unyt_quantity
 
 from spectra_inspector.utilities.model import CombinedMetadata, EDAX_axis
+from spectra_inspector.utilities.scalebar_style import (
+    DEFAULT_SCALEBAR_COLOR,
+    DEFAULT_SCALEBAR_FONTSIZE,
+    SCALEBAR_ANNOTATION_NAME,
+    SCALEBAR_META_KEY,
+    scalebarStyle,
+)
 from spectra_inspector.utilities.scaling import get_axis
+
+
+def format_length(length: unyt_quantity) -> str:
+    """A length as the scalebar labels it: ``100 μm`` for a whole number,
+    ``2.5 μm`` otherwise, never a trailing ``.0``."""
+    value = float(length.value)
+    number = f"{int(value)}" if value.is_integer() else f"{value:g}"
+    return f"{number} {length.units}"
+
+
+def apply_style_to_patch(patch: Patch, style: scalebarStyle) -> Patch:
+    """Restyle the scalebar of a built panel in place: its trace is the
+    figure's second and its label the first annotation (``scalebarHandler``
+    always draws both, hidden or not, so a patch can reach them)."""
+    patch["data"][1]["visible"] = style.show
+    patch["data"][1]["line"]["color"] = style.color
+    patch["layout"]["annotations"][0]["visible"] = style.show
+    patch["layout"]["annotations"][0]["font"]["color"] = style.color
+    patch["layout"]["annotations"][0]["font"]["size"] = style.fontsize
+    return patch
 
 
 def get_pixel_scalebar(ax: EDAX_axis, scalebar_length: unyt_quantity) -> int:
@@ -29,6 +57,24 @@ def get_pixel_scalebar(ax: EDAX_axis, scalebar_length: unyt_quantity) -> int:
     return int(np.round(n_pixels.value))
 
 
+# the round numbers a shrunk bar is allowed to be, times a power of ten
+NICE_MANTISSAS = (1.0, 2.0, 5.0)
+
+
+def fitting_width(
+    default: unyt_quantity, view_width: unyt_quantity, max_fraction: float
+) -> unyt_quantity:
+    """The default bar width when it spans no more than ``max_fraction`` of
+    the view, else the largest 1, 2 or 5 times a power of ten (in the
+    default's units) that does."""
+    limit = float((view_width * max_fraction).to(default.units).value)
+    if limit <= 0 or float(default.value) <= limit:
+        return default
+    exponent = np.floor(np.log10(limit))
+    best = max(m * 10**exponent for m in NICE_MANTISSAS if m * 10**exponent <= limit)
+    return unyt_quantity(best, default.units)
+
+
 @dataclass
 class scalebarHandler:
     width: float = 100
@@ -36,9 +82,18 @@ class scalebarHandler:
     pixel_height: int = 5
     pixel_offset_factor: float = 0.01
     pixel_offset_initial: int = 5
-    color: str = "green"
-    fontsize: int = 12
+    color: str = DEFAULT_SCALEBAR_COLOR
+    fontsize: int = DEFAULT_SCALEBAR_FONTSIZE
+    visible: bool = True
     auto_rescale: bool = True
+    # the most of the visible width the bar may span before it is shrunk
+    max_view_fraction: float = 0.4
+
+    def styled(self, style: scalebarStyle) -> "scalebarHandler":
+        """This handler drawing the bar as ``style`` says."""
+        return replace(
+            self, color=style.color, fontsize=style.fontsize, visible=style.show
+        )
 
     @property
     def unyt_width(self) -> unyt_quantity:
@@ -65,8 +120,10 @@ class scalebarHandler:
             "x": [x0, x0 + scalebar_wid_pixels],
             "y": [y0, y0],
             "type": "scatter",
-            "name": f"{width_.value} {width_.units}",
+            "name": format_length(width_),
             "line": {"width": self.pixel_height, "color": self.color},
+            "meta": {SCALEBAR_META_KEY: True},
+            "visible": self.visible,
         }
 
         return new_trace
@@ -80,8 +137,8 @@ class scalebarHandler:
         """The scalebar trace and its label annotation for a view.
 
         Ranges are ascending pixel ranges of the visible image; None means the
-        full axis. The bar shrinks to a round number when the view is narrower
-        than the default width.
+        full axis. The bar shrinks to a round number when the default width
+        would span more than ``max_view_fraction`` of the view.
         """
         widths = {"x": 0.0, "y": 0.0}
         scalebar_pos = {"x": 0.0, "y": 0.0}
@@ -97,13 +154,13 @@ class scalebarHandler:
             widths[ax] = rng[1] - rng[0]
             scalebar_pos[ax] = rng[0] + np.ceil(self.pixel_offset_factor * widths[ax])
 
-        xwidth = unyt_quantity(widths["x"], self.units)
-        override_width = self.unyt_width
-        if xwidth < self.unyt_width:
-            xlog = np.log10(xwidth)
-            override_width = unyt_quantity(10 ** np.floor(xlog), self.units)
+        pixel_axis = get_axis(md, 0)
+        pixel_size = unyt_quantity(pixel_axis.scale, pixel_axis.units).to(self.units)
+        override_width = fitting_width(
+            self.unyt_width, widths["x"] * pixel_size, self.max_view_fraction
+        )
 
-        scalebar_wid_pixels = get_pixel_scalebar(get_axis(md, 0), override_width)
+        scalebar_wid_pixels = get_pixel_scalebar(pixel_axis, override_width)
         text_x_loc = scalebar_pos["x"] + scalebar_wid_pixels / 2
 
         new_trace = self.get_trace(
@@ -114,11 +171,15 @@ class scalebarHandler:
         )
 
         text_annotate_dict = {
+            "name": SCALEBAR_ANNOTATION_NAME,
             "x": text_x_loc,
             "y": scalebar_pos["y"],
-            "text": f"{override_width}",
+            "text": format_length(override_width),
+            "visible": self.visible,
             "showarrow": False,
-            "yshift": -10,
+            # the label hangs from just under the bar, whatever its font size
+            "yanchor": "top",
+            "yshift": -(self.pixel_height / 2 + 4),
             "font": {
                 "size": self.fontsize,
                 "color": self.color,
@@ -131,7 +192,12 @@ class scalebarHandler:
         self,
         fig: Figure | None,
         md: CombinedMetadata,
+        image_shape: tuple[int, int] | None = None,
     ):
+        """Draw the scalebar on ``fig`` for its axis ranges. An axis without
+        a range spans the image drawn, whose (rows, columns) is
+        ``image_shape`` when given and the map's from the metadata otherwise:
+        a crop of the map is narrower than the metadata says."""
 
         if fig is None:
             return
@@ -140,10 +206,16 @@ class scalebarHandler:
         if figdata is None:
             return
 
+        x_range = conditionally_get_axis_range(fig, "x")
+        y_range = conditionally_get_axis_range(fig, "y")
+        if image_shape is not None:
+            if x_range is None:
+                x_range = [0.0, float(image_shape[1])]
+            if y_range is None:
+                y_range = [0.0, float(image_shape[0])]
+
         new_trace, text_annotate_dict = self.get_pieces(
-            md,
-            x_range=conditionally_get_axis_range(fig, "x"),
-            y_range=conditionally_get_axis_range(fig, "y"),
+            md, x_range=x_range, y_range=y_range
         )
 
         if len(figdata) <= 1:

@@ -260,7 +260,14 @@ def get_new_im(
         zmin=zmin,
         zmax=zmax,
     )
-    return finish_image_figure(fig, md, scalebar_handler, view, shapes)
+    return finish_image_figure(
+        fig,
+        md,
+        scalebar_handler,
+        view,
+        shapes,
+        image_shape=(int(im_data.shape[0]), int(im_data.shape[1])),
+    )
 
 
 def finish_image_figure(
@@ -269,9 +276,12 @@ def finish_image_figure(
     scalebar_handler: scalebarHandler | None = None,
     view: dict | None = None,
     shapes: list[dict] | None = None,
+    image_shape: tuple[int, int] | None = None,
 ) -> go.Figure:
     """Style a ``px.imshow`` figure as an image panel: no axes or colorbar,
-    the box tool active, the shared view applied and the scalebar drawn."""
+    the box tool active, the shared view applied and the scalebar drawn,
+    sized to the image actually drawn (``image_shape``, rows by columns) when
+    no view narrows it."""
     fig.update_layout(
         coloraxis_showscale=False,
         margin_b=5,
@@ -296,7 +306,7 @@ def finish_image_figure(
     apply_view_to_figure(fig, view, shapes)
 
     if scalebar_handler is not None:
-        scalebar_handler.add_to_or_update_figure(fig, md)
+        scalebar_handler.add_to_or_update_figure(fig, md, image_shape=image_shape)
 
     return fig
 

@@ -394,7 +394,14 @@ def composite_figure(
     """An image panel figure from an already blended RGB array."""
     fig = px.imshow(rgb)
     fig.update_traces(hovertemplate=hover_template(channels))
-    return finish_image_figure(fig, md, scalebar_handler, view, shapes)
+    return finish_image_figure(
+        fig,
+        md,
+        scalebar_handler,
+        view,
+        shapes,
+        image_shape=(int(rgb.shape[0]), int(rgb.shape[1])),
+    )
 
 
 def get_composite_im(

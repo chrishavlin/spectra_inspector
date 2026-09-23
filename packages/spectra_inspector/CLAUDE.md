@@ -230,13 +230,39 @@ Several Dash/plotly behaviours here are not visible from the python side:
   `outlineStyle` the export panel's **Figure export settings** give: a "draw the
   outline" checkbox and line / dot colour pickers (white by default), shown by
   `toggle_figure_export_settings` only while a selection exists. The pickers are
-  `dbc.Input(type="color")`, the browser's native picker: `color` is not in the
-  types dbc declares (its propTypes `oneOf` and the Python `Literal`), but the
-  component passes the type through to the `<input>` and reads the value like
-  any other, so it works and only a props-check in debug mode could object;
-  `outline_style` accepts nothing but `#rrggbb` from it. `plotly_to_matplotlib`
-  draws `rect`, `path` and `circle` shapes in their own colours (`mpl_color`
-  turns `rgba(...)` into fractions).
+  `toolbox.color_input`, a `dbc.Input(type="color")`, the browser's native
+  picker: `color` is not in the types dbc declares (its propTypes `oneOf` and
+  the Python `Literal`), but the component passes the type through to the
+  `<input>` and reads the value like any other, so it works and only a
+  props-check in debug mode could object; `outline_style` accepts nothing but
+  `#rrggbb` from it. `plotly_to_matplotlib` draws `rect`, `path` and `circle`
+  shapes in their own colours (`mpl_color` turns `rgba(...)` into fractions).
+- The **scalebar's style** is the image toolbox's Scalebar row (issue #47): a
+  show checkbox, a colour picker (white by default) and a text-size input
+  (`SCALEBAR_SHOW_ID` / `_COLOR_ID` / `_FONTSIZE_ID` in `image_toolbox.py`), and
+  one setting serves the panels and the export alike. `restyle_scalebar`
+  validates the controls into a `scalebarStyle` (`utilities/scalebar_style.py`,
+  next to the tags below), patches every built panel's bar and label
+  (`scalebar.apply_style_to_patch`) and writes the page's `scalebar-style`
+  store, which every figure builder, the view sync, the zoom actions and
+  `export_summary` read (`_scalebar(store)` gives the module handler `styled`
+  for it). A hidden bar is drawn `visible: False` rather than left out, so the
+  figure's shape never changes (`data[1]` is the bar, `annotations[0]` its
+  label) and a patch can bring it back. Labels are whole numbers where possible
+  (`format_length`: `100 μm`, `2.5 μm`), and the bar shrinks to the largest
+  1/2/5 x 10^n spanning at most 40% of the visible width (`fitting_width`),
+  sized to the image actually drawn (`image_shape` through
+  `finish_image_figure`) so a crop never gets the full map's bar.
+  `scalebarHandler` tags its pieces (`meta.scalebar` on the trace,
+  `name: "scalebar"` on the annotation) and the export runs `scalebar_styled`
+  over every figure dict it writes, which strips a hidden bar.
+  `plotly_to_matplotlib` draws the bar as a matplotlib `AnchoredOffsetbox` in
+  the upper-left corner rather than a line on the axes: the bar's length in
+  pixels comes from the trace, the label sits centred below it with a gap, both
+  in the trace's colour at the annotation's font size, edged in black or white
+  (`contrasting_color`) so they read on any colormap. It still falls back to the
+  first line trace and first annotation for a figure without the tags, and skips
+  pieces marked invisible.
 - `components/toolbox.py` holds what the two toolboxes share: the button and row
   dataclasses, the view-control specs, the id mapper, the card builder
   (`toolbox_card`, whose `extras` slot ready-made components into a row) and the

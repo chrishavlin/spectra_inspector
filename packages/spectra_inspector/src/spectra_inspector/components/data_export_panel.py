@@ -5,6 +5,7 @@ import dash_bootstrap_components as dbc
 from dash import Input, Output, State, callback, dcc, html
 
 from spectra_inspector.components.layout_ids import indexedLayoutIDMapper
+from spectra_inspector.components.toolbox import color_input
 from spectra_inspector.utilities.peak_windows import (
     element_swatch,
     spectrum_element_colors,
@@ -138,24 +139,15 @@ class dataExportPanelIDS(indexedLayoutIDMapper):
         return self.full_id("-outlinedotcolor")
 
 
-def _color_input(id_: str) -> dbc.Input:
-    # the browser's own colour picker. "color" is not among the types dbc
-    # declares for Input, but the component hands the type straight to the
-    # <input> element and reads the value back like any other; Bootstrap's
-    # form-control-color class sizes it as a swatch.
-    return dbc.Input(
-        id=id_,
-        type="color",
-        value=DEFAULT_OUTLINE_COLOR,
-        className="form-control-color",
-        debounce=True,
-    )
+def _outline_color_input(id_: str) -> dbc.Input:
+    return color_input(id_, DEFAULT_OUTLINE_COLOR)
 
 
 def figure_settings_layout(layoutIDs: dataExportPanelIDS) -> html.Div:
     """The figure export settings: whether the exported images draw the
     selected box or polygon, and in which colours. Hidden until a selection
-    exists (``toggle_figure_export_settings`` on the inspector page)."""
+    exists (``toggle_figure_export_settings`` on the inspector page). The
+    scalebar's style is the image toolbox's, shared with the panels."""
     return html.Div(
         [
             html.H5("Figure settings", className="mt-3"),
@@ -172,9 +164,13 @@ def figure_settings_layout(layoutIDs: dataExportPanelIDS) -> html.Div:
                         className="d-flex align-items-center",
                     ),
                     dbc.Col("line color", width="auto"),
-                    dbc.Col(_color_input(layoutIDs.outlinelinecolor), width="auto"),
+                    dbc.Col(
+                        _outline_color_input(layoutIDs.outlinelinecolor), width="auto"
+                    ),
                     dbc.Col("dot color", width="auto"),
-                    dbc.Col(_color_input(layoutIDs.outlinedotcolor), width="auto"),
+                    dbc.Col(
+                        _outline_color_input(layoutIDs.outlinedotcolor), width="auto"
+                    ),
                 ],
                 justify="start",
                 align="center",

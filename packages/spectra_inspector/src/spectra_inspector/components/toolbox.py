@@ -60,6 +60,28 @@ RESET_EXTENT = toolButton(
 # plotly's own zoom in / zoom out buttons halve and double the ranges
 ZOOM_FACTORS = {ZOOM_IN.id: 0.5, ZOOM_OUT.id: 2.0}
 
+
+# how long after the last colour movement a picker reports its value
+COLOR_DEBOUNCE_MS = 300
+
+
+def color_input(id_: str, value: str) -> dbc.Input:
+    """The browser's own colour picker. ``color`` is not among the types dbc
+    declares for Input, but the component hands the type straight to the
+    ``<input>`` element and reads the value back like any other; Bootstrap's
+    ``form-control-color`` class sizes it as a swatch. The value is sent a
+    moment after the user stops moving in the picker: a ``debounce=True``
+    input reports only on blur, and the native picker's popup does not blur
+    the input when it closes, so the change waited for a click elsewhere."""
+    return dbc.Input(
+        id=id_,
+        type="color",
+        value=value,
+        className="form-control-color",
+        debounce=COLOR_DEBOUNCE_MS,
+    )
+
+
 # the toggle of a collapsed toolbox; assets/toolbox.js flips between the two
 CHEVRON_CLOSED = "fa-solid fa-chevron-down me-1"
 CHEVRON_OPEN = "fa-solid fa-chevron-up me-1"
