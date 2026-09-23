@@ -1,5 +1,5 @@
 import dash
-from dash import html
+from dash import dcc, html
 
 dash.register_page(__name__, order=3)
 
@@ -107,6 +107,17 @@ layout = html.Div(
                     target="_blank",
                 ),
                 ".",
+            ]
+        ),
+        html.P(
+            [
+                "To jump right in, visit the ",
+                dcc.Link("Data selection", href="/"),
+                " or ",
+                dcc.Link("Inspector", href="/inspector/none"),
+                " page. For an overview of how to use the interfaces, head to the ",
+                dcc.Link("Getting Started", href="/getting-started"),
+                " page.",
             ]
         ),
         html.H2("Built with open source"),
