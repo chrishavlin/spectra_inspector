@@ -113,6 +113,7 @@ SCALEBAR_ROW = 2
 SCALEBAR_SHOW_ID = IMAGE_TOOLBOX.ids.full_id("-scalebar-show")
 SCALEBAR_COLOR_ID = IMAGE_TOOLBOX.ids.full_id("-scalebar-color")
 SCALEBAR_FONTSIZE_ID = IMAGE_TOOLBOX.ids.full_id("-scalebar-fontsize")
+SCALEBAR_FONTSIZE_DEBOUNCE_MS = 300
 
 
 def _labelled(label: str, control: Any) -> dbc.Col:
@@ -153,7 +154,7 @@ def scalebar_controls() -> list[Any]:
                         step=1,
                         value=DEFAULT_SCALEBAR_FONTSIZE,
                         size="sm",
-                        debounce=True,
+                        debounce=SCALEBAR_FONTSIZE_DEBOUNCE_MS,
                         style={"width": "4.5rem"},
                     ),
                 ),
