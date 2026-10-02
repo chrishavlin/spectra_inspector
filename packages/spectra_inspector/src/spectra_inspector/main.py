@@ -15,10 +15,8 @@ app = Dash(
     __name__,
     use_pages=True,
     external_stylesheets=[
-        [
-            dbc.themes.FLATLY,
-            dbc_css,
-        ],
+        dbc.themes.FLATLY,
+        dbc_css,
         dbc.icons.FONT_AWESOME,
     ],
 )
