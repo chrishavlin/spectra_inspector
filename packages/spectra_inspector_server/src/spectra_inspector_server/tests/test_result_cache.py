@@ -315,7 +315,10 @@ def test_a_partially_written_entry_is_ignored(
     assert len(cube_reads) == 3
 
 
-@pytest.mark.skipif(os.geteuid() == 0, reason="root can write anywhere")
+@pytest.mark.skipif(
+    sys.platform == "win32" or os.geteuid() == 0,
+    reason="a mode bit does not stop writes for root, or at all on Windows",
+)
 def test_an_unwritable_cache_dir_only_disables_filling(
     ops: OperationEDAXStateHandler,
     cache: ResultCache,
