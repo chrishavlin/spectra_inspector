@@ -69,6 +69,14 @@ setting is read with a `SPECTRA_INSPECTOR_` prefix:
   detect datasets whose files do **not** all share a basename, pairing
   `map*_0.spd`/`.spc`/`.xml` with the first `fov*.ipr`/`.bmp` in the same
   directory. Defaults to `false`. See the backend README for the caveats.
+- `SPECTRA_INSPECTOR_RESULT_CACHE_DIR`: absolute path of an on-disk cache of the
+  full-extent images and spectra the inspector page opens on, filled on first
+  request or ahead of time by `scripts/precompute_result_cache.py`. Unset by
+  default, which means no cache. Docker compose bind-mounts the host directory
+  at the same path inside the container. See [DEPLOYMENT.md](DEPLOYMENT.md).
+- `SPECTRA_INSPECTOR_RESULT_CACHE_FILL`: set to `true` to let the backend write
+  results it had to compute into the cache. Defaults to `false`, which keeps the
+  cache read-only and leaves filling it to the script.
 - `SPECTRA_INSPECTOR_DESKTOP_MODE`: set to `true` to skip the recursive scan of
   `SPECTRA_INSPECTOR_DATA_ROOT` at startup and instead let the frontend pick a
   working directory to scan. Defaults to `false`. See

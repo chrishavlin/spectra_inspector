@@ -166,5 +166,29 @@ Alternatively set `SPECTRA_INSPECTOR_ALLOW_DB_REFRESH=true` and use the refresh
 button, at the cost of letting any logged-in user trigger a full rescan.
 
 **Stopping.** `./stop_docker.sh prod` removes the containers and keeps the
-images, the data directory and the caddy volumes. The host reboot case needs
-nothing: every service has `restart: unless-stopped`.
+images, the data directory, the result cache and the caddy volumes. The host
+reboot case needs nothing: every service has `restart: unless-stopped`.
+
+## The result cache
+
+Set `SPECTRA_INSPECTOR_RESULT_CACHE_DIR` in the backend `.env` to an absolute
+host path and the backend caches full-extent images and spectra there, one
+`.npz` per entry in a tree mirroring the data root; compose mounts it at the
+same path inside the container. Subset selections are never cached, a changed
+`.spd` is a miss, and nothing is ever deleted. Budget about 50 MB per map.
+
+The directory must exist before the first `up` and be readable by uid 999. Keep
+it outside the data root. The backend never writes to it unless
+`SPECTRA_INSPECTOR_RESULT_CACHE_FILL=true`, in which case it must also be
+writable by uid 999 (`chown -R 999 <cache_dir>`).
+
+To fill it ahead of time (safe against a live backend, skips up-to-date entries;
+pass `--allow-mixed-basenames` to match the backend `.env`):
+
+```sh
+cd packages/spectra_inspector_server
+uv run python ../../scripts/precompute_result_cache.py /path/to/data_root /path/to/result_cache
+```
+
+It can run on a laptop against a copy of the data and the cache be copied
+alongside, as long as both copies use `rsync -a` so the mtimes match.

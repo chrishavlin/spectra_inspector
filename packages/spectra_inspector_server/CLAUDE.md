@@ -70,6 +70,17 @@ image before asking, and a polygon is intersected with the map by
 Images cross the wire as `raveledImage` (flat list + shape), reshaped
 client-side.
 
+`processor/result_cache.py` is an optional on-disk cache of the two whole-cube
+reductions (`SPECTRA_INSPECTOR_RESULT_CACHE_DIR`, off when unset; the server
+only writes to it with `SPECTRA_INSPECTOR_RESULT_CACHE_FILL=true`). Only
+full-extent, non-polygon requests touch it; the key is the fileset's path
+relative to the data root plus its `(mtime_ns, size)` stamp, so the synthetic
+test samples are never cached. Any failure in the cache is a miss, never an
+error. `scripts/precompute_result_cache.py` fills it with the frontend's default
+view through `get_spectrum_and_images`, a single pass over the cube that no
+endpoint dispatches, and must convert keV windows to channels exactly as the
+frontend does (`channel_range_for_window`, pinned by a test).
+
 ### Testing without EDAX data
 
 `_testing.py` exposes `onDiscMock` with synthetic sample names

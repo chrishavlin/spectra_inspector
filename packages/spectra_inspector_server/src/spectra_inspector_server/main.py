@@ -22,7 +22,11 @@ from spectra_inspector_server._file_tree_handling import EDAXPathHandler
 from spectra_inspector_server._logging import spectraLogger
 from spectra_inspector_server._testing import pytest_running
 from spectra_inspector_server._typing import LifespanGenerator, OptionalOpsReturnType
-from spectra_inspector_server.dependencies import get_database_session, get_settings
+from spectra_inspector_server.dependencies import (
+    get_database_session,
+    get_result_cache,
+    get_settings,
+)
 from spectra_inspector_server.model import (
     AvailableDatasets,
     CombinedMetadata,
@@ -150,7 +154,9 @@ class queueOpsItem:
 
 
 def process_handler(ph: EDAXPathHandler, item: queueOpsItem) -> OptionalOpsReturnType:
-    ops = OperationEDAXStateHandler(ph, allow_mock_files=pytest_running())
+    ops = OperationEDAXStateHandler(
+        ph, allow_mock_files=pytest_running(), result_cache=get_result_cache()
+    )
     func = getattr(ops, item.ops_func)
     result = None
     if item.ops_args is None and item.ops_kwargs is None:

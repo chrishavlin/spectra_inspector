@@ -20,6 +20,14 @@ class Settings(BaseSettings):
     allow_db_refresh: bool = False
     db_allow_mixed_basenames: bool = False
 
+    # directory of the on-disk cache of full-extent images and spectra
+    # (processor/result_cache.py). None disables caching. compose bind-mounts
+    # the same host path at the same path inside the container.
+    result_cache_dir: str | None = None
+    # whether the backend writes an entry it had to compute (fill-on-miss).
+    # False keeps the cache read-only: only the precompute script adds to it.
+    result_cache_fill: bool = False
+
     # desktop_mode skips the (potentially very slow) recursive scan of data_root
     # at startup and instead enables the /browse-directory and
     # /datasets-in-directory endpoints so that a client can pick a working
