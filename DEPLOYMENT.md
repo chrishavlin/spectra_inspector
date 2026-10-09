@@ -177,9 +177,10 @@ host path and the backend caches full-extent images and spectra there, one
 same path inside the container. Subset selections are never cached, a changed
 `.spd` is a miss, and nothing is ever deleted. Budget about 50 MB per map.
 
-The directory must exist before the first `up` and be writable by uid 999 for
-the backend to add entries (`chown -R 999 <cache_dir>`); read-only only disables
-filling. Keep it outside the data root.
+The directory must exist before the first `up` and be readable by uid 999. Keep
+it outside the data root. The backend never writes to it unless
+`SPECTRA_INSPECTOR_RESULT_CACHE_FILL=true`, in which case it must also be
+writable by uid 999 (`chown -R 999 <cache_dir>`).
 
 To fill it ahead of time (safe against a live backend, skips up-to-date entries;
 pass `--allow-mixed-basenames` to match the backend `.env`):

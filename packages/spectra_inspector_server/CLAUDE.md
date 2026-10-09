@@ -71,7 +71,8 @@ Images cross the wire as `raveledImage` (flat list + shape), reshaped
 client-side.
 
 `processor/result_cache.py` is an optional on-disk cache of the two whole-cube
-reductions (`SPECTRA_INSPECTOR_RESULT_CACHE_DIR`, off when unset). Only
+reductions (`SPECTRA_INSPECTOR_RESULT_CACHE_DIR`, off when unset; the server
+only writes to it with `SPECTRA_INSPECTOR_RESULT_CACHE_FILL=true`). Only
 full-extent, non-polygon requests touch it; the key is the fileset's path
 relative to the data root plus its `(mtime_ns, size)` stamp, so the synthetic
 test samples are never cached. Any failure in the cache is a miss, never an

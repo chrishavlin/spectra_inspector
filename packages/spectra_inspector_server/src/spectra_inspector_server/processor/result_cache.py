@@ -20,7 +20,9 @@ The cache directory mirrors the data tree: the entries for
 named from the op and its arguments. Each ``.npz`` holds the array plus a JSON
 string of its key. Writes go to a temporary name and are renamed into place so
 a reader never sees a half-written entry, and nothing here ever deletes an
-entry. A cache directory that is not writable just means no fill-on-miss.
+entry. Whether the server writes at all is the ``fill`` flag
+(``SPECTRA_INSPECTOR_RESULT_CACHE_FILL``); a cache directory that turns out
+not to be writable just means no fill-on-miss either.
 
 ``scripts/precompute_result_cache.py`` fills a cache ahead of time with the
 entries the frontend's default view asks for; ``channel_range_for_window``
@@ -92,11 +94,17 @@ class ResultCache:
         the directory holding the entries, laid out as the data tree is
     data_root : Path
         the data root the filesets' relative paths are taken against
+    fill : bool, optional
+        whether :meth:`store` writes anything, by default True. False makes
+        the cache read-only for this process.
     """
 
-    def __init__(self, cache_dir: str | Path, data_root: str | Path) -> None:
+    def __init__(
+        self, cache_dir: str | Path, data_root: str | Path, fill: bool = True
+    ) -> None:
         self.cache_dir = Path(cache_dir)
         self.data_root = Path(data_root)
+        self.fill = fill
 
     def entry_path(self, fileset: EDAX_file_set, op: str, args: dict[str, Any]) -> Path:
         """Where the entry for ``op`` with ``args`` on ``fileset`` lives,
@@ -187,8 +195,11 @@ class ResultCache:
         array: npt.NDArray[np.int64],
     ) -> bool:
         """Write ``array`` as the entry for ``op`` with ``args`` on ``fileset``,
-        replacing any existing one. Returns False, after logging, when the
-        cache directory cannot be written to."""
+        replacing any existing one. Returns False without writing when
+        ``fill`` is off, and after logging when the cache directory cannot be
+        written to."""
+        if not self.fill:
+            return False
         tmp: Path | None = None
         try:
             path = self.entry_path(fileset, op, args)

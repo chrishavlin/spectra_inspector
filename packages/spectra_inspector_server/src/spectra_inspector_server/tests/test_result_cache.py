@@ -27,7 +27,7 @@ from spectra_inspector_server._testing import (
     write_mock_spc,
 )
 from spectra_inspector_server.calibration import element_energy_ranges_keV
-from spectra_inspector_server.dependencies import get_result_cache
+from spectra_inspector_server.dependencies import get_result_cache, get_settings
 from spectra_inspector_server.model import EDAX_axis, EDAX_file_set
 from spectra_inspector_server.processor import file_loaders, operations
 from spectra_inspector_server.processor._reductions import (
@@ -369,12 +369,50 @@ def test_no_cache_without_the_setting(
         get_result_cache.cache_clear()
 
 
-def test_the_setting_is_read_from_the_env_file(
+def test_the_settings_are_read_from_the_env_file(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     (tmp_path / ".env").write_text(f"{ENV_PREFIX}RESULT_CACHE_DIR='/srv/cache'\n")
     monkeypatch.chdir(tmp_path)
-    assert Settings().result_cache_dir == "/srv/cache"
+    s = Settings()
+    assert s.result_cache_dir == "/srv/cache"
+    assert s.result_cache_fill is False
+
+    get_settings.cache_clear()
+    get_result_cache.cache_clear()
+    try:
+        cache = get_result_cache()
+        assert cache is not None
+        assert cache.fill is False
+    finally:
+        get_settings.cache_clear()
+        get_result_cache.cache_clear()
+
+    (tmp_path / ".env").write_text(
+        f"{ENV_PREFIX}RESULT_CACHE_DIR='/srv/cache'\n{ENV_PREFIX}RESULT_CACHE_FILL=true\n"
+    )
+    assert Settings().result_cache_fill is True
+
+
+def test_fill_off_makes_the_cache_read_only(
+    ph: EDAXPathHandler,
+    data_root: Path,
+    tmp_path: Path,
+    cube_reads: list[tuple[int, int]],
+) -> None:
+    writer = ResultCache(tmp_path / "cache", data_root)
+    reader = ResultCache(tmp_path / "cache", data_root, fill=False)
+    ops = OperationEDAXStateHandler(ph, result_cache=reader)
+
+    ops.get_multi_channel_intensity_image(SAMPLE, CHANNEL_RANGE)
+    ops.get_spectrum(SAMPLE)
+    assert not reader.cache_dir.exists()
+
+    # what the precompute script wrote is still served
+    OperationEDAXStateHandler(ph, result_cache=writer).get_spectrum(SAMPLE)
+    assert len(cube_reads) == 3
+    ops.get_spectrum(SAMPLE)
+    assert len(cube_reads) == 3
 
 
 # ---------------------------------------------------------------------------

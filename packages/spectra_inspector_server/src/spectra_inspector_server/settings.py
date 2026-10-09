@@ -24,6 +24,9 @@ class Settings(BaseSettings):
     # (processor/result_cache.py). None disables caching. compose bind-mounts
     # the same host path at the same path inside the container.
     result_cache_dir: str | None = None
+    # whether the backend writes an entry it had to compute (fill-on-miss).
+    # False keeps the cache read-only: only the precompute script adds to it.
+    result_cache_fill: bool = False
 
     # desktop_mode skips the (potentially very slow) recursive scan of data_root
     # at startup and instead enables the /browse-directory and

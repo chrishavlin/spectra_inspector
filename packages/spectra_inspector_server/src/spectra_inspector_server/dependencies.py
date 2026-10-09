@@ -30,4 +30,4 @@ def get_result_cache() -> ResultCache | None:
     S = get_settings()
     if S.result_cache_dir is None:
         return None
-    return ResultCache(S.result_cache_dir, S.data_root)
+    return ResultCache(S.result_cache_dir, S.data_root, fill=S.result_cache_fill)
