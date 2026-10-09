@@ -20,6 +20,15 @@ class Settings(BaseSettings):
     allow_db_refresh: bool = False
     db_allow_mixed_basenames: bool = False
 
+    # directory of the on-disk store of data derived from the raw cubes, the
+    # full-extent images and spectra (processor/derived_data.py). None means
+    # everything is computed on request. compose bind-mounts the same host
+    # path at the same path inside the container.
+    derived_data_dir: str | None = None
+    # whether the backend writes an entry it had to compute. False keeps the
+    # store read-only: only the precompute script adds to it.
+    derived_write_on_miss: bool = False
+
     # desktop_mode skips the (potentially very slow) recursive scan of data_root
     # at startup and instead enables the /browse-directory and
     # /datasets-in-directory endpoints so that a client can pick a working
