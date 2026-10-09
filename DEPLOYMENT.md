@@ -166,5 +166,47 @@ Alternatively set `SPECTRA_INSPECTOR_ALLOW_DB_REFRESH=true` and use the refresh
 button, at the cost of letting any logged-in user trigger a full rescan.
 
 **Stopping.** `./stop_docker.sh prod` removes the containers and keeps the
-images, the data directory and the caddy volumes. The host reboot case needs
-nothing: every service has `restart: unless-stopped`.
+images, the data directory, the result cache and the caddy volumes. The host
+reboot case needs nothing: every service has `restart: unless-stopped`.
+
+## The result cache
+
+The first thing every user does with a sample is load its full spectrum and the
+full-extent images of the default element windows, each a pass over the whole
+cube. With `SPECTRA_INSPECTOR_RESULT_CACHE_DIR` set in the backend `.env` the
+backend keeps those results on disk and answers repeat requests from there;
+zoomed, boxed and polygon selections are always computed. The cache directory
+mirrors the data tree (the entries for `<data_root>/a/b/map123_0.spd` are under
+`<cache_dir>/a/b/map123_0/`), each entry is a `.npz` keyed on the `.spd` file's
+modification time and size so a replaced file is a miss rather than a stale
+result, and nothing in it is ever deleted by the backend. Budget about 50 MB per
+map.
+
+In compose that host directory is bind-mounted at the same path inside the
+container, so one absolute path configures both docker and a backend run outside
+it. Like the data root it must exist before the first `up`, or docker creates it
+root-owned. The backend runs as uid 999, so entries written on the host must be
+readable by that uid, and the directory must be writable by it for the backend
+to add entries on a miss (`chown -R 999 <cache_dir>` or `chmod -R a+rwX`). An
+unwritable directory only disables filling; a missing or unreadable entry is
+recomputed. The cache can share a filesystem with the data, for instance as a
+sibling of the data root, but not live inside it.
+
+Fill the cache ahead of time with `scripts/precompute_result_cache.py`, which
+walks the data root with the same scan the backend uses and writes the spectrum
+and the default element images (Mg, Al and Si, override with `--elements`) for
+every map. Pass `--allow-mixed-basenames` if the backend `.env` sets
+`SPECTRA_INSPECTOR_DB_ALLOW_MIXED_BASENAMES=true`, since it decides which
+filesets exist. Entries that are already up to date are skipped and the script
+only ever adds entries, so it is safe to run against a live backend, off-hours,
+with no downtime:
+
+```sh
+cd packages/spectra_inspector_server
+uv run python ../../scripts/precompute_result_cache.py /path/to/data_root /path/to/result_cache
+```
+
+It can equally run on a laptop and the result be copied next to the data:
+`rsync -a` preserves the modification times the entries are keyed on, and the
+relative layout matches by construction, so a cache built against a copy of the
+data tree is valid on the host as long as the copy was made with `rsync -a` too.

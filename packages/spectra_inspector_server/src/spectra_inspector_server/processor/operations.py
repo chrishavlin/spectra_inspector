@@ -3,6 +3,12 @@
 Every public method of :class:`OperationEDAXStateHandler` is dispatched by name
 off the request queue in ``main.py`` (``queueOpsItem.ops_func``), so a rename
 here is a change to how endpoints call in.
+
+With a :class:`~spectra_inspector_server.processor.result_cache.ResultCache`
+attached, the two whole-cube reductions (the summed image and the spectrum)
+answer full-extent requests from the cache when they can and fill it when
+they cannot. Anything less than the full extent, or a polygon, is computed as
+if there were no cache.
 """
 
 from collections.abc import Sequence
@@ -26,10 +32,17 @@ from spectra_inspector_server.processor._reductions import (
     chunk_bounds,
     fast_accumulator_limit,
 )
+from spectra_inspector_server.processor.result_cache import (
+    OP_IMAGE,
+    OP_SPECTRUM,
+    ResultCache,
+)
 from spectra_inspector_server.processor.utilities import _make_serializeable_dict
 
 if TYPE_CHECKING:
     from collections.abc import Container
+
+    from spectra_inspector_server.model import EDAX_file_set
 
 _DEFAULT_CHUNKSIZE = 128
 
@@ -67,11 +80,36 @@ class OperationEDAXStateHandler:
         if True, the synthetic samples defined in ``_testing`` are accepted
         alongside those in the database, by default False. Only enabled when
         running under pytest.
+    result_cache : ResultCache | None, optional
+        an on-disk cache of full-extent results to read from and fill, by
+        default None, which computes everything.
     """
 
-    def __init__(self, ph: EDAXPathHandler, allow_mock_files: bool = False) -> None:
+    def __init__(
+        self,
+        ph: EDAXPathHandler,
+        allow_mock_files: bool = False,
+        result_cache: ResultCache | None = None,
+    ) -> None:
         self.ph = ph
         self._allow_mock_files = allow_mock_files
+        self._result_cache = result_cache
+
+    def _cacheable_fileset(
+        self,
+        sample_name: str,
+        edax_ds: EDAX_raw_ds,
+        index_ranges: list[tuple[int, int]],
+    ) -> "EDAX_file_set | None":
+        """The fileset to look ``sample_name`` up in the result cache under,
+        or None when the request is not a whole-map one, there is no cache,
+        or the sample is not a fileset on disk (the synthetic test samples)."""
+        if self._result_cache is None:
+            return None
+        for axis, (start, stop) in enumerate(index_ranges):
+            if (start, stop) != (0, edax_ds.axes_by_index[axis].size):
+                return None
+        return self.ph.get_sample_edax_file_names(sample_name)
 
     def _require_sample(self, sample_name: str, spectrum_only: bool = False) -> None:
         """Check that a sample can be loaded, raising if it cannot.
@@ -404,6 +442,17 @@ class OperationEDAXStateHandler:
 
         shapes_by_dim = [indx[1] - indx[0] for indx in index_ranges]
         final_shape: tuple[int, int] = (shapes_by_dim[0], shapes_by_dim[1])
+
+        cache_args = {"channel_range": [int(channel_range[0]), int(channel_range[1])]}
+        fileset = self._cacheable_fileset(sample_name, edax_ds, valid_index_ranges)
+        if fileset is not None:
+            assert self._result_cache is not None
+            cached = self._result_cache.lookup(
+                fileset, OP_IMAGE, cache_args, final_shape
+            )
+            if cached is not None:
+                return cached
+
         im_output = np.zeros(final_shape, dtype=np.int64)
         assert im_output.ndim == 2
 
@@ -431,6 +480,10 @@ class OperationEDAXStateHandler:
             im_output[out_slices] += np.sum(
                 data[tuple(slices)], axis=-1, dtype=acc_dtype
             )
+
+        if fileset is not None:
+            assert self._result_cache is not None
+            self._result_cache.store(fileset, OP_IMAGE, cache_args, im_output)
         return im_output
 
     def get_spectrum(
@@ -507,9 +560,38 @@ class OperationEDAXStateHandler:
             valid_index_ranges[2],
         ]
 
-        data = self._cube(sample_name, self._load(sample_name))
+        edax_ds = self._load(sample_name)
+        data = self._cube(sample_name, edax_ds)
 
         final_shape = (index_ranges[2][1] - index_ranges[2][0],)
+        energy_channel_axis = np.arange(index_ranges[2][0], index_ranges[2][1])
+        energy_min, energy_max = physical_ranges[2]
+
+        fileset = None
+        cache_args = {
+            "channel_range": (
+                None if channel_range is None else [int(v) for v in channel_range]
+            )
+        }
+        if mask is None:
+            fileset = self._cacheable_fileset(
+                sample_name, edax_ds, [index_ranges[0], index_ranges[1]]
+            )
+        if fileset is not None:
+            assert self._result_cache is not None
+            cached = self._result_cache.lookup(
+                fileset, OP_SPECTRUM, cache_args, final_shape
+            )
+            if cached is not None:
+                return Spectrum1d(
+                    energy=energy_channel_axis,
+                    intensity=cached,
+                    energy_min=energy_min,
+                    energy_max=energy_max,
+                    metadata=md,
+                    original_metadata=md_orig,
+                )
+
         im_output = np.zeros(final_shape, dtype=np.int64)
 
         assert im_output.ndim == 1
@@ -544,8 +626,9 @@ class OperationEDAXStateHandler:
             assert partial.size == im_output.size
             im_output += partial
 
-        energy_channel_axis = np.arange(index_ranges[2][0], index_ranges[2][1])
-        energy_min, energy_max = physical_ranges[2]
+        if fileset is not None:
+            assert self._result_cache is not None
+            self._result_cache.store(fileset, OP_SPECTRUM, cache_args, im_output)
 
         return Spectrum1d(
             energy=energy_channel_axis,

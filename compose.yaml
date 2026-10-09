@@ -32,3 +32,11 @@ services:
         source: ${SPECTRA_INSPECTOR_HOST_DATA_ROOT:?not set in the server .env}
         target: ${SPECTRA_INSPECTOR_DATA_ROOT:?not set in the server .env}
         read_only: true
+      # The on-disk result cache, which the backend only uses when the server
+      # .env sets SPECTRA_INSPECTOR_RESULT_CACHE_DIR: that host directory is
+      # bind-mounted at the same path inside the container (see DEPLOYMENT.md).
+      # When it is unset the named volume below stands in and goes unused.
+      - ${SPECTRA_INSPECTOR_RESULT_CACHE_DIR:-result_cache}:${SPECTRA_INSPECTOR_RESULT_CACHE_DIR:-/result_cache}
+
+volumes:
+  result_cache:
