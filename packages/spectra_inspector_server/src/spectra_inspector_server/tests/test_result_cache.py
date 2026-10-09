@@ -33,7 +33,10 @@ from spectra_inspector_server.processor import file_loaders, operations
 from spectra_inspector_server.processor._reductions import (
     chunk_bounds as real_chunk_bounds,
 )
-from spectra_inspector_server.processor.operations import OperationEDAXStateHandler
+from spectra_inspector_server.processor.operations import (
+    IndexRangeError,
+    OperationEDAXStateHandler,
+)
 from spectra_inspector_server.processor.result_cache import (
     DEFAULT_PRECOMPUTE_ELEMENTS,
     OP_IMAGE,
@@ -54,7 +57,7 @@ FRONTEND_SCALING = (
     / "scaling.py"
 )
 
-# 400 channels of 5 eV span 2 keV, past the Si window the script images
+# 400 channels of 5 eV span 2 keV: the Na, Mg, Al and Si windows fit, Fe does not
 CUBE_SHAPE = (6, 5, 400)
 SAMPLE = "C-1"
 CHANNEL_RANGE = (10, 30)
@@ -416,6 +419,105 @@ def test_fill_off_makes_the_cache_read_only(
 
 
 # ---------------------------------------------------------------------------
+# the single-pass reduction
+
+
+@pytest.mark.parametrize("chunking_index", [0, 1])
+@pytest.mark.parametrize("chunksize", [128, 4, 1])
+def test_one_pass_matches_the_separate_reductions(
+    ph: EDAXPathHandler,
+    cube: np.ndarray,
+    cube_reads: list[tuple[int, int]],
+    chunksize: int,
+    chunking_index: int,
+) -> None:
+    ops = OperationEDAXStateHandler(ph)
+    windows = [CHANNEL_RANGE, (0, 400), (399, 400), (50, 50)]
+
+    spectrum, images = ops.get_spectrum_and_images(
+        SAMPLE, windows, chunksize=chunksize, chunking_index=chunking_index
+    )
+    assert len(cube_reads) == 1
+    assert spectrum is not None
+    np.testing.assert_array_equal(
+        spectrum.intensity, cube.sum(axis=(0, 1), dtype=np.int64)
+    )
+    assert len(images) == len(windows)
+    for image, (start, stop) in zip(images, windows, strict=True):
+        assert image.dtype == np.int64
+        np.testing.assert_array_equal(
+            image, cube[:, :, start:stop].sum(axis=-1, dtype=np.int64)
+        )
+
+    separate = ops.get_spectrum(SAMPLE)
+    np.testing.assert_array_equal(spectrum.energy, separate.energy)
+    assert (spectrum.energy_min, spectrum.energy_max) == (
+        separate.energy_min,
+        separate.energy_max,
+    )
+    assert spectrum.metadata == separate.metadata
+    assert spectrum.original_metadata == separate.original_metadata
+
+
+def test_one_pass_without_the_spectrum(
+    ph: EDAXPathHandler, cube: np.ndarray, cube_reads: list[tuple[int, int]]
+) -> None:
+    ops = OperationEDAXStateHandler(ph)
+    spectrum, images = ops.get_spectrum_and_images(
+        SAMPLE, [CHANNEL_RANGE], include_spectrum=False
+    )
+    assert spectrum is None
+    assert len(cube_reads) == 1
+    np.testing.assert_array_equal(
+        images[0], cube[:, :, 10:30].sum(axis=-1, dtype=np.int64)
+    )
+
+    assert ops.get_spectrum_and_images(SAMPLE, [], include_spectrum=False) == (
+        None,
+        [],
+    )
+
+
+@pytest.mark.parametrize("window", [(0, 401), (-1, 10), (30, 10)])
+def test_one_pass_rejects_a_window_past_the_axis(
+    ph: EDAXPathHandler, window: tuple[int, int]
+) -> None:
+    ops = OperationEDAXStateHandler(ph)
+    with pytest.raises(IndexRangeError, match="index2 range"):
+        ops.get_spectrum_and_images(SAMPLE, [window])
+
+
+def test_one_pass_fills_every_entry(
+    ops: OperationEDAXStateHandler,
+    cache: ResultCache,
+    cube_reads: list[tuple[int, int]],
+) -> None:
+    windows = [CHANNEL_RANGE, (100, 150)]
+    spectrum, images = ops.get_spectrum_and_images(SAMPLE, windows)
+    assert len(cube_reads) == 1
+    assert len(list(cache.cache_dir.rglob("*.npz"))) == 3
+
+    assert spectrum is not None
+    np.testing.assert_array_equal(
+        ops.get_spectrum(SAMPLE).intensity, spectrum.intensity
+    )
+    for image, window in zip(images, windows, strict=True):
+        np.testing.assert_array_equal(
+            ops.get_multi_channel_intensity_image(SAMPLE, window), image
+        )
+    assert len(cube_reads) == 1
+
+
+def test_one_pass_on_a_mock_sample_writes_nothing(
+    ops: OperationEDAXStateHandler, cache: ResultCache
+) -> None:
+    spectrum, images = ops.get_spectrum_and_images(_on_disc_mock.filenames[0], [(0, 4)])
+    assert spectrum is not None
+    assert images[0].shape == (16, 16)
+    assert not cache.cache_dir.exists()
+
+
+# ---------------------------------------------------------------------------
 # the precompute script
 
 
@@ -450,13 +552,14 @@ def test_script_writes_entries_the_handler_hits(
 
     report = precompute_script.precompute(data_root, cache.cache_dir)
     assert (report.hits, report.writes, report.skipped_filesets) == (0, n_entries, 0)
-    assert len(cube_reads) == n_entries
+    # every entry of a map comes from one pass over its cube
+    assert len(cube_reads) == 1
     assert len(list(cache.cache_dir.rglob("*.npz"))) == n_entries
 
     # re-running is cheap: every entry is up to date
     report = precompute_script.precompute(data_root, cache.cache_dir)
     assert (report.hits, report.writes, report.skipped_filesets) == (n_entries, 0, 0)
-    assert len(cube_reads) == n_entries
+    assert len(cube_reads) == 1
 
     # the default view's requests are all hits
     channel_axis = ops.get_sample_axes(SAMPLE)[2]
@@ -466,11 +569,44 @@ def test_script_writes_entries_the_handler_hits(
         ops.get_multi_channel_intensity_image(
             SAMPLE, channel_range_for_window(channel_axis, window)
         )
-    assert len(cube_reads) == n_entries
+    assert len(cube_reads) == 1
 
     # a window the script did not image is still a miss
     ops.get_multi_channel_intensity_image(SAMPLE, CHANNEL_RANGE)
-    assert len(cube_reads) == n_entries + 1
+    assert len(cube_reads) == 2
+
+
+def test_script_computes_only_what_is_missing(
+    precompute_script: ModuleType,
+    data_root: Path,
+    cache: ResultCache,
+    ops: OperationEDAXStateHandler,
+    cube_reads: list[tuple[int, int]],
+) -> None:
+    ops.get_spectrum(SAMPLE)
+    channel_axis = ops.get_sample_axes(SAMPLE)[2]
+    ops.get_multi_channel_intensity_image(
+        SAMPLE, channel_range_for_window(channel_axis, element_energy_ranges_keV["Si"])
+    )
+    assert len(cube_reads) == 2
+
+    report = precompute_script.precompute(data_root, cache.cache_dir)
+    assert (report.hits, report.writes) == (2, 2)
+    assert len(cube_reads) == 3
+
+    # two elements sharing a window are one image
+    report = precompute_script.precompute(
+        data_root, cache.cache_dir, elements=("Na", "Na", "Mg")
+    )
+    assert (report.hits, report.writes) == (2, 1)
+    assert len(cube_reads) == 4
+
+
+def test_script_skips_a_fileset_whose_axis_is_too_short_for_a_window(
+    precompute_script: ModuleType, data_root: Path, cache: ResultCache
+) -> None:
+    report = precompute_script.precompute(data_root, cache.cache_dir, elements=("Fe",))
+    assert (report.hits, report.writes, report.skipped_filesets) == (0, 0, 1)
 
 
 def test_script_elements_and_stamps(
@@ -479,11 +615,11 @@ def test_script_elements_and_stamps(
     ph: EDAXPathHandler,
     cache: ResultCache,
 ) -> None:
-    report = precompute_script.precompute(data_root, cache.cache_dir, elements=("Fe",))
+    report = precompute_script.precompute(data_root, cache.cache_dir, elements=("Na",))
     assert (report.hits, report.writes) == (0, 2)
 
     _bump_mtime(_fileset(ph).spd)
-    report = precompute_script.precompute(data_root, cache.cache_dir, elements=("Fe",))
+    report = precompute_script.precompute(data_root, cache.cache_dir, elements=("Na",))
     assert (report.hits, report.writes) == (0, 2)
 
     with pytest.raises(ValueError, match="no energy window for \\['Xx'\\]"):

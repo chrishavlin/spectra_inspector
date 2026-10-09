@@ -77,8 +77,9 @@ full-extent, non-polygon requests touch it; the key is the fileset's path
 relative to the data root plus its `(mtime_ns, size)` stamp, so the synthetic
 test samples are never cached. Any failure in the cache is a miss, never an
 error. `scripts/precompute_result_cache.py` fills it with the frontend's default
-view and must convert keV windows to channels exactly as the frontend does
-(`channel_range_for_window`, pinned by a test).
+view through `get_spectrum_and_images`, a single pass over the cube that no
+endpoint dispatches, and must convert keV windows to channels exactly as the
+frontend does (`channel_range_for_window`, pinned by a test).
 
 ### Testing without EDAX data
 

@@ -639,6 +639,122 @@ class OperationEDAXStateHandler:
             original_metadata=md_orig,
         )
 
+    def get_spectrum_and_images(
+        self,
+        sample_name: str,
+        channel_ranges: Sequence[tuple[int, int]],
+        include_spectrum: bool = True,
+        chunking_index: int = 0,
+        chunksize: int = _DEFAULT_CHUNKSIZE,
+    ) -> tuple[Spectrum1d | None, list[npt.NDArray[np.int64]]]:
+        """The full-extent spectrum and the summed image of every channel
+        range, from a single pass over the cube.
+
+        :meth:`get_spectrum` and :meth:`get_multi_channel_intensity_image`
+        each read the whole cube: the channel axis is the contiguous one in
+        the ``.spd`` layout, so even a narrow channel window touches nearly
+        every page of it. Reducing each chunk every way at once costs one
+        pass instead of one per result, which is what the precompute script
+        wants. Nothing is read from the result cache here, since the caller
+        decides what is missing, but every result is written to it when
+        there is one. This is not dispatched by any endpoint.
+
+        Parameters
+        ----------
+        sample_name : str
+            the sample name (the basename shared by an EDAX fileset)
+        channel_ranges : Sequence[tuple[int, int]]
+            the (start, stop) energy channel ranges to image, each within
+            the channel axis
+        include_spectrum : bool, optional
+            also sum the whole cube into a spectrum, by default True
+        chunking_index : int, optional
+            the spatial axis (0 or 1) to chunk the pass over, by default 0
+        chunksize : int, optional
+            number of elements of ``chunking_index`` per chunk, by default 128
+
+        Returns
+        -------
+        tuple[Spectrum1d | None, list[npt.NDArray[np.int64]]]
+            the spectrum (None when not asked for) and one summed image per
+            channel range, in the order given.
+
+        Raises
+        ------
+        IndexRangeError
+            If a channel range does not lie within the channel axis.
+        ValueError
+            If the loaded dataset carries no data array.
+        """
+        edax_ds = self._load(sample_name)
+        data = self._cube(sample_name, edax_ds)
+        n_channels = edax_ds.axes_by_index[2].size
+        windows = [validate_index_range(rng, n_channels, 2) for rng in channel_ranges]
+        index_ranges, physical_ranges = self._index_ranges(edax_ds, [None, None, None])
+
+        shapes_by_dim = [stop - start for start, stop in index_ranges]
+        image_shape = (shapes_by_dim[0], shapes_by_dim[1])
+        images = [np.zeros(image_shape, dtype=np.int64) for _ in windows]
+        spectrum: npt.NDArray[np.int64] | None = None
+        if include_spectrum:
+            spectrum = np.zeros(shapes_by_dim[2], dtype=np.int64)
+
+        # the spectrum sums every pixel of a chunk into one accumulator
+        # element, so it is what bounds the chunk length (as in get_spectrum)
+        across = shapes_by_dim[1 - chunking_index]
+        fast_limit = fast_accumulator_limit(data.dtype) // max(across, 1)
+        max_chunk = min(chunksize, fast_limit) if fast_limit >= 1 else chunksize
+        chunks = chunk_bounds(*index_ranges[chunking_index], max_chunk)
+        longest = max((c[1] - c[0] for c in chunks), default=0)
+        spectrum_dtype = accumulator_dtype(data.dtype, longest * across)
+        image_dtypes = [
+            accumulator_dtype(data.dtype, stop - start) for start, stop in windows
+        ]
+
+        for chunk in chunks:
+            slices = [slice(*rng) for rng in index_ranges]
+            slices[chunking_index] = slice(*chunk)
+            # a view of the memmap: the first reduction faults the chunk in
+            # and the rest come out of the page cache
+            block = data[tuple(slices)]
+            if spectrum is not None:
+                spectrum += np.sum(block, axis=(0, 1), dtype=spectrum_dtype)
+            out_slices: list[slice] = [slice(None), slice(None)]
+            out_slices[chunking_index] = slice(*chunk)
+            for image, (start, stop), dtype in zip(
+                images, windows, image_dtypes, strict=True
+            ):
+                image[tuple(out_slices)] += np.sum(
+                    block[:, :, start:stop], axis=-1, dtype=dtype
+                )
+
+        fileset = self._cacheable_fileset(
+            sample_name, edax_ds, [index_ranges[0], index_ranges[1]]
+        )
+        if fileset is not None:
+            assert self._result_cache is not None
+            if spectrum is not None:
+                self._result_cache.store(
+                    fileset, OP_SPECTRUM, {"channel_range": None}, spectrum
+                )
+            for image, (start, stop) in zip(images, windows, strict=True):
+                self._result_cache.store(
+                    fileset, OP_IMAGE, {"channel_range": [start, stop]}, image
+                )
+
+        result: Spectrum1d | None = None
+        if spectrum is not None:
+            energy_min, energy_max = physical_ranges[2]
+            result = Spectrum1d(
+                energy=np.arange(*index_ranges[2]),
+                intensity=spectrum,
+                energy_min=energy_min,
+                energy_max=energy_max,
+                metadata=_make_serializeable_dict(edax_ds.metadata),
+                original_metadata=_make_serializeable_dict(edax_ds.original_metadata),
+            )
+        return result, images
+
     def _get_spc_spectrum(
         self,
         sample_name: str,

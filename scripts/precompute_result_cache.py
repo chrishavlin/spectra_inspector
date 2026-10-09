@@ -2,9 +2,10 @@
 
 The cache (``processor/result_cache.py``) holds the full-extent results that
 the frontend's default view asks for: the whole-map spectrum and the summed
-image of each default element window. The server fills it on a miss; this
-script writes those entries for every map under a data root in one pass, so
-the first user of a sample waits on none of them.
+image of each default element window. This script writes those entries for
+every map under a data root, reading each cube once for everything it is
+missing (``OperationEDAXStateHandler.get_spectrum_and_images``), so the first
+user of a sample waits on none of them.
 
 Run it from the server package so that the server is importable::
 
@@ -96,24 +97,29 @@ def _precompute_fileset(
     fileset = ops.ph.database.available_maps[name]
     channel_axis = ops.get_sample_axes(name)[2]
 
-    if cache.has_entry(fileset, OP_SPECTRUM, {"channel_range": None}):
-        report.hits += 1
-    else:
-        spectraLogger.info("%s: spectrum", fileset.spd)
-        ops.get_spectrum(name)
-        report.writes += 1
+    need_spectrum = not cache.has_entry(fileset, OP_SPECTRUM, {"channel_range": None})
+    report.hits += 0 if need_spectrum else 1
 
+    # keyed by channel range so two elements with one window are one image
+    missing: dict[tuple[int, int], str] = {}
     for element in elements:
         channel_range = channel_range_for_window(
             channel_axis, element_energy_ranges_keV[element]
         )
-        args = {"channel_range": list(channel_range)}
-        if cache.has_entry(fileset, OP_IMAGE, args):
+        if cache.has_entry(fileset, OP_IMAGE, {"channel_range": list(channel_range)}):
             report.hits += 1
-            continue
-        spectraLogger.info("%s: %s image %s", fileset.spd, element, channel_range)
-        ops.get_multi_channel_intensity_image(name, channel_range)
-        report.writes += 1
+        else:
+            missing[channel_range] = element
+
+    if not need_spectrum and not missing:
+        return
+
+    wanted = (["spectrum"] if need_spectrum else []) + [
+        f"{element} image {channel_range}" for channel_range, element in missing.items()
+    ]
+    spectraLogger.info("%s: %s in one pass", fileset.spd, ", ".join(wanted))
+    ops.get_spectrum_and_images(name, list(missing), include_spectrum=need_spectrum)
+    report.writes += int(need_spectrum) + len(missing)
 
 
 def main(argv: list[str] | None = None) -> int:
