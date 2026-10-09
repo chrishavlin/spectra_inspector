@@ -174,6 +174,16 @@ async def process_requests(q: asyncio.Queue, ph: EDAXPathHandler) -> None:  # ty
             pool_is_usable = True
             while pool_is_usable:
                 item = await q.get()  # Get a request from the queue
+                if item.ops_id not in _pending:
+                    # the request timed out (or was cancelled) while queued;
+                    # running it now would only delay everyone still waiting.
+                    spectraLogger.info(
+                        "nothing is waiting on ops_id %s, skipping %s",
+                        item.ops_id,
+                        item.ops_func,
+                    )
+                    q.task_done()
+                    continue
                 loop = asyncio.get_running_loop()
                 r: OptionalOpsReturnType = None
                 try:
