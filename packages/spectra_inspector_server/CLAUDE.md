@@ -70,6 +70,19 @@ image before asking, and a polygon is intersected with the map by
 Images cross the wire as `raveledImage` (flat list + shape), reshaped
 client-side.
 
+`processor/derived_data.py` is an optional on-disk store of the two whole-cube
+reductions (`SPECTRA_INSPECTOR_DERIVED_DATA_DIR`, off when unset; the server
+only writes to it with `SPECTRA_INSPECTOR_DERIVED_WRITE_ON_MISS=true`). It is
+deliberately not called a cache: the UI is only quick while it exists and it is
+meant to grow further derived products. Only full-extent, non-polygon requests
+touch it; the key is the fileset's path relative to the data root plus its
+`(mtime_ns, size)` stamp, so the synthetic test samples are never stored. Any
+failure in the store is a miss, never an error.
+`scripts/precompute_derived_data.py` fills it with the frontend's default view
+through `get_spectrum_and_images`, a single pass over the cube that no endpoint
+dispatches, and must convert keV windows to channels exactly as the frontend
+does (`channel_range_for_window`, pinned by a test).
+
 ### Testing without EDAX data
 
 `_testing.py` exposes `onDiscMock` with synthetic sample names

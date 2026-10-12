@@ -166,5 +166,45 @@ Alternatively set `SPECTRA_INSPECTOR_ALLOW_DB_REFRESH=true` and use the refresh
 button, at the cost of letting any logged-in user trigger a full rescan.
 
 **Stopping.** `./stop_docker.sh prod` removes the containers and keeps the
-images, the data directory and the caddy volumes. The host reboot case needs
-nothing: every service has `restart: unless-stopped`.
+images, the data directory, the derived data and the caddy volumes. The host
+reboot case needs nothing: every service has `restart: unless-stopped`.
+
+## Derived data
+
+Set `SPECTRA_INSPECTOR_DERIVED_DATA_DIR` in the backend `.env` to an absolute
+host path and the backend serves full-extent images and spectra from there, one
+`.npz` per entry in a tree mirroring the data root; compose mounts it at the
+same path inside the container. Subset selections never touch it, a changed
+`.spd` is a miss, and nothing is ever deleted. Budget about 50 MB per map. The
+entries can be rebuilt, but the UI is only quick while they exist, so treat the
+directory as part of the deployment rather than as a cache.
+
+The directory must exist before the first `up` and be readable by uid 999. Keep
+it outside the data root. The backend never writes to it unless
+`SPECTRA_INSPECTOR_DERIVED_WRITE_ON_MISS=true`, in which case it must also be
+writable by uid 999 (`chown -R 999 <derived_data_dir>`).
+
+To fill it ahead of time (safe against a live backend, skips up-to-date
+entries), run the script from the server package. With no arguments it reads the
+data root, derived data directory and mixed-basenames setting from the backend
+`.env`:
+
+```sh
+cd packages/spectra_inspector_server
+uv run python ../../scripts/precompute_derived_data.py
+```
+
+It can also take the two paths explicitly (`DATA_ROOT DERIVED_DIR`) to run on a
+laptop against a copy of the data, with the derived data copied alongside; pass
+`--allow-mixed-basenames` there to match the backend `.env`. Both copies must
+use `rsync -a` so the mtimes match.
+
+`--workers N` processes N filesets at once. Leave it at the default of 1 when
+the data sits on spinning disks, where parallel readers only add seeks; on an
+SSD a handful of workers is a near-linear speedup.
+
+`--overwrite` empties the directory before filling it, so every entry is
+recomputed. Do not run it against a live backend: requests in the meantime
+compute everything from the cubes. It keeps the directory itself and its
+ownership, and refuses a directory that is, contains or sits inside the data
+root.
