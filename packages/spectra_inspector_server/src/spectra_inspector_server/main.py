@@ -140,6 +140,9 @@ _results: dict[str, OptionalOpsReturnType] = {}
 # missing from here is one nobody is waiting on any more.
 _pending: dict[str, asyncio.Event] = {}
 _OPS_TIMEOUT_S = 60 * 2
+# what a 503 tells the client to wait before asking again. A full queue is
+# usually one user's burst of image fetches, which the worker clears in seconds.
+_RETRY_AFTER_S = 2
 background_tasks: set[Task] = set()  # type:ignore[type-arg]
 
 
@@ -217,7 +220,7 @@ async def process_requests(q: asyncio.Queue, ph: EDAXPathHandler) -> None:  # ty
 async def lifespan(
     app: FastAPI,
 ) -> LifespanGenerator:
-    q = asyncio.Queue()  # type: ignore[var-annotated]
+    q = asyncio.Queue(maxsize=get_settings().max_queued_ops)  # type: ignore[var-annotated]
     ph = get_database_session()
 
     # start listening to ops requests
@@ -381,20 +384,37 @@ async def image_metadata(
 
 
 async def submit_op(q: asyncio.Queue, item: queueOpsItem) -> None:  # type:ignore[type-arg]
-    """Queue an operation, registering interest in its result first."""
+    """Queue an operation, registering interest in its result first.
+
+    The queue is bounded (``Settings.max_queued_ops``): past that, waiting
+    would only mean timing out later, so the request is refused outright with
+    a 503 and a ``Retry-After`` header, and no interest is registered for it.
+    """
     _pending[item.ops_id] = asyncio.Event()
-    await q.put(item)
+    try:
+        q.put_nowait(item)
+    except asyncio.QueueFull:
+        _pending.pop(item.ops_id, None)
+        spectraLogger.warning(
+            "ops queue is full (%d items), refusing %s", q.maxsize, item.ops_func
+        )
+        msg = "the server is busy, try again in a moment"
+        raise HTTPException(
+            503, detail=msg, headers={"Retry-After": str(_RETRY_AFTER_S)}
+        ) from None
 
 
 async def await_op_result(item: queueOpsItem) -> OptionalOpsReturnType:
+    """The result of a queued operation, or a 504 if the worker has not
+    reached it within the timeout."""
     # the consumer runs in this loop too, so waiting on an event hands the
     # result over as soon as it exists rather than on the next poll.
     done = _pending[item.ops_id]
     try:
         await asyncio.wait_for(done.wait(), timeout=_OPS_TIMEOUT_S)
     except TimeoutError:
-        msg = f"timeout error after {_OPS_TIMEOUT_S} s"
-        raise TimeoutError(msg) from None
+        msg = f"{item.ops_func} timed out after {_OPS_TIMEOUT_S} s"
+        raise HTTPException(504, detail=msg) from None
     finally:
         _pending.pop(item.ops_id, None)
     result = _results.pop(item.ops_id)
@@ -530,12 +550,7 @@ async def image_spectrum(
     )
 
     await submit_op(q, item)
-    result = None
-    try:
-        result = await await_op_result(item)
-    except TimeoutError as err:
-        msg = "Timeout error during spectrum calculation"
-        raise HTTPException(404, detail=msg) from err
+    result = await await_op_result(item)
 
     assert isinstance(result, Spectrum1d)
 
@@ -575,11 +590,7 @@ async def image_data(
     )
 
     await submit_op(request.app.state.q, item)
-    try:
-        result = await await_op_result(item)
-    except TimeoutError as err:
-        msg = "Timeout error during get_single_image call"
-        raise HTTPException(404, detail=msg) from err
+    result = await await_op_result(item)
 
     assert isinstance(result, raveledImage)
     return result
@@ -630,11 +641,7 @@ async def image_data_summed(
     )
 
     await submit_op(request.app.state.q, item)
-    try:
-        result = await await_op_result(item)
-    except TimeoutError as err:
-        msg = "Timeout error during get_raveled_multi_channel_intensity_image call"
-        raise HTTPException(404, detail=msg) from err
+    result = await await_op_result(item)
 
     assert isinstance(result, raveledImage)
     return result

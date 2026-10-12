@@ -1,20 +1,25 @@
 import asyncio
-from collections.abc import Callable
+from collections.abc import Callable, Generator
 from concurrent.futures import Future
 from typing import Any, Self
 from uuid import uuid4
 
 import pytest
+from fastapi import HTTPException
+from fastapi.testclient import TestClient
 
 from spectra_inspector_server import main
 from spectra_inspector_server._testing import _on_disc_mock
+from spectra_inspector_server.dependencies import get_database_session, get_settings
 from spectra_inspector_server.main import (
     _pending,
     _results,
+    app,
     process_requests,
     queueOpsItem,
     submit_op,
 )
+from spectra_inspector_server.settings import ENV_PREFIX
 
 
 class _InlinePool:
@@ -89,3 +94,67 @@ def test_orphaned_items_are_skipped(monkeypatch: pytest.MonkeyPatch) -> None:
         _pending.pop(live.ops_id, None)
 
     asyncio.run(scenario())
+
+
+def test_a_full_queue_refuses_the_next_item() -> None:
+    async def scenario() -> None:
+        q: asyncio.Queue[queueOpsItem] = asyncio.Queue(maxsize=2)
+        queued = [_item(), _item()]
+        for item in queued:
+            await submit_op(q, item)
+        assert q.full()
+
+        refused = _item()
+        with pytest.raises(HTTPException) as excinfo:
+            await submit_op(q, refused)
+        assert excinfo.value.status_code == 503
+        assert excinfo.value.headers == {"Retry-After": str(main._RETRY_AFTER_S)}
+        # nothing waits on a refused item, and the queue is as it was
+        assert refused.ops_id not in _pending
+        assert q.qsize() == 2
+        for item in queued:
+            _pending.pop(item.ops_id)
+
+    asyncio.run(scenario())
+
+
+@pytest.fixture
+def stalled_client(
+    monkeypatch: pytest.MonkeyPatch,
+) -> Generator[TestClient, None, None]:
+    """The app with room for two queued ops, a consumer that never takes
+    one, and a timeout short enough to wait out."""
+
+    async def stalled(_q: asyncio.Queue[queueOpsItem], _ph: object) -> None:
+        await asyncio.Event().wait()
+
+    monkeypatch.setattr(main, "process_requests", stalled)
+    monkeypatch.setattr(main, "_OPS_TIMEOUT_S", 0.2)
+    monkeypatch.setenv(f"{ENV_PREFIX}MAX_QUEUED_OPS", "2")
+    get_settings.cache_clear()
+    get_database_session.cache_clear()
+    try:
+        with TestClient(app) as client:
+            yield client
+    finally:
+        get_settings.cache_clear()
+        get_database_session.cache_clear()
+
+
+def test_busy_server_answers_504_then_503(stalled_client: TestClient) -> None:
+    params: dict[str, str | bool] = {
+        "sample_name": _on_disc_mock.filenames[0],
+        "include_weights": False,
+    }
+
+    # the queue fills up with items the worker never reaches
+    for _ in range(2):
+        response = stalled_client.get("/image-spectrum", params=params)
+        assert response.status_code == 504
+        assert "timed out" in response.json()["detail"]
+
+    response = stalled_client.get("/image-spectrum", params=params)
+    assert response.status_code == 503
+    assert response.headers["Retry-After"] == str(main._RETRY_AFTER_S)
+    assert "busy" in response.json()["detail"]
+    assert not _pending
