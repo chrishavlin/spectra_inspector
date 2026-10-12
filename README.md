@@ -86,6 +86,11 @@ setting is read with a `SPECTRA_INSPECTOR_` prefix:
   FastAPI backend starts with. Defaults to `1`. Only used by the docker
   deployment, where docker compose passes the value through to the backend
   container.
+- `SPECTRA_INSPECTOR_MAX_QUEUED_OPS`: how many spectrum and image operations
+  each uvicorn worker lets wait for its compute worker before refusing new ones
+  with a `503` (and a `Retry-After` header). Defaults to `32`; the effective cap
+  is this times `SPECTRA_INSPECTOR_N_FASTAPI_WORKERS`. An operation that does
+  wait but is not reached within two minutes is a `504`.
 - `SPECTRA_INSPECTOR_LOG_LEVEL`: logging verbosity for the backend. Accepted
   values are `DEBUG`, `INFO`, `WARNING`, `ERROR`, and `CRITICAL`; the default is
   `INFO`.

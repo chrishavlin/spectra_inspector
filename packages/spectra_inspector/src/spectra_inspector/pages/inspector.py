@@ -97,8 +97,10 @@ from spectra_inspector.utilities.export_metadata import (
     single_image_metadata,
 )
 from spectra_inspector.utilities.interface import (
+    LOAD_ERRORS,
     ServerRequestError,
     SpectraInspectorServerInterface,
+    loadFailure,
 )
 from spectra_inspector.utilities.peak_windows import (
     RANGES_KEY,
@@ -268,6 +270,14 @@ class inspectorIDs(BaseModel):
     full_spectrum_store: str = "full-spectrum-store"
     active_spectrum_metadata: str = "active-spectrum-metadata"
     zeroed_elements_store: str = "zeroed-elements"
+    # the alerts a failed backend load is reported in, one per dcc.Loading,
+    # each with its message and a Retry button
+    spectrum_load_error: str = "spectrum-load-error"
+    spectrum_load_error_message: str = "spectrum-load-error-message"
+    spectrum_retry: str = "spectrum-retry"
+    image_load_error: str = "image-load-error"
+    image_load_error_message: str = "image-load-error-message"
+    image_retry: str = "image-retry"
 
 
 _IDS = inspectorIDs()
@@ -408,6 +418,49 @@ def _query_flag(value: str | bool | None) -> bool:
     return str(value).strip().lower() in ("1", "true", "yes", "on")
 
 
+def _load_error_alert(alert_id: str, message_id: str, retry_id: str) -> dbc.Alert:
+    """The alert a load callback writes when the backend fails it: a message,
+    and a Retry button for the failures worth asking again about.
+
+    It is in the layout from the start, closed, so that the Retry can be an
+    Input of the callbacks that load without ever being re-rendered by them
+    (an Input inserted by a callback fires that callback again).
+    """
+    return dbc.Alert(
+        [
+            html.Span(id=message_id),
+            html.Button(
+                "Retry",
+                id=retry_id,
+                n_clicks=0,
+                hidden=True,
+                className="btn btn-sm btn-outline-secondary ms-auto",
+            ),
+        ],
+        id=alert_id,
+        color="warning",
+        is_open=False,
+        className="d-flex align-items-center mt-2 mb-0",
+    )
+
+
+# the load-error alert's outputs: (is_open, message, retry hidden)
+_NO_LOAD_CHANGE = (no_update, no_update, no_update)
+_LOAD_OK = (False, no_update, no_update)
+
+
+def _load_failed(err: Exception, retryable: bool = True) -> tuple[bool, str, bool]:
+    """The load-error alert's outputs for a backend call that failed.
+
+    ``retryable`` says whether the callback would do the load again on
+    Retry; a refresh of an existing panel, or a box's spectrum, is redone by
+    the user's next click instead, so the button stays hidden for those.
+    """
+    failure = loadFailure.from_exception(err)
+    spectraLogger.warning("load failed: %s", err)
+    return True, failure.message, not (retryable and failure.retryable)
+
+
 def layout(
     sample_name: str | None = None,
     spectrum_only: str | None = None,
@@ -459,15 +512,22 @@ def layout(
     # read. auto-fit sizes the columns by the container itself and stretches
     # the panels present across its full width.
     im_container = dcc.Loading(
-        html.Div(
-            [],
-            id=_IDS.image_container,
-            style={
-                "display": "grid",
-                "gridTemplateColumns": "repeat(auto-fit, minmax(420px, 1fr))",
-                "gap": "0.5rem",
-            },
-        ),
+        [
+            html.Div(
+                [],
+                id=_IDS.image_container,
+                style={
+                    "display": "grid",
+                    "gridTemplateColumns": "repeat(auto-fit, minmax(420px, 1fr))",
+                    "gap": "0.5rem",
+                },
+            ),
+            _load_error_alert(
+                _IDS.image_load_error,
+                _IDS.image_load_error_message,
+                _IDS.image_retry,
+            ),
+        ],
         id="full-im-container-loading",
         overlay_style={"visibility": "visible", "filter": "blur(2px)"},
         type="circle",
@@ -492,10 +552,17 @@ def layout(
     )
 
     spectrum_graph = dcc.Loading(
-        dcc.Graph(
-            id=_IDS.spectrum_container,
-            config={"displayModeBar": False, "scrollZoom": True},
-        ),
+        [
+            dcc.Graph(
+                id=_IDS.spectrum_container,
+                config={"displayModeBar": False, "scrollZoom": True},
+            ),
+            _load_error_alert(
+                _IDS.spectrum_load_error,
+                _IDS.spectrum_load_error_message,
+                _IDS.spectrum_retry,
+            ),
+        ],
         id="spectrum-loading",
         overlay_style={"visibility": "visible", "filter": "blur(2px)"},
         type="circle",
@@ -550,8 +617,12 @@ def layout(
 
 @callback(
     Output(_IDS.full_spectrum_store, "data", allow_duplicate=True),
+    Output(_IDS.spectrum_load_error, "is_open", allow_duplicate=True),
+    Output(_IDS.spectrum_load_error_message, "children", allow_duplicate=True),
+    Output(_IDS.spectrum_retry, "hidden", allow_duplicate=True),
     Input(_IDS.sample_name, "children"),
     Input(_IDS.full_spectrum_store, "data"),
+    Input(_IDS.spectrum_retry, "n_clicks"),
     State(USER_STORE_DIV_ID, "data"),
     running=[
         (Output("spectrum-loading", "display"), "show", "hide"),
@@ -562,8 +633,16 @@ def layout(
 def initialize_full_spectrum_data(
     sample_name: str | None,
     spectrum_store: dict | None,
+    _retry_clicks: int | None,
     user_store_dict: dict | None,
 ):
+    """Fetch the whole-map spectrum into its store once per sample.
+
+    A failed fetch leaves the store empty and reports in the load-error
+    alert; its Retry is an input here, so a click simply runs the fetch
+    again. A busy server (503, 504) is retried once by the interface before
+    it gets this far.
+    """
 
     has_data = isinstance(spectrum_store, dict) and "intensity" in spectrum_store
 
@@ -571,18 +650,21 @@ def initialize_full_spectrum_data(
         spectraLogger.info("fetching and storing full spectrum data")
         assert isinstance(sample_name, str)
         user_store = UserStore(**(user_store_dict or {}))
-        df = get_spectrum(
-            sample_name,
-            directory_sync=user_store.directory_sync(),
-            spectrum_only=user_store.spectrum_only,
-        )
+        try:
+            df = get_spectrum(
+                sample_name,
+                directory_sync=user_store.directory_sync(),
+                spectrum_only=user_store.spectrum_only,
+            )
+        except LOAD_ERRORS as err:
+            return no_update, *_load_failed(err)
         new_store_data = {}
         new_store_data["intensity"] = df.intensity.tolist()
         new_store_data["energy"] = df.energy.tolist()
         new_store_data["attrs"] = df.attrs
-        return new_store_data
+        return new_store_data, *_LOAD_OK
 
-    return no_update
+    return no_update, *_NO_LOAD_CHANGE
 
 
 @callback(
@@ -642,6 +724,9 @@ def update_zeroed_elements(_zero_clicks, _reset_clicks, zeroed_elements):
 @callback(
     Output(_IDS.spectrum_container, "figure", allow_duplicate=True),
     Output(_IDS.active_spectrum_metadata, "data", allow_duplicate=True),
+    Output(_IDS.spectrum_load_error, "is_open", allow_duplicate=True),
+    Output(_IDS.spectrum_load_error_message, "children", allow_duplicate=True),
+    Output(_IDS.spectrum_retry, "hidden", allow_duplicate=True),
     Input(_IDS.shapes_store, "data"),
     Input(_IDS.full_spectrum_store, "data"),
     State(_IDS.sample_name, "children"),
@@ -675,7 +760,7 @@ def update_spectrum(
 
     if full_spectrum_store is None or "intensity" not in full_spectrum_store:
         # full spectrum data not fetched yet, return
-        return no_update, no_update
+        return no_update, no_update, *_NO_LOAD_CHANGE
 
     if current_figure is None:
         # now we have data but no figure, create it
@@ -691,14 +776,14 @@ def update_spectrum(
             uirevision=_spectrum_revision(sample_name, shapes_store),
         )
 
-        return current_figure, active_spectrum_metadata
+        return current_figure, active_spectrum_metadata, *_NO_LOAD_CHANGE
 
     # finally, we have a figure, but only update if the selection has changed:
     # the shapes store also moves while a polygon is being placed, which does
     # not change what the spectrum sums over until the shape is submitted
     revision = _spectrum_revision(sample_name, shapes_store)
     if (current_figure.get("layout") or {}).get("uirevision") == revision:
-        return no_update, no_update
+        return no_update, no_update, *_NO_LOAD_CHANGE
 
     if shapes_store is not None:
         selection = _selection_for_request(shapes_store, user_store_dict, sample_name)
@@ -712,12 +797,17 @@ def update_spectrum(
             request_kwargs = selection.request_kwargs()
             spectraLogger.info(f"fetching subsample spectrum with {request_kwargs}")
             user_store = UserStore(**(user_store_dict or {}))
-            df = get_spectrum(
-                sample_name,
-                directory_sync=user_store.directory_sync(),
-                spectrum_only=user_store.spectrum_only,
-                **request_kwargs,
-            )
+            try:
+                df = get_spectrum(
+                    sample_name,
+                    directory_sync=user_store.directory_sync(),
+                    spectrum_only=user_store.spectrum_only,
+                    **request_kwargs,
+                )
+            except LOAD_ERRORS as err:
+                # the figure keeps showing the previous selection; the next
+                # box or polygon asks again, so no Retry
+                return no_update, no_update, *_load_failed(err, retryable=False)
             name = "spatial subset"
             active_spectrum_metadata["intensity"] = df.intensity.tolist()
             active_spectrum_metadata["energy"] = df.energy.tolist()
@@ -748,9 +838,10 @@ def update_spectrum(
         return (
             _with_spectrum_dragmode(current_figure, spectrum_view),
             active_spectrum_metadata,
+            *_LOAD_OK,
         )
 
-    return no_update, no_update
+    return no_update, no_update, *_NO_LOAD_CHANGE
 
 
 @callback(
@@ -1476,8 +1567,12 @@ def _active_shapes(shapes_store: dict | None) -> list[dict]:
     Output({"type": _imageIDS.graph, "index": ALL}, "figure"),
     Output(_IDS.processed_graph_id_store, "data"),
     Output(_IDS.view_store, "data", allow_duplicate=True),
+    Output(_IDS.image_load_error, "is_open", allow_duplicate=True),
+    Output(_IDS.image_load_error_message, "children", allow_duplicate=True),
+    Output(_IDS.image_retry, "hidden", allow_duplicate=True),
     Input({"type": _imageSliderIds.refreshbutton, "index": ALL}, "n_clicks"),
     Input(_RESET_IMAGES_ID, "n_clicks"),
+    Input(_IDS.image_retry, "n_clicks"),
     State({"type": _imageSliderIds.refreshbutton, "index": ALL}, "id"),
     State({"type": _imageIDS.colorscale, "index": ALL}, "value"),
     State(_IDS.graph_id_store, "data"),
@@ -1502,6 +1597,7 @@ def _active_shapes(shapes_store: dict | None) -> list[dict]:
 def update_graph_figure(
     n_clicks: list[int | None],  # noqa: ARG001
     reset_nclicks: int | None,
+    _retry_clicks: int | None,
     refresh_ids: list[dict[str, str | int]],
     colormap_choices: list[str | None],
     graph_id_store: dict,
@@ -1531,6 +1627,11 @@ def update_graph_figure(
     callback writes the same store and may be running at the same time.
 
     The Apply button of a refreshed panel goes back to idle.
+
+    A backend failure is written to the load-error alert instead of raised.
+    Panels whose fetch failed are never added to the processed-id store, so
+    they are still "new" when the alert's Retry (an input here) is clicked
+    and the same batch is fetched again.
     """
 
     if "graph_ids" not in processed_graph_store:
@@ -1541,11 +1642,12 @@ def update_graph_figure(
     shapes = _active_shapes(shapes_store)
     scalebar = _scalebar(scalebar_store)
     no_updates = [no_update] * len(fig_list)
+    nothing = (no_updates, no_update, no_update, *_NO_LOAD_CHANGE)
 
     triggered_id = ctx.triggered_id
     spectraLogger.info(f"update_graph_figure triggered by {ctx.triggered_prop_ids}")
     if triggered_id is None or not _valid_sample_name(sample_name):
-        return no_updates, no_update, no_update
+        return nothing
 
     # Panels in the layout without a figure yet. Inserting a panel fires this
     # callback (its refresh button is an input), but which of the new inputs
@@ -1564,15 +1666,18 @@ def update_graph_figure(
 
     if new_positions:
         spectraLogger.info(f"building figures for panels at {new_positions}")
-        md = user_store.conditionally_fetch_metadata()
-        assert md is not None
+        try:
+            md = user_store.conditionally_fetch_metadata()
+            assert md is not None
 
-        # The fetches are the slow part -- run them concurrently.
-        im_arrays = fetch_im_data_parallel(
-            user_store,
-            [slider_range_list[pos] for pos in new_positions],
-            md,
-        )
+            # The fetches are the slow part -- run them concurrently.
+            im_arrays = fetch_im_data_parallel(
+                user_store,
+                [slider_range_list[pos] for pos in new_positions],
+                md,
+            )
+        except LOAD_ERRORS as err:
+            return no_updates, no_update, no_update, *_load_failed(err)
 
         new_figs = list(no_updates)
         for pos, im_array in zip(new_positions, im_arrays, strict=True):
@@ -1593,30 +1698,33 @@ def update_graph_figure(
             )
             set_props(graph_ids[pos], {"style": graph_style(im_array.shape)})
         processed_graph_store["initialized"] = True
-        return new_figs, processed_graph_store, no_update
+        return new_figs, processed_graph_store, no_update, *_LOAD_OK
 
     if triggered_id == _RESET_IMAGES_ID and reset_nclicks:
         # back to the full image on every panel, keeping the tool and the box.
         # A layout patch is all it takes, the image data stays in the browser.
         view = ensure_view({"dragmode": view["dragmode"]})
-        md = user_store.conditionally_fetch_metadata()
+        try:
+            md = user_store.conditionally_fetch_metadata()
+        except LOAD_ERRORS as err:
+            return no_updates, no_update, no_update, *_load_failed(err, False)
         patches = list(no_updates)
         for pos, graph_id in enumerate(graph_ids):
             if _graph_dict(graph_id["index"]) in processed_graph_store["graph_ids"]:
                 patches[pos] = _view_patch(view, md, scalebar)
-        return patches, no_update, view
+        return patches, no_update, view, *_NO_LOAD_CHANGE
 
     # Removing a panel also fires this callback, with every remaining panel's
     # inputs reported as triggered. A refresh click reports one.
     if not isinstance(triggered_id, dict) or len(ctx.triggered_prop_ids) != 1:
-        return no_updates, no_update, no_update
+        return nothing
 
     pos = _find_id_in_list(_imageIDS.graph, triggered_id["index"], graph_ids)
     if (
         pos is None
         or _graph_dict(triggered_id["index"]) not in processed_graph_store["graph_ids"]
     ):
-        return no_updates, no_update, no_update
+        return nothing
     colormap = colormap_choices[pos]
     assert isinstance(colormap, str)
 
@@ -1624,21 +1732,29 @@ def update_graph_figure(
     spectraLogger.info(f"refreshing panel {triggered_id}")
     set_props(_apply_button_id(triggered_id["index"]), APPLY_IDLE_PROPS)
     new_figs = list(no_updates)
-    new_figs[pos] = get_new_im(
-        user_store,
-        slider_range_list[pos],
-        colormap,
-        scalebar_handler=scalebar,
-        view=view,
-        shapes=shapes,
-    )
-    return new_figs, no_update, no_update
+    try:
+        new_figs[pos] = get_new_im(
+            user_store,
+            slider_range_list[pos],
+            colormap,
+            scalebar_handler=scalebar,
+            view=view,
+            shapes=shapes,
+        )
+    except LOAD_ERRORS as err:
+        # the panel keeps its old image; its own Apply is the retry
+        return no_updates, no_update, no_update, *_load_failed(err, False)
+    return new_figs, no_update, no_update, *_LOAD_OK
 
 
 @callback(
     Output({"type": _imageIDS.graph, "index": ALL}, "figure", allow_duplicate=True),
     Output(_IDS.processed_graph_id_store, "data", allow_duplicate=True),
+    Output(_IDS.image_load_error, "is_open", allow_duplicate=True),
+    Output(_IDS.image_load_error_message, "children", allow_duplicate=True),
+    Output(_IDS.image_retry, "hidden", allow_duplicate=True),
     Input({"type": _compositeIDS.apply, "index": ALL}, "n_clicks"),
+    Input(_IDS.image_retry, "n_clicks"),
     State({"type": _compositeIDS.apply, "index": ALL}, "id"),
     State({"type": channel_selector_ids.dropdown, "index": ALL}, "value"),
     State({"type": channel_selector_ids.dropdown, "index": ALL}, "id"),
@@ -1667,6 +1783,7 @@ def update_graph_figure(
 )
 def update_composite_figure(
     n_clicks: list[int | None],  # noqa: ARG001
+    _retry_clicks: int | None,
     apply_ids: list[dict[str, Any]],
     channel_elements: list[str | None],
     channel_element_ids: list[dict[str, Any]],
@@ -1693,10 +1810,15 @@ def update_composite_figure(
     fetched (all panels' channels concurrently), blended and drawn into the
     shared view. Nothing here reads the existing figures: a composite always
     fetches its own channels. The clicked Apply goes back to idle.
+
+    A backend failure goes to the load-error alert, whose Retry is an input
+    here; new panels that failed are still new on the retry (see
+    ``update_graph_figure``).
     """
     no_updates = [no_update] * len(graph_ids)
+    nothing = (no_updates, no_update, *_NO_LOAD_CHANGE)
     if not _valid_sample_name(sample_name):
-        return no_updates, no_update
+        return nothing
 
     composite_indices = {apply_id["index"] for apply_id in apply_ids}
     processed = list(processed_graph_store.get("graph_ids", []))
@@ -1720,15 +1842,13 @@ def update_composite_figure(
             or triggered_id["index"] not in composite_indices
             or _graph_dict(triggered_id["index"]) not in processed
         ):
-            return no_updates, no_update
+            return nothing
         targets = [triggered_id["index"]]
         set_props(_composite_apply_id(targets[0]), APPLY_IDLE_PROPS)
     spectraLogger.info(f"building composite figures for panels {targets}")
 
     _ensure_dataset(user_store_dict, sample_name)
     user_store = UserStore(**user_store_dict)
-    md = user_store.conditionally_fetch_metadata()
-    assert md is not None
     view = ensure_view(view_store)
     shapes = _active_shapes(shapes_store)
 
@@ -1749,12 +1869,17 @@ def update_composite_figure(
         if channel.active
     ]
     arrays: list[npt.NDArray] = []
-    if jobs:
-        arrays = list(
-            fetch_im_data_parallel(
-                user_store, [channel.energy_range for _, channel in jobs], md
+    try:
+        md = user_store.conditionally_fetch_metadata()
+        assert md is not None
+        if jobs:
+            arrays = list(
+                fetch_im_data_parallel(
+                    user_store, [channel.energy_range for _, channel in jobs], md
+                )
             )
-        )
+    except LOAD_ERRORS as err:
+        return no_updates, no_update, *_load_failed(err, retryable=bool(new_indices))
 
     new_figs = list(no_updates)
     for index in targets:
@@ -1781,8 +1906,8 @@ def update_composite_figure(
     if new_indices:
         processed_graph_store["graph_ids"] = processed
         processed_graph_store["initialized"] = True
-        return new_figs, processed_graph_store
-    return new_figs, no_update
+        return new_figs, processed_graph_store, *_LOAD_OK
+    return new_figs, no_update, *_LOAD_OK
 
 
 @callback(

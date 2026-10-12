@@ -1,10 +1,15 @@
 import functools
 import json
 import threading
+import time
+from dataclasses import dataclass
+from datetime import UTC, datetime
+from email.utils import parsedate_to_datetime
 
 import requests
 from requests.adapters import HTTPAdapter
 
+from spectra_inspector.logging import spectraLogger
 from spectra_inspector.settings import Settings
 from spectra_inspector.utilities import model
 
@@ -49,7 +54,48 @@ def _cached_settings() -> Settings:
 
 
 class ServerRequestError(RuntimeError):
-    """raised when the backend answers a request with an error status."""
+    """raised when the backend answers a request with an error status, or
+    could not be reached at all (``status_code`` is None then)."""
+
+    def __init__(
+        self,
+        detail: str,
+        status_code: int | None = None,
+        retry_after: float | None = None,
+    ) -> None:
+        super().__init__(detail)
+        self.status_code = status_code
+        self.retry_after = retry_after
+
+    @property
+    def busy(self) -> bool:
+        """the server refused to queue the request (503) or did not get to it
+        in time (504): nothing is wrong with the request itself"""
+        return self.status_code in (503, 504)
+
+
+# the wait a 503 without a usable Retry-After gets, and the most any gets: a
+# Dash callback holds a worker thread for the whole of it.
+_DEFAULT_RETRY_AFTER_S = 2.0
+_MAX_RETRY_AFTER_S = 10.0
+_sleep = time.sleep
+
+
+def _retry_after_seconds(r: requests.Response) -> float:
+    """The server's ``Retry-After`` as seconds, clamped; the default when it
+    is missing or unreadable."""
+    raw = r.headers.get("Retry-After")
+    if raw is None:
+        return _DEFAULT_RETRY_AFTER_S
+    try:
+        seconds = float(raw)
+    except (TypeError, ValueError):
+        try:
+            when = parsedate_to_datetime(raw)
+        except (TypeError, ValueError):
+            return _DEFAULT_RETRY_AFTER_S
+        seconds = (when - datetime.now(UTC)).total_seconds()
+    return min(max(seconds, 0.0), _MAX_RETRY_AFTER_S)
 
 
 def _raise_for_status(r: requests.Response) -> None:
@@ -63,7 +109,37 @@ def _raise_for_status(r: requests.Response) -> None:
         payload = None
     if isinstance(payload, dict) and payload.get("detail"):
         detail = str(payload["detail"])
-    raise ServerRequestError(detail)
+    retry_after = _retry_after_seconds(r) if r.status_code == 503 else None
+    raise ServerRequestError(detail, status_code=r.status_code, retry_after=retry_after)
+
+
+# what a load callback catches: the backend answered with an error, or the
+# request never got an answer (connection refused, reset, timed out)
+LOAD_ERRORS = (ServerRequestError, requests.exceptions.RequestException)
+
+
+@dataclass(frozen=True)
+class loadFailure:
+    """What to tell the user when a load fails, and whether asking again is
+    worth offering (a busy or unreachable server, as opposed to a sample
+    that is not there)."""
+
+    message: str
+    retryable: bool
+
+    @classmethod
+    def from_exception(cls, err: Exception) -> "loadFailure":
+        if isinstance(err, ServerRequestError):
+            if err.busy:
+                return cls("The server is busy. Try again in a moment.", True)
+            if err.status_code == 404:
+                return cls("Sample not found on the server.", False)
+            if err.status_code is None:
+                return cls("Could not reach the backend server.", True)
+            return cls(f"Loading failed: {err}", False)
+        if isinstance(err, requests.exceptions.RequestException):
+            return cls("Could not reach the backend server.", True)
+        return cls(f"Loading failed: {err}", False)
 
 
 class SpectraInspectorServerInterface:
@@ -104,10 +180,22 @@ class SpectraInspectorServerInterface:
         """Issue a GET on the shared, pooled session.
 
         Every call in this class goes through here so that connection reuse and
-        any future retry/timeout policy apply uniformly. It is also the single
-        seam the tests patch.
+        the retry policy apply uniformly. It is also the single seam the tests
+        patch.
+
+        A 503 is the backend's queue being full, most likely with this very
+        page's burst of image fetches, which clears in seconds: the request is
+        sent once more after the ``Retry-After`` the server asked for. A
+        second 503 is left to the caller, so that anything beyond the one
+        retry is visible to the user rather than a page that looks hung.
         """
-        return get_session().get(uri, params=params)
+        r = get_session().get(uri, params=params)
+        if r.status_code == 503:
+            wait = _retry_after_seconds(r)
+            spectraLogger.info("backend is busy, retrying %s in %.1f s", uri, wait)
+            _sleep(wait)
+            r = get_session().get(uri, params=params)
+        return r
 
     @property
     def connected(self):
@@ -139,7 +227,7 @@ class SpectraInspectorServerInterface:
         params: dict = {"refresh_db": refresh_db}
         params.update(directory_sync or {})
         r = self._get(uri, params=params)
-
+        _raise_for_status(r)
         return model.AvailableDatasets(**r.json())
 
     def browse_directory(self, path: str = "") -> model.directoryListing:
@@ -175,6 +263,7 @@ class SpectraInspectorServerInterface:
         payload.update(directory_sync or {})
         uri = self._get_endpoint("image-metadata")
         r = self._get(uri, params=payload)
+        _raise_for_status(r)
         return model.MetadataModel(**r.json())
 
     def get_combined_image_metadata(
@@ -189,6 +278,7 @@ class SpectraInspectorServerInterface:
         payload.update(directory_sync or {})
         uri = self._get_endpoint("image-metadata-combined")
         r = self._get(uri, params=payload)
+        _raise_for_status(r)
         return model.CombinedMetadata(**r.json())
 
     def get_image_spectrum(
@@ -231,6 +321,7 @@ class SpectraInspectorServerInterface:
 
         uri = self._get_endpoint("image-spectrum")
         r = self._get(uri, params=payload)
+        _raise_for_status(r)
         return model.Spectrum1dDict(**r.json())
 
     def get_image(
@@ -256,6 +347,7 @@ class SpectraInspectorServerInterface:
             payload["index1_1"] = index1_range[1]
         uri = self._get_endpoint("image-data")
         r = self._get(uri, params=payload)
+        _raise_for_status(r)
         return model.raveledImage(**r.json())
 
     def image_data_summed(
@@ -284,4 +376,5 @@ class SpectraInspectorServerInterface:
 
         uri = self._get_endpoint("image-data-summed")
         r = self._get(uri, params=payload)
+        _raise_for_status(r)
         return model.raveledImage(**r.json())
