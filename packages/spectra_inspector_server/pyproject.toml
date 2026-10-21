@@ -22,7 +22,6 @@ classifiers = [
   "Typing :: Typed",
 ]
 dependencies = [
-  "exspy>=0.3.2",
   "fastapi[standard]>=0.129.0",
   "matplotlib>=3.10.8",
   "numpy>=2.2.6",
