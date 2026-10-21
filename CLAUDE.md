@@ -92,9 +92,10 @@ Each package reads its own `.env` (pydantic-settings, untracked; templates are
 `defaults.env`). Every key carries the `SPECTRA_INSPECTOR_` prefix
 (`SPECTRA_INSPECTOR_DATA_ROOT` <- `Settings.data_root`). Settings models forbid
 extra keys and a validator rejects unprefixed spellings, so a bad `.env` **fails
-tests and app startup** with a pydantic error. If frontend tests fail that way,
-check `packages/spectra_inspector/.env` against `spectra_inspector/settings.py`
-— CI passes because no `.env` exists there.
+app startup** with a pydantic error. The test suites never see a developer's
+`.env` or exported `SPECTRA_INSPECTOR_*` variables: an autouse fixture in each
+package's `conftest.py` strips them and runs every test from its own `tmp_path`,
+so a test that needs a setting must `monkeypatch.setenv` it.
 
 The server's `Info` response model spells its field
 `spectra_inspector_data_root`; that is the wire format (mirrored in the
