@@ -188,6 +188,12 @@ Env vars:
   `fastapi run` starts with, defaults to `1`. Only used by docker: docker
   compose passes it through to the container, where the `Dockerfile` `CMD`
   expands it at start up.
+- `SPECTRA_INSPECTOR_MAX_QUEUED_OPS`: how many spectrum and image operations
+  each uvicorn worker lets wait for its compute worker before refusing new ones
+  with a `503` carrying a `Retry-After` header, defaults to `32`. Each worker
+  has its own queue, so the effective cap is this times
+  `SPECTRA_INSPECTOR_N_FASTAPI_WORKERS`. An operation that is queued but not
+  reached within two minutes answers `504`.
 
 So an example `.env` for deployment might look like:
 

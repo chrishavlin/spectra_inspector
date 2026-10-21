@@ -159,6 +159,7 @@ def _single_panel_args(refresh_ids, fig_list, processed):
     return {
         "n_clicks": [None] * len(refresh_ids),
         "reset_nclicks": None,
+        "_retry_clicks": 0,
         "refresh_ids": refresh_ids,
         "colormap_choices": ["viridis"] * len(refresh_ids),
         "graph_id_store": {
@@ -183,7 +184,7 @@ def test_a_refresh_puts_the_apply_back(inspector, mocker, triggered_by):
     mocker.patch.object(inspector, "get_new_im", return_value={"refreshed": True})
     triggered_by(refresh_ids[1])
 
-    figs, processed, view = inspector.update_graph_figure(
+    figs, processed, view, *_ = inspector.update_graph_figure(
         **_single_panel_args(refresh_ids, [{}, {}], processed=(0, 1))
     )
 
@@ -207,7 +208,7 @@ def test_a_later_panel_fetches_its_own_image_and_is_not_marked(
     )
     triggered_by(refresh_ids[1])
 
-    figs, processed, _ = inspector.update_graph_figure(
+    figs, processed, *_ = inspector.update_graph_figure(
         **_single_panel_args(refresh_ids, [{"data": [{"type": "heatmap"}]}, {}], (0,))
     )
 
@@ -233,8 +234,9 @@ def test_the_composite_apply_goes_back_when_clicked(
     )
     triggered_by(apply_id)
 
-    figs, processed = inspector.update_composite_figure(
+    figs, processed, *_ = inspector.update_composite_figure(
         n_clicks=[1],
+        _retry_clicks=0,
         apply_ids=[apply_id],
         channel_elements=[],
         channel_element_ids=[],

@@ -32,8 +32,12 @@ Clientside callbacks and DOM listeners live in `assets/*.js`.
   loading, which is what lets the shared callbacks handle both kinds.
 - **Backend access** goes only through
   `utilities/interface.py::SpectraInspectorServerInterface`; layouts check
-  `.connected` and render a "could not connect" div rather than raising. Tests
-  mock `requests.get` via `pytest-mock`.
+  `.connected` and render a "could not connect" div rather than raising. Every
+  call raises `ServerRequestError` (carrying `status_code`) on a non-200, after
+  one automatic retry of a 503. The inspector's load callbacks catch
+  `LOAD_ERRORS` and write `loadFailure.from_exception` into the page's static
+  load-error alerts (a retry button for a busy or unreachable server) instead of
+  dying. Tests mock `requests.get` via `pytest-mock`.
 - **Tooltips** go through `components/tooltip.hover_tooltip`, never a bare
   `dbc.Tooltip`; `components/tests/test_tooltip.py` checks every layout's
   tooltips resolve.

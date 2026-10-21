@@ -44,6 +44,13 @@ class Settings(BaseSettings):
     # docker deployment, where the Dockerfile CMD expands it at container start)
     n_fastapi_workers: PositiveInt = 1
 
+    # how many expensive operations (spectra, images) may wait for the single
+    # pool worker before new ones are refused with a 503. One sample load fans
+    # out a handful of image fetches at once, so this must comfortably exceed
+    # a single user's burst. Every uvicorn worker holds its own queue, so the
+    # effective cap is n_fastapi_workers * max_queued_ops.
+    max_queued_ops: PositiveInt = 32
+
     log_level: Literal[
         "DEBUG",
         "INFO",

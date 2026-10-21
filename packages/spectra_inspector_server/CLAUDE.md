@@ -41,8 +41,10 @@ each item into a `ProcessPoolExecutor`. Endpoints build a `queueOpsItem`
 (`ops_func` is the **string name of a method on `OperationEDAXStateHandler`**,
 dispatched via `getattr`), push it with `submit_op`, then wait in
 `await_op_result` on the `asyncio.Event` registered for that `ops_id` (2-minute
-timeout → HTTP 404). `/info`, `/available-datasets`, and the metadata endpoints
-skip the queue and run inline.
+timeout → HTTP 504). The queue is bounded by `SPECTRA_INSPECTOR_MAX_QUEUED_OPS`
+per uvicorn worker; `submit_op` answers a full queue with HTTP 503 plus a
+`Retry-After` header and registers nothing for it. `/info`,
+`/available-datasets`, and the metadata endpoints skip the queue and run inline.
 
 The pool holds a single worker and outlives the requests it serves, because
 `load_edax_spd` caches the filesets it has opened (bounded, invalidated on

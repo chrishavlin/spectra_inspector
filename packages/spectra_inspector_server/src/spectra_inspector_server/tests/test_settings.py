@@ -53,6 +53,25 @@ def test_max_datasets_must_be_positive(
         Settings()
 
 
+def test_max_queued_ops_default_and_override(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.chdir(tmp_path)
+    assert Settings().max_queued_ops == 32
+
+    (tmp_path / ".env").write_text(f"{ENV_PREFIX}MAX_QUEUED_OPS=4\n")
+    assert Settings().max_queued_ops == 4
+
+
+def test_max_queued_ops_must_be_positive(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    (tmp_path / ".env").write_text(f"{ENV_PREFIX}MAX_QUEUED_OPS=0\n")
+    monkeypatch.chdir(tmp_path)
+    with pytest.raises(ValueError, match="greater_than"):
+        Settings()
+
+
 def test_unprefixed_env_file_raises(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
