@@ -377,8 +377,7 @@ def test_no_store_without_the_setting(
     ops.get_multi_channel_intensity_image(SAMPLE, CHANNEL_RANGE)
     assert not list(tmp_path.rglob("*.npz"))
 
-    # both are lru_cached, and an earlier test may have filled them from a
-    # developer's .env that does set the directory
+    # both are lru_cached, and an earlier test may have filled them
     monkeypatch.chdir(tmp_path)
     get_settings.cache_clear()
     get_derived_data_store.cache_clear()
