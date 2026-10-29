@@ -315,6 +315,10 @@ class PyramidReadStats:
         the finest blocks could not fill
     selected_pixels : int
         how many pixels the region holds
+    dropped_pixels : int
+        how many of the boundary pixels were left out of the sum instead of
+        gathered (``blocks_only``), so the spectrum covers
+        ``selected_pixels - dropped_pixels`` pixels
     block_seconds, raw_seconds : float
         wall time spent in the pyramid reads and in the cube reads
     """
@@ -325,8 +329,14 @@ class PyramidReadStats:
     chunk_bytes_per_level: tuple[int, ...]
     raw_pixels: int
     selected_pixels: int
+    dropped_pixels: int = 0
     block_seconds: float = 0.0
     raw_seconds: float = 0.0
+
+    @property
+    def summed_pixels(self) -> int:
+        """The pixels the spectrum actually covers."""
+        return self.selected_pixels - self.dropped_pixels
 
     @property
     def block_pixels(self) -> int:
@@ -365,12 +375,15 @@ class PyramidReadStats:
                 )
             )
         )
-        raw_share = (
-            100 * self.raw_pixels / self.selected_pixels if self.selected_pixels else 0
+        total = self.selected_pixels or 1
+        boundary = (
+            f"{self.dropped_pixels} boundary pixels dropped "
+            f"({100 * self.dropped_pixels / total:.1f}%)"
+            if self.dropped_pixels
+            else f"{self.raw_pixels} raw boundary pixels ({100 * self.raw_pixels / total:.1f}%)"
         )
         return (
-            f"{self.selected_pixels} pixels selected; {levels}; "
-            f"{self.raw_pixels} raw boundary pixels ({raw_share:.1f}%); "
+            f"{self.selected_pixels} pixels selected; {levels}; {boundary}; "
             f"{self.chunk_bytes / 2**20:.1f} MB of chunks decoded; "
             f"{self.block_seconds:.3f} s in blocks, {self.raw_seconds:.3f} s in raw"
         )
@@ -423,8 +436,10 @@ class SpectralPyramid:
         index0_range: tuple[int, int],
         index1_range: tuple[int, int],
         channel_range: tuple[int, int],
+        blocks_only: bool = False,
     ) -> tuple[npt.NDArray[np.int64], PyramidReadStats]:
-        """The spectrum summed over a region of the map, exactly.
+        """The spectrum summed over a region of the map, exactly unless
+        ``blocks_only`` is set.
 
         Parameters
         ----------
@@ -438,6 +453,12 @@ class SpectralPyramid:
             the half-open index ranges of the box, within the map
         channel_range : tuple[int, int]
             the half-open channel range to return
+        blocks_only : bool, optional
+            leave out the pixels no block covers instead of gathering them
+            from the cube, by default False. The result is then the sum over
+            the finest-level blocks that lie wholly inside the region, which
+            touches the cube not at all; ``stats.dropped_pixels`` says how
+            many of the selected pixels that left out.
 
         Returns
         -------
@@ -509,7 +530,8 @@ class SpectralPyramid:
         block_seconds = time.perf_counter() - block_start
 
         leftover = remaining[r0 - ra0 : r1 - ra0, c0 - ca0 : c1 - ca0]
-        raw_pixels = int(leftover.sum())
+        boundary = int(leftover.sum())
+        raw_pixels, dropped = (0, boundary) if blocks_only else (boundary, 0)
         raw_seconds = 0.0
         if raw_pixels:
             raw_start = time.perf_counter()
@@ -522,6 +544,7 @@ class SpectralPyramid:
             chunk_bytes,
             raw_pixels,
             selected,
+            dropped,
             block_seconds,
             raw_seconds,
         )

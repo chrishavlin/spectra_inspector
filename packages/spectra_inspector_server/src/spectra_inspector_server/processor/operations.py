@@ -521,6 +521,7 @@ class OperationEDAXStateHandler:
         spectrum_only: bool = False,
         polygon: Sequence[Vertex] | None = None,
         use_pyramid: bool = True,
+        blocks_only: bool = False,
     ) -> Spectrum1d:
         """Sum a sample's data cube over a spatial region into a 1D spectrum.
 
@@ -560,6 +561,11 @@ class OperationEDAXStateHandler:
             answer from the sample's pyramid when the store holds one and
             the handler has pyramids on, by default True. False always sums
             the cube, for comparison.
+        blocks_only : bool, optional
+            sum only the pyramid blocks lying wholly inside the region and
+            leave out the boundary pixels, by default False. The cube is
+            not touched; the result is approximate (see
+            ``SpectralPyramid.region_spectrum``). Needs a pyramid.
 
         Returns
         -------
@@ -630,9 +636,17 @@ class OperationEDAXStateHandler:
             f"[{index_ranges[2][0]}:{index_ranges[2][1]}]"
         )
         pyramid = self._pyramid(sample_name) if use_pyramid else None
+        if blocks_only and pyramid is None:
+            msg = f"blocks_only needs a pyramid, and {sample_name} has none in use"
+            raise ValueError(msg)
         if pyramid is not None:
             im_output, stats = pyramid.region_spectrum(
-                data, mask, index_ranges[0], index_ranges[1], index_ranges[2]
+                data,
+                mask,
+                index_ranges[0],
+                index_ranges[1],
+                index_ranges[2],
+                blocks_only=blocks_only,
             )
             spectraLogger.debug(
                 "%s: %s from the pyramid: %s", sample_name, extent, stats.summary()
@@ -649,7 +663,8 @@ class OperationEDAXStateHandler:
             )
         assert im_output.shape == final_shape
 
-        if fileset is not None:
+        # an approximate sum is never stored as the full-extent spectrum
+        if fileset is not None and not blocks_only:
             assert self._derived_data is not None
             self._derived_data.store(fileset, OP_SPECTRUM, entry_args, im_output)
 

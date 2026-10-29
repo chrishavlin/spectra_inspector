@@ -467,6 +467,73 @@ def test_only_the_boundary_pixels_are_read_from_the_cube(
     assert full_mask[pixels[:, 0], pixels[:, 1]].all()
 
 
+@pytest.mark.parametrize("vertices", [TRIANGLE, CONCAVE])
+def test_blocks_only_sums_the_enclosed_finest_blocks(
+    pyramid: SpectralPyramid, cube: np.ndarray, vertices: list[tuple[float, float]]
+) -> None:
+    mask, index0_range, index1_range = polygon_mask(vertices, CUBE_SHAPE[:2])
+    exact, exact_stats = pyramid.region_spectrum(
+        cube, mask, index0_range, index1_range, (0, 60)
+    )
+    # the cube is never touched: a cube of the right shape but no data will do
+    nothing = np.zeros(CUBE_SHAPE, dtype=np.uint16)
+    approx, stats = pyramid.region_spectrum(
+        nothing, mask, index0_range, index1_range, (0, 60), blocks_only=True
+    )
+
+    assert stats.raw_pixels == 0
+    assert stats.raw_seconds == 0
+    assert stats.dropped_pixels == exact_stats.raw_pixels > 0
+    assert stats.summed_pixels == stats.selected_pixels - stats.dropped_pixels
+    assert stats.blocks_per_level == exact_stats.blocks_per_level
+    assert f"{stats.dropped_pixels} boundary pixels dropped (" in stats.summary()
+
+    # the reference: every finest-level block whose pixels all lie inside
+    full_mask = np.zeros(CUBE_SHAPE[:2], dtype=bool)
+    full_mask[index0_range[0] : index0_range[1], index1_range[0] : index1_range[1]] = (
+        mask
+    )
+    b = SPEC.block_sizes[0]
+    reference = np.zeros(60, dtype=np.int64)
+    summed = 0
+    for i in range(level_shape(CUBE_SHAPE, b)[0]):
+        for j in range(level_shape(CUBE_SHAPE, b)[1]):
+            block = (slice(i * b, (i + 1) * b), slice(j * b, (j + 1) * b))
+            if full_mask[block].all():
+                reference += cube[block].sum(axis=(0, 1), dtype=np.int64)
+                summed += full_mask[block].size
+    np.testing.assert_array_equal(approx, reference)
+    assert stats.summed_pixels == summed
+    assert (approx <= exact).all()
+    assert approx.sum() < exact.sum()
+
+
+def test_get_spectrum_blocks_only(
+    ops: OperationEDAXStateHandler,
+    ph: EDAXPathHandler,
+    store: DerivedDataStore,
+    cube: np.ndarray,
+    cube_reads: list[tuple[int, int]],
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    with pytest.raises(ValueError, match="blocks_only needs a pyramid"):
+        ops.get_spectrum(SAMPLE, polygon=TRIANGLE, blocks_only=True)
+    assert store.store_pyramid(_fileset(ph), cube, SPEC)
+    with pytest.raises(ValueError, match="blocks_only needs a pyramid"):
+        ops.get_spectrum(SAMPLE, polygon=TRIANGLE, blocks_only=True, use_pyramid=False)
+
+    caplog.set_level(logging.DEBUG, logger="spectra_inspector")
+    approx = ops.get_spectrum(SAMPLE, polygon=TRIANGLE, blocks_only=True)
+    exact = ops.get_spectrum(SAMPLE, polygon=TRIANGLE)
+    assert len(cube_reads) == 0
+    assert approx.intensity.sum() < exact.intensity.sum()
+    assert "boundary pixels dropped" in caplog.records[-2].message
+
+    # an approximate full-extent spectrum is not stored as the real one
+    ops.get_spectrum(SAMPLE, blocks_only=True)
+    assert not store.has_entry(_fileset(ph), "spectrum", {"channel_range": None})
+
+
 def test_region_rejects_a_mismatched_cube_or_mask(
     pyramid: SpectralPyramid, cube: np.ndarray
 ) -> None:
