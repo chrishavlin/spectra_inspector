@@ -80,6 +80,9 @@ setting is read with a `SPECTRA_INSPECTOR_` prefix:
 - `SPECTRA_INSPECTOR_DERIVED_WRITE_ON_MISS`: set to `true` to let the backend
   write results it had to compute into the store. Defaults to `false`, which
   keeps the store read-only and leaves filling it to the script.
+- `SPECTRA_INSPECTOR_DERIVED_USE_PYRAMIDS`: set to `false` to sum every box and
+  polygon spectrum off the raw cube even when the store holds a pyramid for the
+  map. Defaults to `true`.
 - `SPECTRA_INSPECTOR_DESKTOP_MODE`: set to `true` to skip the recursive scan of
   `SPECTRA_INSPECTOR_DATA_ROOT` at startup and instead let the frontend pick a
   working directory to scan. Defaults to `false`. See

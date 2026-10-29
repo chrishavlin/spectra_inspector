@@ -90,8 +90,9 @@ The store's other product is a fileset's spectral block pyramid
 `<entry dir>/pyramid.zarr`): the cube summed over square blocks at a few block
 sizes, from which `get_spectrum` assembles any box or polygon spectrum exactly
 (block sums plus the raw pixels along the edge) when one is present and up to
-date. Only `scripts/build_spectral_pyramids.py` builds them; the server never
-writes one, and `use_pyramid=False` forces the raw sum for comparison
+date and `SPECTRA_INSPECTOR_DERIVED_USE_PYRAMIDS` is not `false`. Only
+`scripts/build_spectral_pyramids.py` builds them; the server never writes one,
+and `use_pyramid=False` on a call forces the raw sum for comparison
 (`scripts/benchmark_spectral_pyramid.py`). Note that
 `precompute_derived_data.py --overwrite` empties the whole directory, pyramids
 included.
