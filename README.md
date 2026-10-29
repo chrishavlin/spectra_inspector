@@ -72,9 +72,11 @@ setting is read with a `SPECTRA_INSPECTOR_` prefix:
 - `SPECTRA_INSPECTOR_DERIVED_DATA_DIR`: absolute path of an on-disk store of
   data derived from the raw cubes: the full-extent images and spectra the
   inspector page opens on, filled ahead of time by
-  `scripts/precompute_derived_data.py`. Unset by default, which computes
-  everything on request. Docker compose bind-mounts the host directory at the
-  same path inside the container. See [DEPLOYMENT.md](DEPLOYMENT.md).
+  `scripts/precompute_derived_data.py`, and the spectral block pyramids that
+  answer box and polygon spectra, built by `scripts/build_spectral_pyramids.py`.
+  Unset by default, which computes everything on request. Docker compose
+  bind-mounts the host directory at the same path inside the container. See
+  [DEPLOYMENT.md](DEPLOYMENT.md).
 - `SPECTRA_INSPECTOR_DERIVED_WRITE_ON_MISS`: set to `true` to let the backend
   write results it had to compute into the store. Defaults to `false`, which
   keeps the store read-only and leaves filling it to the script.

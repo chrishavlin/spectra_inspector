@@ -7,8 +7,10 @@ here is a change to how endpoints call in.
 With a :class:`~spectra_inspector_server.processor.derived_data.DerivedDataStore`
 attached, the two whole-cube reductions (the summed image and the spectrum)
 answer full-extent requests from the store when they can and write to it when
-they cannot. Anything less than the full extent, or a polygon, is computed as
-if there were no store.
+they cannot. A region request (a box short of the full extent, or a polygon)
+is answered from the fileset's spectral block pyramid when the store holds
+one (``processor/pyramid.py``), and otherwise, as before, summed off the cube
+as if there were no store.
 """
 
 from collections.abc import Sequence
@@ -43,6 +45,7 @@ if TYPE_CHECKING:
     from collections.abc import Container
 
     from spectra_inspector_server.model import EDAX_file_set
+    from spectra_inspector_server.processor.pyramid import SpectralPyramid
 
 _DEFAULT_CHUNKSIZE = 128
 
@@ -111,6 +114,17 @@ class OperationEDAXStateHandler:
             if (start, stop) != (0, edax_ds.axes_by_index[axis].size):
                 return None
         return self.ph.get_sample_edax_file_names(sample_name)
+
+    def _pyramid(self, sample_name: str) -> "SpectralPyramid | None":
+        """The pyramid to answer a region request on ``sample_name`` from, or
+        None when there is no store, no up-to-date pyramid in it, or the
+        sample is not a fileset on disk (the synthetic test samples)."""
+        if self._derived_data is None:
+            return None
+        fileset = self.ph.get_sample_edax_file_names(sample_name)
+        if fileset is None:
+            return None
+        return self._derived_data.load_pyramid(fileset)
 
     def _require_sample(self, sample_name: str, spectrum_only: bool = False) -> None:
         """Check that a sample can be loaded, raising if it cannot.
@@ -497,12 +511,15 @@ class OperationEDAXStateHandler:
         chunksize: int = _DEFAULT_CHUNKSIZE,
         spectrum_only: bool = False,
         polygon: Sequence[Vertex] | None = None,
+        use_pyramid: bool = True,
     ) -> Spectrum1d:
         """Sum a sample's data cube over a spatial region into a 1D spectrum.
 
         The region is a box given by index ranges, or the inside of a polygon.
-        The summation is chunked along one spatial axis so that the full cube
-        is never held in memory at once.
+        With a pyramid of the sample in the derived data store the region is
+        assembled from block sums plus the raw pixels along its boundary;
+        otherwise the summation is chunked along one spatial axis so that the
+        full cube is never held in memory at once.
 
         Parameters
         ----------
@@ -530,6 +547,9 @@ class OperationEDAXStateHandler:
             index units, by default None. When given, the pixels whose
             centres fall inside it are summed instead of a box, and the index
             ranges are replaced by the polygon's bounding box.
+        use_pyramid : bool, optional
+            answer from the sample's pyramid when the store holds one, by
+            default True. False always sums the cube, for comparison.
 
         Returns
         -------
@@ -593,9 +613,41 @@ class OperationEDAXStateHandler:
                     original_metadata=md_orig,
                 )
 
-        im_output = np.zeros(final_shape, dtype=np.int64)
+        pyramid = self._pyramid(sample_name) if use_pyramid else None
+        if pyramid is not None:
+            im_output, _ = pyramid.region_spectrum(
+                data, mask, index_ranges[0], index_ranges[1], index_ranges[2]
+            )
+        else:
+            im_output = self._sum_region(
+                data, mask, index_ranges, chunking_index, chunksize
+            )
+        assert im_output.shape == final_shape
 
-        assert im_output.ndim == 1
+        if fileset is not None:
+            assert self._derived_data is not None
+            self._derived_data.store(fileset, OP_SPECTRUM, entry_args, im_output)
+
+        return Spectrum1d(
+            energy=energy_channel_axis,
+            intensity=im_output,
+            energy_min=energy_min,
+            energy_max=energy_max,
+            metadata=md,
+            original_metadata=md_orig,
+        )
+
+    @staticmethod
+    def _sum_region(
+        data: npt.NDArray[np.int64],
+        mask: npt.NDArray[np.bool_] | None,
+        index_ranges: list[tuple[int, int]],
+        chunking_index: int,
+        chunksize: int,
+    ) -> npt.NDArray[np.int64]:
+        """The spectrum of a box of the cube, or of the pixels ``mask`` flags
+        within it, summed a chunk of one spatial axis at a time."""
+        im_output = np.zeros(index_ranges[2][1] - index_ranges[2][0], dtype=np.int64)
 
         shapes_by_dim = [indx[1] - indx[0] for indx in index_ranges]
         # every chunk sums over both spatial axes, so the number of terms per
@@ -626,19 +678,7 @@ class OperationEDAXStateHandler:
                 partial = np.sum(block, axis=(0, 1), dtype=acc_dtype)
             assert partial.size == im_output.size
             im_output += partial
-
-        if fileset is not None:
-            assert self._derived_data is not None
-            self._derived_data.store(fileset, OP_SPECTRUM, entry_args, im_output)
-
-        return Spectrum1d(
-            energy=energy_channel_axis,
-            intensity=im_output,
-            energy_min=energy_min,
-            energy_max=energy_max,
-            metadata=md,
-            original_metadata=md_orig,
-        )
+        return im_output
 
     def get_spectrum_and_images(
         self,
