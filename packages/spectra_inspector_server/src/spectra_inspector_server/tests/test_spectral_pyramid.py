@@ -9,6 +9,7 @@ small synthetic cube.
 """
 
 import importlib.util
+import logging
 import multiprocessing
 import os
 import shutil
@@ -325,6 +326,67 @@ def test_box_spectrum_is_exact(
     )
     # edge blocks hold fewer pixels, so block pixels can only overshoot
     assert covered + stats.raw_pixels >= area
+
+
+def test_read_stats_describe_the_request(
+    pyramid: SpectralPyramid, cube: np.ndarray
+) -> None:
+    mask, index0_range, index1_range = polygon_mask(CONCAVE, CUBE_SHAPE[:2])
+    _, stats = pyramid.region_spectrum(cube, mask, index0_range, index1_range, (0, 30))
+    assert stats.block_sizes == SPEC.block_sizes
+    assert all(
+        chunks <= blocks
+        for chunks, blocks in zip(
+            stats.chunks_per_level, stats.blocks_per_level, strict=True
+        )
+    )
+    assert all(chunks > 0 for chunks in stats.chunks_per_level)
+    # a chunk holds 16 x 16 blocks (or the whole level) over the 30 channels asked for
+    for level, b in enumerate(SPEC.block_sizes):
+        chunk_rows, chunk_cols = (min(16, n) for n in level_shape(CUBE_SHAPE, b)[:2])
+        assert stats.chunk_bytes_per_level[level] == chunk_rows * chunk_cols * 30 * 4
+    assert stats.chunk_bytes == sum(
+        n * size
+        for n, size in zip(
+            stats.chunks_per_level, stats.chunk_bytes_per_level, strict=True
+        )
+    )
+    assert stats.block_pixels + stats.raw_pixels >= stats.selected_pixels
+    assert stats.block_seconds > 0
+    assert stats.raw_seconds > 0
+    summary = stats.summary()
+    assert summary.startswith(
+        f"{stats.selected_pixels} pixels selected; level 2 (8px): "
+    )
+    assert f"{stats.raw_pixels} raw boundary pixels (" in summary
+    assert "MB of chunks decoded" in summary
+
+
+def test_get_spectrum_logs_what_the_pyramid_cost(
+    ops: OperationEDAXStateHandler,
+    ph: EDAXPathHandler,
+    store: DerivedDataStore,
+    cube: np.ndarray,
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    caplog.set_level(logging.DEBUG, logger="spectra_inspector")
+    ops.get_spectrum(SAMPLE, polygon=TRIANGLE)
+    (off_the_cube,) = [r for r in caplog.records if "summed off the cube" in r.message]
+    assert off_the_cube.message.startswith(
+        f"{SAMPLE}: polygon in [2:36, 3:26], channels [0:60]"
+    )
+
+    assert store.store_pyramid(_fileset(ph), cube, SPEC)
+    ops.get_spectrum(SAMPLE, index0_range=(3, 30), index1_range=(5, 20))
+    (served,) = [r for r in caplog.records if "from the pyramid" in r.message]
+    assert served.levelno == logging.DEBUG
+    assert served.message.startswith(
+        f"{SAMPLE}: box [3:30, 5:20], channels [0:60] from the pyramid: 405 pixels selected; "
+    )
+    assert "raw boundary pixels" in served.message
+
+    ops.get_spectrum(SAMPLE, index0_range=(3, 30), use_pyramid=False)
+    assert "(pyramid disabled)" in caplog.records[-1].message
 
 
 def test_the_whole_map_needs_no_raw_pixels(

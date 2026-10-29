@@ -20,6 +20,7 @@ import numpy as np
 import numpy.typing as npt
 
 from spectra_inspector_server._file_tree_handling import EDAXPathHandler
+from spectra_inspector_server._logging import spectraLogger
 from spectra_inspector_server.model import (
     CombinedMetadata,
     EDAX_axis,
@@ -613,12 +614,27 @@ class OperationEDAXStateHandler:
                     original_metadata=md_orig,
                 )
 
+        region = "polygon in" if mask is not None else "box"
+        extent = (
+            f"{region} [{index_ranges[0][0]}:{index_ranges[0][1]}, "
+            f"{index_ranges[1][0]}:{index_ranges[1][1]}], channels "
+            f"[{index_ranges[2][0]}:{index_ranges[2][1]}]"
+        )
         pyramid = self._pyramid(sample_name) if use_pyramid else None
         if pyramid is not None:
-            im_output, _ = pyramid.region_spectrum(
+            im_output, stats = pyramid.region_spectrum(
                 data, mask, index_ranges[0], index_ranges[1], index_ranges[2]
             )
+            spectraLogger.debug(
+                "%s: %s from the pyramid: %s", sample_name, extent, stats.summary()
+            )
         else:
+            spectraLogger.debug(
+                "%s: %s summed off the cube%s",
+                sample_name,
+                extent,
+                "" if use_pyramid else " (pyramid disabled)",
+            )
             im_output = self._sum_region(
                 data, mask, index_ranges, chunking_index, chunksize
             )

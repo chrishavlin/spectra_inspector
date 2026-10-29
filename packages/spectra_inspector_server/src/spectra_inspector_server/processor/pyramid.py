@@ -37,6 +37,7 @@ store uses (``processor/derived_data.py``), so a pyramid built for an older
 """
 
 import math
+import time
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
@@ -46,7 +47,6 @@ import numpy.typing as npt
 import zarr
 import zarr.codecs
 
-from spectra_inspector_server._logging import spectraLogger
 from spectra_inspector_server.processor._reductions import (
     accumulator_dtype,
     chunk_bounds,
@@ -296,13 +296,84 @@ def _multiscales_metadata(spec: PyramidSpec, name: str) -> dict[str, Any]:
 
 @dataclass(frozen=True)
 class PyramidReadStats:
-    """What answering a region request cost: how many block entries each
-    level supplied, finest level first, and how many raw pixels were read of
-    the pixels selected."""
+    """What answering a region request cost.
 
+    Attributes
+    ----------
+    block_sizes : tuple[int, ...]
+        the pyramid's block sizes, finest level first; the per-level tuples
+        below are in the same order
+    blocks_per_level : tuple[int, ...]
+        how many block entries each level supplied
+    chunks_per_level : tuple[int, ...]
+        how many zarr chunks each level read (and decompressed) for them
+    chunk_bytes_per_level : tuple[int, ...]
+        the decoded size of one chunk of each level, over the channels asked
+        for, so ``chunks * chunk_bytes`` is what a level handed to numpy
+    raw_pixels : int
+        how many pixels' spectra were gathered from the cube, the boundary
+        the finest blocks could not fill
+    selected_pixels : int
+        how many pixels the region holds
+    block_seconds, raw_seconds : float
+        wall time spent in the pyramid reads and in the cube reads
+    """
+
+    block_sizes: tuple[int, ...]
     blocks_per_level: tuple[int, ...]
+    chunks_per_level: tuple[int, ...]
+    chunk_bytes_per_level: tuple[int, ...]
     raw_pixels: int
     selected_pixels: int
+    block_seconds: float = 0.0
+    raw_seconds: float = 0.0
+
+    @property
+    def block_pixels(self) -> int:
+        """The pixels the block entries stand for, counting an edge block as
+        a whole one."""
+        return sum(
+            n * b * b
+            for n, b in zip(self.blocks_per_level, self.block_sizes, strict=True)
+        )
+
+    @property
+    def chunk_bytes(self) -> int:
+        """The decoded bytes every level's chunks added up to."""
+        return sum(
+            n * size
+            for n, size in zip(
+                self.chunks_per_level, self.chunk_bytes_per_level, strict=True
+            )
+        )
+
+    def summary(self) -> str:
+        """One line for the log: what each level supplied, what the cube
+        supplied, and what both cost."""
+        levels = ", ".join(
+            f"level {level} ({b}px): {blocks} blocks from {chunks} chunks"
+            for level, (b, blocks, chunks) in reversed(
+                list(
+                    enumerate(
+                        zip(
+                            self.block_sizes,
+                            self.blocks_per_level,
+                            self.chunks_per_level,
+                            strict=True,
+                        )
+                    )
+                )
+            )
+        )
+        raw_share = (
+            100 * self.raw_pixels / self.selected_pixels if self.selected_pixels else 0
+        )
+        return (
+            f"{self.selected_pixels} pixels selected; {levels}; "
+            f"{self.raw_pixels} raw boundary pixels ({raw_share:.1f}%); "
+            f"{self.chunk_bytes / 2**20:.1f} MB of chunks decoded; "
+            f"{self.block_seconds:.3f} s in blocks, {self.raw_seconds:.3f} s in raw"
+        )
 
 
 class SpectralPyramid:
@@ -386,10 +457,23 @@ class SpectralPyramid:
         if mask.shape != (r1 - r0, c1 - c0):
             msg = f"mask shape {mask.shape} does not span the box {(r1 - r0, c1 - c0)}"
             raise ValueError(msg)
-        n_blocks = [0] * len(self.block_sizes)
+        n_levels = len(self.block_sizes)
+        n_blocks, n_chunks = [0] * n_levels, [0] * n_levels
+        chunk_bytes = tuple(
+            int(array.chunks[0] * array.chunks[1] * max(ch1 - ch0, 0))
+            * array.dtype.itemsize
+            for array in self.levels
+        )
         selected = int(mask.sum())
         if selected == 0 or out.size == 0:
-            return out, PyramidReadStats(tuple(n_blocks), 0, selected)
+            return out, PyramidReadStats(
+                self.block_sizes,
+                tuple(n_blocks),
+                tuple(n_chunks),
+                chunk_bytes,
+                0,
+                selected,
+            )
 
         # the box widened to whole blocks of the coarsest level, which every
         # finer level then also tiles. Pixels past the map's edge count as
@@ -404,7 +488,8 @@ class SpectralPyramid:
         remaining[rows - ra0 :, :] = True
         remaining[:, cols - ca0 :] = True
 
-        for level in reversed(range(len(self.block_sizes))):
+        block_start = time.perf_counter()
+        for level in reversed(range(n_levels)):
             b = self.block_sizes[level]
             array = self.levels[level]
             h, w = remaining.shape
@@ -418,15 +503,28 @@ class SpectralPyramid:
             n_blocks[level] = int(full.sum())
             if n_blocks[level] == 0:
                 continue
-            out += _sum_blocks(array, full, i0, j0, ch0, ch1)
+            summed, n_chunks[level] = _sum_blocks(array, full, i0, j0, ch0, ch1)
+            out += summed
             remaining &= ~np.repeat(np.repeat(full, b, axis=0), b, axis=1)
+        block_seconds = time.perf_counter() - block_start
 
         leftover = remaining[r0 - ra0 : r1 - ra0, c0 - ca0 : c1 - ca0]
         raw_pixels = int(leftover.sum())
+        raw_seconds = 0.0
         if raw_pixels:
+            raw_start = time.perf_counter()
             out += _sum_raw_pixels(data, leftover, r0, c0, ch0, ch1)
-        stats = PyramidReadStats(tuple(n_blocks), raw_pixels, selected)
-        spectraLogger.debug("pyramid: %s", stats)
+            raw_seconds = time.perf_counter() - raw_start
+        stats = PyramidReadStats(
+            self.block_sizes,
+            tuple(n_blocks),
+            tuple(n_chunks),
+            chunk_bytes,
+            raw_pixels,
+            selected,
+            block_seconds,
+            raw_seconds,
+        )
         return out, stats
 
 
@@ -437,16 +535,18 @@ def _sum_blocks(
     j0: int,
     ch0: int,
     ch1: int,
-) -> npt.NDArray[np.int64]:
+) -> tuple[npt.NDArray[np.int64], int]:
     """The entries of ``array`` flagged in ``full`` (whose origin is block
-    ``(i0, j0)``) summed, one zarr chunk at a time."""
+    ``(i0, j0)``) summed, one zarr chunk at a time, and how many chunks that
+    took."""
     out = np.zeros(ch1 - ch0, dtype=np.int64)
     bi, bj = np.nonzero(full)
     gi, gj = bi + i0, bj + j0
     rows_per_chunk, cols_per_chunk = int(array.chunks[0]), int(array.chunks[1])
     n_chunk_cols = math.ceil(array.shape[1] / cols_per_chunk)
     chunk_ids = (gi // rows_per_chunk) * n_chunk_cols + gj // cols_per_chunk
-    for chunk_id in np.unique(chunk_ids):
+    chunks = np.unique(chunk_ids)
+    for chunk_id in chunks:
         in_chunk = chunk_ids == chunk_id
         ci, cj = divmod(int(chunk_id), n_chunk_cols)
         rs, re = ci * rows_per_chunk, min((ci + 1) * rows_per_chunk, array.shape[0])
@@ -455,7 +555,7 @@ def _sum_blocks(
         local = np.zeros((re - rs, ce - cs), dtype=np.bool_)
         local[gi[in_chunk] - rs, gj[in_chunk] - cs] = True
         out += slab[local].sum(axis=0, dtype=np.int64)
-    return out
+    return out, len(chunks)
 
 
 def _sum_raw_pixels(
