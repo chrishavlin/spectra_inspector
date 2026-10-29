@@ -199,6 +199,11 @@ laptop against a copy of the data, with the derived data copied alongside; pass
 `--allow-mixed-basenames` there to match the backend `.env`. Both copies must
 use `rsync -a` so the mtimes match.
 
+`scripts/build_spectral_pyramids.py` takes the same arguments and builds each
+map's spectral block pyramid (about 2% of the cube's size at the default block
+sizes) in the same directory, which makes box and polygon spectra cheap. It is
+likewise safe against a live backend and skips up-to-date pyramids.
+
 `--workers N` processes N filesets at once. Leave it at the default of 1 when
 the data sits on spinning disks, where parallel readers only add seeks; on an
 SSD a handful of workers is a near-linear speedup.

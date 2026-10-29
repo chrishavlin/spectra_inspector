@@ -28,6 +28,10 @@ class Settings(BaseSettings):
     # whether the backend writes an entry it had to compute. False keeps the
     # store read-only: only the precompute script adds to it.
     derived_write_on_miss: bool = False
+    # whether box and polygon spectra are answered from a sample's spectral
+    # block pyramid when the store holds one (processor/pyramid.py). False
+    # sums the cube for every region request, pyramids or not.
+    derived_use_pyramids: bool = True
 
     # desktop_mode skips the (potentially very slow) recursive scan of data_root
     # at startup and instead enables the /browse-directory and

@@ -158,7 +158,10 @@ class queueOpsItem:
 
 def process_handler(ph: EDAXPathHandler, item: queueOpsItem) -> OptionalOpsReturnType:
     ops = OperationEDAXStateHandler(
-        ph, allow_mock_files=pytest_running(), derived_data=get_derived_data_store()
+        ph,
+        allow_mock_files=pytest_running(),
+        derived_data=get_derived_data_store(),
+        use_pyramids=get_settings().derived_use_pyramids,
     )
     func = getattr(ops, item.ops_func)
     result = None
