@@ -32,12 +32,21 @@ directory that turns out not to be writable just means no writes either.
 entries the frontend's default view asks for; ``channel_range_for_window``
 converts the element windows to channel ranges by the frontend's own rule, so
 the script's entries are the ones the handler then hits.
+
+The store also holds a fileset's spectral block pyramid
+(``processor/pyramid.py``), the one derived product that serves subset and
+polygon requests: an OME-Zarr group ``pyramid.zarr`` in the fileset's entry
+directory, keyed the same way and built only by
+``scripts/build_spectral_pyramids.py``. The server never writes one on a
+miss, whatever ``write_on_miss`` says; it only reads them.
 """
 
 import json
 import os
+import shutil
 import uuid
 import zipfile
+from collections import OrderedDict
 from pathlib import Path
 from typing import Any
 
@@ -47,12 +56,29 @@ import numpy.typing as npt
 from spectra_inspector_server._logging import spectraLogger
 from spectra_inspector_server.model import EDAX_axis, EDAX_file_set
 from spectra_inspector_server.processor.file_loaders import _file_stamp
+from spectra_inspector_server.processor.pyramid import (
+    PYRAMID_DIRNAME,
+    PyramidSpec,
+    SpectralPyramid,
+    write_pyramid,
+)
 
 # the element panels the frontend opens on (its ``_INITIAL_PANEL_ELEMENTS``)
 DEFAULT_PRECOMPUTE_ELEMENTS: tuple[str, ...] = ("Mg", "Al", "Si")
 
 OP_IMAGE = "image"
 OP_SPECTRUM = "spectrum"
+OP_PYRAMID = "pyramid"
+
+# pyramids opened by this process, keyed by path, re-checked against the
+# source file's stamp on every use (as file_loaders does for the cubes)
+_MAX_OPEN_PYRAMIDS = 4
+_pyramid_cache: OrderedDict[str, SpectralPyramid] = OrderedDict()
+
+
+def clear_pyramid_cache() -> None:
+    _pyramid_cache.clear()
+
 
 _ARRAY_FIELD = "array"
 _KEY_FIELD = "key"
@@ -225,6 +251,136 @@ class DerivedDataStore:
             return False
         return True
 
+    # ------------------------------------------------------------------
+    # the spectral block pyramid
+
+    def pyramid_path(self, fileset: EDAX_file_set) -> Path:
+        """Where the pyramid of ``fileset`` lives, whether or not it exists."""
+        return self._entry_dir(fileset) / PYRAMID_DIRNAME
+
+    def pyramid_key(
+        self, fileset: EDAX_file_set, spec: PyramidSpec | None = None
+    ) -> dict[str, Any]:
+        """The key a pyramid of ``fileset`` built to ``spec`` carries. With no
+        spec the ``args`` are left out, for matching whatever layout exists."""
+        key = self._key(fileset, OP_PYRAMID, {})
+        if spec is None:
+            del key["args"]
+        else:
+            key["args"] = _normalized({"block_sizes": list(spec.block_sizes)})
+        return key
+
+    def has_pyramid(
+        self, fileset: EDAX_file_set, spec: PyramidSpec | None = None
+    ) -> bool:
+        """Whether an up-to-date pyramid exists for ``fileset``, and, with a
+        spec, whether it has that layout."""
+        return self.load_pyramid(fileset, spec) is not None
+
+    def load_pyramid(
+        self, fileset: EDAX_file_set, spec: PyramidSpec | None = None
+    ) -> SpectralPyramid | None:
+        """The pyramid of ``fileset``, or None on a miss: none built, built
+        for another version of the ``.spd``, not the layout ``spec`` asks
+        for, or unreadable (logged, never raised)."""
+        path: Path | None = None
+        try:
+            path = self.pyramid_path(fileset)
+            expected = self.pyramid_key(fileset, spec)
+            pyramid = _pyramid_cache.get(str(path))
+            if pyramid is None:
+                if not path.is_dir():
+                    return None
+                pyramid = SpectralPyramid.open(path)
+                _pyramid_cache[str(path)] = pyramid
+                while len(_pyramid_cache) > _MAX_OPEN_PYRAMIDS:
+                    _pyramid_cache.popitem(last=False)
+            else:
+                _pyramid_cache.move_to_end(str(path))
+        except _PYRAMID_MISS_ERRORS:
+            spectraLogger.warning(
+                "derived data: could not open the pyramid %s", path, exc_info=True
+            )
+            return None
+
+        found = dict(pyramid.key)
+        wanted_args = expected.pop("args", None)
+        found_args = found.pop("args", None)
+        if found != expected:
+            spectraLogger.debug("derived data: stale pyramid %s", path)
+            _pyramid_cache.pop(str(path), None)
+            return None
+        if spec is not None and found_args != wanted_args:
+            spectraLogger.debug(
+                "derived data: the pyramid %s has block sizes %s, not %s",
+                path,
+                pyramid.block_sizes,
+                spec.block_sizes,
+            )
+            return None
+        return pyramid
+
+    def store_pyramid(
+        self,
+        fileset: EDAX_file_set,
+        data: npt.NDArray[Any],
+        spec: PyramidSpec,
+    ) -> bool:
+        """Build the pyramid of ``data``, the cube of ``fileset``, to ``spec``
+        and put it in place of any existing one. Returns False without
+        writing when ``write_on_miss`` is off, and after logging when the
+        build or the write fails. The build goes to a temporary directory
+        next to the final one, so a reader never sees a half-built pyramid.
+        """
+        if not self.write_on_miss:
+            return False
+        tmp: Path | None = None
+        try:
+            path = self.pyramid_path(fileset)
+            path.parent.mkdir(parents=True, exist_ok=True)
+            tmp = path.with_name(f"{path.name}.{os.getpid()}.{uuid.uuid4().hex}.tmp")
+            write_pyramid(
+                tmp,
+                data,
+                spec,
+                self.pyramid_key(fileset, spec),
+                name=Path(fileset.spd).stem,
+            )
+            _replace_directory(tmp, path)
+        except (OSError, ValueError, TypeError):
+            spectraLogger.warning(
+                "derived data: could not build the pyramid of %s",
+                fileset.spd,
+                exc_info=True,
+            )
+            if tmp is not None:
+                shutil.rmtree(tmp, ignore_errors=True)
+            return False
+        _pyramid_cache.pop(str(path), None)
+        return True
+
+
+def _replace_directory(new: Path, target: Path) -> None:
+    """Move ``new`` to ``target``, displacing a directory already there. A
+    directory cannot be renamed over a non-empty one, so the old one is moved
+    aside first and removed last; a reader holding it open keeps its files."""
+    old: Path | None = None
+    if target.exists():
+        old = target.with_name(f"{target.name}.{uuid.uuid4().hex}.old")
+        target.rename(old)
+    new.rename(target)
+    if old is not None:
+        shutil.rmtree(old, ignore_errors=True)
+
+
+_PYRAMID_MISS_ERRORS = (
+    OSError,
+    ValueError,
+    KeyError,
+    TypeError,
+    json.JSONDecodeError,
+)
+
 
 _MISS_ERRORS = (
     OSError,
@@ -255,7 +411,9 @@ def _normalized(args: dict[str, Any]) -> dict[str, Any]:
 __all__ = [
     "DEFAULT_PRECOMPUTE_ELEMENTS",
     "OP_IMAGE",
+    "OP_PYRAMID",
     "OP_SPECTRUM",
     "DerivedDataStore",
     "channel_range_for_window",
+    "clear_pyramid_cache",
 ]
