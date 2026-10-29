@@ -48,6 +48,7 @@ from spectra_inspector_server.processor.pyramid import (
     pyramid_dtype,
     write_pyramid,
 )
+from spectra_inspector_server.settings import ENV_PREFIX, Settings
 
 REPO_ROOT = Path(__file__).resolve().parents[5]
 BUILD_SCRIPT = REPO_ROOT / "scripts" / "build_spectral_pyramids.py"
@@ -386,7 +387,7 @@ def test_get_spectrum_logs_what_the_pyramid_cost(
     assert "raw boundary pixels" in served.message
 
     ops.get_spectrum(SAMPLE, index0_range=(3, 30), use_pyramid=False)
-    assert "(pyramid disabled)" in caplog.records[-1].message
+    assert "(pyramids off)" in caplog.records[-1].message
 
 
 def test_the_whole_map_needs_no_raw_pixels(
@@ -666,6 +667,66 @@ def test_mock_samples_and_spc_spectra_never_use_a_pyramid(
     spc = ops.get_spectrum(SAMPLE, spectrum_only=True)
     assert spc.intensity.ndim == 1
     assert len(cube_reads) == 1
+
+
+def test_pyramids_can_be_switched_off(
+    ph: EDAXPathHandler,
+    store: DerivedDataStore,
+    cube: np.ndarray,
+    cube_reads: list[tuple[int, int]],
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    caplog.set_level(logging.DEBUG, logger="spectra_inspector")
+    assert store.store_pyramid(_fileset(ph), cube, SPEC)
+    off = OperationEDAXStateHandler(ph, derived_data=store, use_pyramids=False)
+    off.get_spectrum(SAMPLE, polygon=TRIANGLE)
+    assert len(cube_reads) == 1
+    assert caplog.records[-1].message.endswith("summed off the cube (pyramids off)")
+    # the full-extent entries are still served
+    off.get_spectrum(SAMPLE)
+    off.get_spectrum(SAMPLE)
+    assert len(cube_reads) == 2
+
+
+def test_the_setting_reaches_the_queue_worker(
+    ph: EDAXPathHandler,
+    data_root: Path,
+    store: DerivedDataStore,
+    cube: np.ndarray,
+    cube_reads: list[tuple[int, int]],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from spectra_inspector_server import main  # noqa: PLC0415
+    from spectra_inspector_server.dependencies import (  # noqa: PLC0415
+        get_derived_data_store,
+        get_settings,
+    )
+
+    assert store.store_pyramid(_fileset(ph), cube, SPEC)
+    item = main.queueOpsItem(
+        ops_func="get_spectrum",
+        ops_id="1",
+        ops_kwargs={"sample_name": SAMPLE, "polygon": TRIANGLE},
+    )
+    # the worker's store comes from the settings, so they must name this
+    # test's data root for the fileset's relative path to resolve
+    monkeypatch.setenv(ENV_PREFIX + "DATA_ROOT", str(data_root))
+    monkeypatch.setenv(ENV_PREFIX + "DERIVED_DATA_DIR", str(store.derived_dir))
+    try:
+        # off reads the cube; on, and the default, serve the pyramid
+        for value, reads in (("false", 1), ("true", 1), ("", 1)):
+            if value:
+                monkeypatch.setenv(ENV_PREFIX + "DERIVED_USE_PYRAMIDS", value)
+            else:
+                monkeypatch.delenv(ENV_PREFIX + "DERIVED_USE_PYRAMIDS")
+            get_settings.cache_clear()
+            get_derived_data_store.cache_clear()
+            assert Settings().derived_use_pyramids is (value != "false")
+            main.process_handler(ph, item)
+            assert len(cube_reads) == reads
+    finally:
+        get_settings.cache_clear()
+        get_derived_data_store.cache_clear()
 
 
 def test_no_store_means_no_pyramid(

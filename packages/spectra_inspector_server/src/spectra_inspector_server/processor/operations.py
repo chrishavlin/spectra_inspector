@@ -85,8 +85,13 @@ class OperationEDAXStateHandler:
         alongside those in the database, by default False. Only enabled when
         running under pytest.
     derived_data : DerivedDataStore | None, optional
-        an on-disk store of full-extent results to read from and write to, by
-        default None, which computes everything.
+        an on-disk store of full-extent results to read from and write to, and
+        of pyramids to answer region spectra from, by default None, which
+        computes everything.
+    use_pyramids : bool, optional
+        whether region spectra are answered from the store's pyramids at all,
+        by default True (``SPECTRA_INSPECTOR_DERIVED_USE_PYRAMIDS``). False
+        sums the cube for every region request.
     """
 
     def __init__(
@@ -94,10 +99,12 @@ class OperationEDAXStateHandler:
         ph: EDAXPathHandler,
         allow_mock_files: bool = False,
         derived_data: DerivedDataStore | None = None,
+        use_pyramids: bool = True,
     ) -> None:
         self.ph = ph
         self._allow_mock_files = allow_mock_files
         self._derived_data = derived_data
+        self._use_pyramids = use_pyramids
 
     def _derived_fileset(
         self,
@@ -118,9 +125,10 @@ class OperationEDAXStateHandler:
 
     def _pyramid(self, sample_name: str) -> "SpectralPyramid | None":
         """The pyramid to answer a region request on ``sample_name`` from, or
-        None when there is no store, no up-to-date pyramid in it, or the
-        sample is not a fileset on disk (the synthetic test samples)."""
-        if self._derived_data is None:
+        None when pyramids are switched off, there is no store, no up-to-date
+        pyramid in it, or the sample is not a fileset on disk (the synthetic
+        test samples)."""
+        if not self._use_pyramids or self._derived_data is None:
             return None
         fileset = self.ph.get_sample_edax_file_names(sample_name)
         if fileset is None:
@@ -549,8 +557,9 @@ class OperationEDAXStateHandler:
             centres fall inside it are summed instead of a box, and the index
             ranges are replaced by the polygon's bounding box.
         use_pyramid : bool, optional
-            answer from the sample's pyramid when the store holds one, by
-            default True. False always sums the cube, for comparison.
+            answer from the sample's pyramid when the store holds one and
+            the handler has pyramids on, by default True. False always sums
+            the cube, for comparison.
 
         Returns
         -------
@@ -633,7 +642,7 @@ class OperationEDAXStateHandler:
                 "%s: %s summed off the cube%s",
                 sample_name,
                 extent,
-                "" if use_pyramid else " (pyramid disabled)",
+                "" if use_pyramid and self._use_pyramids else " (pyramids off)",
             )
             im_output = self._sum_region(
                 data, mask, index_ranges, chunking_index, chunksize
