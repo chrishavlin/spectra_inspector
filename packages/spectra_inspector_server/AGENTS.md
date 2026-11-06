@@ -1,6 +1,6 @@
-# CLAUDE.md — spectra_inspector_server
+# AGENTS.md — spectra_inspector_server
 
-Backend-specific guidance for Claude Code. The root `CLAUDE.md` covers the
+Backend-specific guidance for coding agents. The root `AGENTS.md` covers the
 repository layout, commands, configuration, conventions, and commit rules; this
 file is loaded only when working on files under this package.
 
@@ -55,7 +55,7 @@ short-lived again gives that cost back.
 So adding a heavy endpoint means: add a method to
 `processor/operations.py::OperationEDAXStateHandler`, add response models to
 `model.py`, enqueue a `queueOpsItem` naming that method, regenerate the frontend
-models (see the root `CLAUDE.md`), and mirror the client call in the frontend's
+models (see the root `AGENTS.md`), and mirror the client call in the frontend's
 `utilities/interface.py`. Large reductions chunk over axis 0
 (`_DEFAULT_CHUNKSIZE`) and pick their accumulator through
 `processor/_reductions.py::accumulator_dtype`; they are deliberately

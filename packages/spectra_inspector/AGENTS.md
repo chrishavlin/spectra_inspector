@@ -1,6 +1,6 @@
-# CLAUDE.md — spectra_inspector
+# AGENTS.md — spectra_inspector
 
-Frontend-specific guidance for Claude Code. The root `CLAUDE.md` covers the
+Frontend-specific guidance for coding agents. The root `AGENTS.md` covers the
 repository layout, commands, configuration, conventions, and commit rules; this
 file is loaded only when working on files under this package.
 
@@ -54,7 +54,7 @@ Clientside callbacks and DOM listeners live in `assets/*.js`.
   `dbc.Col(width=n)`, and elsewhere prefer `width="auto"` next to one flexing
   column over fixed integer widths.
 - **Server-derived constants**: element presets and calibration windows come
-  from the `/info` model via the codegen step in the root `CLAUDE.md`, not a
+  from the `/info` model via the codegen step in the root `AGENTS.md`, not a
   request. Sample names may contain spaces; `utilities/coerce.py` swaps them
   with `___` in URL paths.
 - **Export** (`utilities/summary_writer.py`, `export_metadata.py`,

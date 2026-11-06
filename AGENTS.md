@@ -1,9 +1,9 @@
-# CLAUDE.md
+# AGENTS.md
 
-This file provides guidance to Claude Code (claude.ai/code) when working with
-code in this repository.
+This file provides guidance to coding agents (Claude Code and others) working
+with code in this repository.
 
-## What belongs in a CLAUDE.md
+## What belongs in an AGENTS.md
 
 These files are loaded into context on every session, so they are budgeted. Keep
 only what is **not derivable** from the code, docstrings, tests or git history,
@@ -12,7 +12,7 @@ Concretely:
 
 - Do not narrate a feature's implementation here when it lands. Put the design
   and the behaviour it works around in the module's docstring, and keep the
-  tests as the specification. A CLAUDE.md is not a changelog.
+  tests as the specification. An AGENTS.md is not a changelog.
 - Do not document that another file is stale; fix that file.
 - Prefer a one-line rule with a pointer to the code over a paragraph that
   repeats what the code says.
@@ -104,13 +104,13 @@ frontend's `utilities/model.py`) and is deliberately decoupled from
 
 ## Package-level guidance
 
-Architecture notes live next to the code in nested `CLAUDE.md` files, which
+Architecture notes live next to the code in nested `AGENTS.md` files, which
 Claude Code loads on demand once a file in that package is read or edited:
 
-- `packages/spectra_inspector_server/CLAUDE.md` — the filesystem-scan database,
+- `packages/spectra_inspector_server/AGENTS.md` — the filesystem-scan database,
   the request queue and process pool, how to add a heavy endpoint, and testing
   without EDAX data.
-- `packages/spectra_inspector/CLAUDE.md` — Dash page/callback structure, the
+- `packages/spectra_inspector/AGENTS.md` — Dash page/callback structure, the
   user store, the component id convention, the Dash/plotly rules that only fail
   in a browser, and headless browser testing.
 
