@@ -82,6 +82,7 @@ class OnDiskDatabase:
             self,
             allow_mixed_basenames=self.allow_mixed_basenames,
             max_datasets=self.max_datasets,
+            key_root=ph.data_root,
         )
         self.scan_truncated = progress.limit_reached()
         self._locate_sample_metadata(ph.data_root)
@@ -124,6 +125,7 @@ class OnDiskDatabase:
             allow_mixed_basenames=self.allow_mixed_basenames,
             recursive=recursive,
             max_datasets=self.max_datasets,
+            key_root=ph.data_root,
         )
         scratch.scan_truncated = progress.limit_reached()
         # prefer a metadata csv alongside the data, fall back to the one at the
@@ -214,7 +216,15 @@ class OnDiskDatabase:
     def available_samples(self) -> dict[str, str]:
         if self._available_samples is None:
             names = {*self.available_maps, *self.available_spectra}
-            samples = {name: _map_to_sample_name(str(name)) for name in sorted(names)}
+            # in mixed-basename mode the key is a path, so the sample name
+            # comes from its stem. Only then: a stem with a dot in it would
+            # otherwise lose its "suffix".
+            samples = {
+                name: _map_to_sample_name(
+                    Path(name).stem if self.allow_mixed_basenames else name
+                )
+                for name in sorted(names)
+            }
             self._available_samples = samples
         return self._available_samples
 
@@ -253,6 +263,19 @@ def _inventory_directory(directory: Path) -> tuple[dict[str, list[Path]], list[P
     return files, subdirs
 
 
+def _mixed_basename_key(path: Path, key_root: Path | None) -> str:
+    """The database key for ``path`` in mixed-basename mode: its path relative
+    to ``key_root`` (the data root), so that the key neither depends on where
+    the root is mounted nor leaks the server's filesystem layout to clients.
+    """
+    if key_root is not None:
+        try:
+            return str(path.relative_to(key_root))
+        except ValueError:
+            return str(path)
+    return str(path)
+
+
 def _recursive_inspection(
     dirname: Path,
     db: OnDiskDatabase,
@@ -260,11 +283,13 @@ def _recursive_inspection(
     progress: InspectionProgress | None = None,
     recursive: bool = True,
     max_datasets: int | None = None,
+    key_root: Path | None = None,
 ) -> InspectionProgress:
     """Walk ``dirname``, registering every EDAX file set found into ``db``.
 
-    Returns the progress of the walk, whose ``limit_reached()`` reports whether
-    ``max_datasets`` cut it short.
+    In mixed-basename mode the sets are keyed by path relative to ``key_root``
+    (absolute path when it is None). Returns the progress of the walk, whose
+    ``limit_reached()`` reports whether ``max_datasets`` cut it short.
     """
     if progress is None:
         progress = InspectionProgress(max_datasets=max_datasets)
@@ -292,7 +317,10 @@ def _recursive_inspection(
         # every .spc is a dataset of its own in spectrum-only mode, whether or
         # not it also belongs to a file set registered below.
         for spc in find_spc_files(dirname, inventoried_files=files):
-            basename = str(spc) if allow_mixed_basenames else spc.stem
+            if allow_mixed_basenames:
+                basename = _mixed_basename_key(spc, key_root)
+            else:
+                basename = spc.stem
             if db.add_spectrum(basename, spc):
                 progress.spectra_found += 1
 
@@ -303,7 +331,7 @@ def _recursive_inspection(
             inventoried_files=files,
         ):
             if allow_mixed_basenames:
-                basename = str(edax_set.spd)
+                basename = _mixed_basename_key(edax_set.spd, key_root)
             else:
                 basename = edax_set.spd.stem
 
@@ -331,6 +359,7 @@ def _recursive_inspection(
                     allow_mixed_basenames=allow_mixed_basenames,
                     progress=progress,
                     recursive=recursive,
+                    key_root=key_root,
                 )
 
     return progress
