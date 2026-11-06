@@ -85,6 +85,18 @@ through `get_spectrum_and_images`, a single pass over the cube that no endpoint
 dispatches, and must convert keV windows to channels exactly as the frontend
 does (`channel_range_for_window`, pinned by a test).
 
+The store's other product is a fileset's spectral block pyramid
+(`processor/pyramid.py`, an OME-Zarr multiscales group at
+`<entry dir>/pyramid.zarr`): the cube summed over square blocks at a few block
+sizes, from which `get_spectrum` assembles any box or polygon spectrum exactly
+(block sums plus the raw pixels along the edge) when one is present and up to
+date and `SPECTRA_INSPECTOR_DERIVED_USE_PYRAMIDS` is not `false`. Only
+`scripts/build_spectral_pyramids.py` builds them; the server never writes one,
+and `use_pyramid=False` on a call forces the raw sum for comparison
+(`scripts/benchmark_spectral_pyramid.py`). Note that
+`precompute_derived_data.py --overwrite` empties the whole directory, pyramids
+included.
+
 ### Testing without EDAX data
 
 `_testing.py` exposes `onDiscMock` with synthetic sample names
