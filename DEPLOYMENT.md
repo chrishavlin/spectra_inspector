@@ -188,6 +188,12 @@ the GitHub release from it:
 git fetch origin main
 git tag vX.Y.Z origin/main
 git push origin vX.Y.Z
+```
+
+You can then create a release from the github interface with that tag, or with
+`gh`:
+
+```sh
 gh release create vX.Y.Z --generate-notes
 ```
 
