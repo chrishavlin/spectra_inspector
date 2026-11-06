@@ -169,6 +169,31 @@ button, at the cost of letting any logged-in user trigger a full rescan.
 images, the data directory, the derived data and the caddy volumes. The host
 reboot case needs nothing: every service has `restart: unless-stopped`.
 
+## Cutting a release
+
+Releases are tagged by hand; nothing runs on tags in CI and there is no
+changelog file. The version is set in two places, with no `__version__` in
+either package:
+
+```sh
+# on a branch: bump `version` in both pyproject.toml files, then refresh the lockfiles
+cd packages/spectra_inspector        && uv sync && uv lock --check
+cd ../spectra_inspector_server      && uv sync && uv lock --check
+```
+
+Open a PR with that commit. Once it is merged, tag the merge commit and create
+the GitHub release from it:
+
+```sh
+git fetch origin main
+git tag vX.Y.Z origin/main
+git push origin vX.Y.Z
+gh release create vX.Y.Z --generate-notes
+```
+
+Deployments pin to these tags, so a release is the unit of "what runs in
+`prod`"; update the tag in the deploy example above if it has fallen behind.
+
 ## Derived data
 
 Set `SPECTRA_INSPECTOR_DERIVED_DATA_DIR` in the backend `.env` to an absolute
