@@ -55,8 +55,11 @@ Clientside callbacks and DOM listeners live in `assets/*.js`.
   column over fixed integer widths.
 - **Server-derived constants**: element presets and calibration windows come
   from the `/info` model via the codegen step in the root `AGENTS.md`, not a
-  request. Sample names may contain spaces; `utilities/coerce.py` swaps them
-  with `___` in URL paths.
+  request.
+- **Sample names in URLs**: Dash does not percent-decode path variables, so
+  `utilities/sample_url.py` encodes the name on the data-selection link and the
+  inspector's `layout()` decodes it once; everything downstream sees the real
+  name.
 - **Export** (`utilities/summary_writer.py`, `export_metadata.py`,
   `coerce.plotly_to_matplotlib`) rebuilds figures from stores and metadata
   rather than trusting the figure props; its `sample` record is the same dict

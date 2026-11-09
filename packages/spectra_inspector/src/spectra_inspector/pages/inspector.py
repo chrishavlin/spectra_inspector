@@ -82,7 +82,6 @@ from spectra_inspector.user_store_model import (
     updateDataStore,
 )
 from spectra_inspector.utilities.coerce import (
-    placeholder_to_spaces,
     plotly_im_trace_to_array,
     plotly_image_trace_to_array,
     plotly_to_matplotlib,
@@ -107,6 +106,7 @@ from spectra_inspector.utilities.peak_windows import (
     apply_peak_windows,
     peak_windows,
 )
+from spectra_inspector.utilities.sample_url import url_to_sample_name
 from spectra_inspector.utilities.scalebar_style import (
     scalebar_style,
     scalebar_style_from_store,
@@ -238,11 +238,8 @@ def get_spectrum(
 def selected_sample_contents(sample_name: str | None) -> str:
     if _valid_sample_name(sample_name):
         assert isinstance(sample_name, str)
-        valid_sample = placeholder_to_spaces(sample_name)
-        msg = f"{valid_sample}"
-    else:
-        msg = "none"
-    return msg
+        return sample_name
+    return "none"
 
 
 class inspectorIDs(BaseModel):
@@ -466,10 +463,15 @@ def layout(
     spectrum_only: str | None = None,
     **kwargs,  # noqa: ARG001
 ):
-    """``spectrum_only`` arrives as the ``?spectrum_only=true`` query string
-    the data selection page puts on its "Load Selected" link, which is the
-    only way the mode can reach a layout -- the user store is client side."""
+    """``sample_name`` is the URL path segment as the browser spells it, still
+    percent-encoded (``utilities/sample_url``); it is decoded here and nothing
+    below sees the encoded form. ``spectrum_only`` arrives as the
+    ``?spectrum_only=true`` query string the data selection page puts on its
+    "Load Selected" link, which is the only way the mode can reach a layout --
+    the user store is client side."""
 
+    if sample_name is not None:
+        sample_name = url_to_sample_name(sample_name)
     spectrum_only_mode = _query_flag(spectrum_only)
 
     _layout_rows = []

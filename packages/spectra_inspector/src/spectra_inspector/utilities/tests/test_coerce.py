@@ -6,9 +6,7 @@ from spectra_inspector.utilities.coerce import (
     contrasting_color,
     mpl_color,
     path_vertices,
-    placeholder_to_spaces,
     plotly_to_matplotlib,
-    spaces_to_placeholder,
 )
 from spectra_inspector.utilities.matplotib_importer import AnchoredOffsetbox
 from spectra_inspector.utilities.selection import (
@@ -18,11 +16,6 @@ from spectra_inspector.utilities.selection import (
     VERTEX_OUTLINE,
     polygon_shapes,
 )
-
-
-def test_spaces_placeholder_roundtrip():
-    input_str = " this is a string    with        spaces!"
-    assert input_str == placeholder_to_spaces(spaces_to_placeholder(input_str))
 
 
 def test_plotly_to_matplotlib_preserves_heatmap_box_annotation():
