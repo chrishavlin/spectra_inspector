@@ -199,7 +199,7 @@ class TestMetadataExport:
         assert "index0 (y): indices [1, 3), 1.5 to 4.5 µm" in text
         assert "岩石 5 µm" in text
 
-    def test_pdf_writes_the_metadata_pages(self, writer, export_record):
+    def test_pdf_summarises_and_attaches_the_record(self, writer, export_record):
         fig = plt.figure()
         fig.add_subplot(111).plot([0, 1], [0, 1])
         writer.write_static_figures({"spectrum": fig})
@@ -208,21 +208,27 @@ class TestMetadataExport:
         pdf_path = writer.get_pdf_path()
         assert pdf_path.is_file()
         reader = PdfReader(pdf_path)
+        # title, summary, spectrum: the record no longer takes pages of its own
+        assert len(reader.pages) == 3
         text = "\n".join(page.extract_text() for page in reader.pages)
-        assert "Sample metadata" in text
-        assert "dataset: C-12" in text
-        assert "sample_id: S1" in text
-        assert "Subselection" in text
+        assert "Export summary" in text
+        assert "Dataset: C-12" in text
         assert "1.5 to 4.5" in text
+        assert "metadata.json" in text
+        assert "sample_id" not in text
+
+        (attached,) = reader.attachments["metadata.json"]
+        assert json.loads(attached) == export_record
 
     def test_pdf_without_a_record(self, writer):
         fig = plt.figure()
         fig.add_subplot(111).plot([0, 1], [0, 1])
         writer.write_static_figures({"spectrum": fig})
 
-        pdf_path = writer.get_pdf_path()
-        text = "\n".join(page.extract_text() for page in PdfReader(pdf_path).pages)
+        reader = PdfReader(writer.get_pdf_path())
+        text = "\n".join(page.extract_text() for page in reader.pages)
         assert "not available for this export" in text
+        assert not reader.attachments
 
 
 def _slide_texts(deck) -> list[str]:
@@ -244,7 +250,7 @@ class TestPptxExport:
             figs[name].add_subplot(111).plot([0, 1], [0, 1])
         writer.write_static_figures(figs)
 
-    def test_deck_has_metadata_then_one_slide_per_image(self, writer, export_record):
+    def test_deck_has_summary_then_one_slide_per_image(self, writer, export_record):
         self._figures(
             writer, ["spectrum", "bitmap_01_Si", "bitmap_00_Fe", "bitmap_00_Fe_subset"]
         )
@@ -255,25 +261,27 @@ class TestPptxExport:
         deck = pptx.Presentation(str(path))
         texts = _slide_texts(deck)
 
-        # title, sample metadata, subselection, then the four images
-        assert len(texts) == 7
+        # title, summary, then the four images
+        assert len(texts) == 6
         assert "Spectra Inspector" in texts[0]
-        assert "dataset: C-12" in texts[1]
-        assert "sample_id: S1" in texts[1]
-        # no latin-1 restriction here, unlike the PDF
-        assert "岩石 5 µm" in texts[1]
-        assert texts[2].startswith("Subselection")
-        assert "1.5 to 4.5" in texts[2]
-        assert texts[3:] == [
+        assert texts[1].startswith("Export summary")
+        assert "Dataset: C-12" in texts[1]
+        assert "1.5 to 4.5" in texts[1]
+        assert "speaker notes" in texts[1]
+        assert "sample_id" not in texts[1]
+        notes = deck.slides[1].notes_slide.notes_text_frame
+        assert json.loads(notes.text) == export_record
+        assert {p.font.size.pt for p in notes.paragraphs} == {10}
+        assert texts[2:] == [
             "bitmap_00_Fe",
             "bitmap_00_Fe_subset",
             "bitmap_01_Si",
             "spectrum",
         ]
 
-        for slide in list(deck.slides)[:3]:
+        for slide in list(deck.slides)[:2]:
             assert _pictures(slide) == []
-        for slide in list(deck.slides)[3:]:
+        for slide in list(deck.slides)[2:]:
             (pic,) = _pictures(slide)
             assert pic.left >= 0
             assert pic.top >= 0
@@ -287,24 +295,14 @@ class TestPptxExport:
                     im.size[0] / im.size[1], rel=1e-3
                 )
 
-    def test_long_metadata_spills_onto_more_slides(self, writer, export_record):
-        export_record["sample"] = {f"key_{i:03d}": i for i in range(80)}
-        writer.set_export_metadata(export_record)
-
-        texts = _slide_texts(pptx.Presentation(str(writer.get_pptx_path())))
-        sample = [t for t in texts if t.startswith("Sample metadata")]
-        assert len(sample) == 3
-        assert sample[1].startswith("Sample metadata (continued)")
-        joined = "\n".join(sample)
-        assert "key_000: 0" in joined
-        assert "key_079: 79" in joined
-
     def test_deck_without_a_record(self, writer):
         self._figures(writer, ["spectrum"])
 
-        texts = _slide_texts(pptx.Presentation(str(writer.get_pptx_path())))
+        deck = pptx.Presentation(str(writer.get_pptx_path()))
+        texts = _slide_texts(deck)
         assert len(texts) == 3
         assert "not available for this export" in texts[1]
+        assert not deck.slides[1].has_notes_slide
 
 
 class TestElementWeightsExport:

@@ -1,12 +1,15 @@
 """The metadata that rides along with a summary export.
 
-Both formats carry the same record: the zip as ``metadata.json`` next to a
-``README.txt`` describing the files, the PDF as text pages. The sample part is
-exactly what the "data selection" page shows in its metadata accordion, so
-the two are built by one function here.
+Every format carries the same record: the zip as ``metadata.json`` next to a
+``README.txt`` describing the files, the PDF as an embedded ``metadata.json``
+attachment and the deck as the speaker notes of its summary slide, each of the
+latter two behind a few lines of ``summary_lines``. The sample part is exactly
+what the "data selection" page shows in its metadata accordion, so the two are
+built by one function here.
 """
 
 import datetime
+import json
 from typing import Any
 from zoneinfo import ZoneInfo
 
@@ -255,6 +258,24 @@ def subselection_lines(subselection: dict[str, Any] | None) -> list[str]:
     return lines
 
 
+def summary_lines(metadata: dict[str, Any] | None) -> list[str]:
+    """The few lines the PDF and the deck show in place of the full record:
+    the dataset, when it was exported and the selection."""
+    if metadata is None:
+        return ["Metadata not available for this export."]
+    return [
+        f"Dataset: {metadata.get('dataset')}",
+        f"Generated (UTC): {metadata.get('generated_utc')}",
+        "",
+        *subselection_lines(metadata.get("subselection")),
+    ]
+
+
+def metadata_json(metadata: dict[str, Any]) -> str:
+    """The record as it is written to ``metadata.json``."""
+    return json.dumps(metadata, indent=2, default=str)
+
+
 _FIXED_FILE_DESCRIPTIONS = {
     "metadata.json": "this record as JSON: sample metadata, selection bounds, panels",
     "README.txt": "this file",
@@ -262,7 +283,7 @@ _FIXED_FILE_DESCRIPTIONS = {
     "spectrum.msa": "the spectrum in EMSA/MAS format",
     "spectrum.csv": "the spectrum as energy_keV,intensity columns",
     "ElementWeights.txt": "element weights (tab separated), zeroed-out elements as 0",
-    "SpectraInspectorSummary.pdf": "the PDF summary",
+    "SpectraInspectorSummary.pdf": "the PDF summary, metadata.json attached",
 }
 
 
