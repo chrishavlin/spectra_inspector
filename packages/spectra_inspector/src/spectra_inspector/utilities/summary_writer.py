@@ -1,5 +1,4 @@
 import datetime
-import json
 import shutil
 import uuid
 from pathlib import Path
@@ -19,9 +18,9 @@ from pptx.util import Inches, Pt
 from spectra_inspector.logging import spectraLogger
 from spectra_inspector.settings import Settings
 from spectra_inspector.utilities.export_metadata import (
-    flatten_for_display,
+    metadata_json,
     readme_text,
-    subselection_lines,
+    summary_lines,
 )
 from spectra_inspector.utilities.image_export import (
     FIGURE_DPI,
@@ -39,16 +38,20 @@ def _pdf_safe(text: str) -> str:
     return text.encode(_PDF_ENCODING, errors="replace").decode(_PDF_ENCODING)
 
 
-# the deck is 16:9. PowerPoint does not paginate text the way fpdf does, so the
-# metadata is split over slides by line count: this many lines of the body font
-# fit under a slide title.
+_SUMMARY_HEADING = "Export summary"
+_ATTACHMENT_NOTE = (
+    "The full metadata record is attached to this PDF as {name}: open the "
+    "attachments panel of your PDF viewer (some viewers, browsers' built-in "
+    "ones among them, do not show attachments)."
+)
+_NOTES_NOTE = "The full metadata record is in the speaker notes of this slide."
+
+# the deck is 16:9
 _PPTX_WIDTH = Inches(13.333)
 _PPTX_HEIGHT = Inches(7.5)
 _PPTX_MARGIN = Inches(0.5)
 _PPTX_TITLE_HEIGHT = Inches(0.8)
-_PPTX_BODY_FONT = "Courier New"
-_PPTX_BODY_PT = 10
-_PPTX_LINES_PER_SLIDE = 34
+_PPTX_BODY_PT = 14
 
 
 class summaryWriter:
@@ -62,8 +65,8 @@ class summaryWriter:
     unique_write_dir: Path
     settings: Settings
     # the record `build_export_metadata` produces, once `set_export_metadata`
-    # has been called; the PDF, the deck and the zip's json/README are rendered
-    # from it
+    # has been called; the zip's json/README, the PDF's attachment and the
+    # deck's speaker notes are rendered from it
     export_metadata: dict[str, Any] | None = None
 
     def __init__(
@@ -162,9 +165,7 @@ class summaryWriter:
             raise RuntimeError(msg)
 
         json_file = self.full_file(self.metadata_name)
-        json_file.write_text(
-            json.dumps(self.export_metadata, indent=2, default=str), encoding="utf-8"
-        )
+        json_file.write_text(metadata_json(self.export_metadata), encoding="utf-8")
 
         readme = self.full_file(self.readme_name)
         files = [f.name for f in self.write_dir.glob("*") if f.is_file()]
@@ -184,29 +185,6 @@ class summaryWriter:
 
         return Path(zfilename)
 
-    def _metadata_sections(self) -> list[tuple[str, list[str]]]:
-        """The sample metadata (as the data-selection accordion shows it) and
-        the subselection, as headed blocks of text lines; a single block saying
-        so when no record was set. The PDF and the deck both render these."""
-        md = self.export_metadata
-        if md is None:
-            return [("Sample metadata", ["not available for this export"])]
-
-        header = [
-            f"dataset: {md.get('dataset')}",
-            f"generated: {md.get('generated_utc')}",
-        ]
-        sample = md.get("sample")
-        body = (
-            flatten_for_display(sample)
-            if sample is not None
-            else ["unavailable: the server could not be reached for it"]
-        )
-        return [
-            ("Sample metadata", [*header, "", *body]),
-            ("Subselection", subselection_lines(md.get("subselection"))),
-        ]
-
     def _summary_images(self) -> list[Path]:
         """The rendered images in presentation order: the image panels (each
         followed by its subset), then the spectrum."""
@@ -219,16 +197,25 @@ class summaryWriter:
                 spectrum.append(f)
         return sorted(bitmaps) + sorted(spectrum)
 
-    def _pdf_metadata_pages(self, pdf: fpdf.FPDF) -> None:
+    def _pdf_summary_page(self, pdf: fpdf.FPDF) -> None:
+        """A page with the short summary; the full record goes in as an
+        embedded file rather than as pages of text."""
+        lines = summary_lines(self.export_metadata)
+        if self.export_metadata is not None:
+            pdf.embed_file(
+                bytes=metadata_json(self.export_metadata).encode("utf-8"),
+                basename=self.metadata_name.name,
+                mime_type="application/json",
+                desc="Spectra Inspector export metadata",
+            )
+            lines += ["", _ATTACHMENT_NOTE.format(name=self.metadata_name.name)]
+
         pdf.add_page()
-        for i, (heading, lines) in enumerate(self._metadata_sections()):
-            if i > 0:
-                pdf.ln(4)
-            pdf.set_font("Helvetica", size=14)
-            pdf.cell(text=heading, new_x="LMARGIN", new_y="NEXT")
-            pdf.ln(2)
-            pdf.set_font("Courier", size=8)
-            pdf.multi_cell(w=0, text=_pdf_safe("\n".join(lines)))
+        pdf.set_font("Helvetica", size=14)
+        pdf.cell(text=_SUMMARY_HEADING, new_x="LMARGIN", new_y="NEXT")
+        pdf.ln(2)
+        pdf.set_font("Helvetica", size=10)
+        pdf.multi_cell(w=0, text=_pdf_safe("\n".join(lines)))
 
     def write_pdf(
         self,
@@ -244,7 +231,7 @@ class summaryWriter:
 
         pdf.write(text="\n".join(lines))
 
-        self._pdf_metadata_pages(pdf)
+        self._pdf_summary_page(pdf)
         pdf.set_font("Helvetica", size=18)
 
         for fname in self._summary_images():
@@ -266,7 +253,6 @@ class summaryWriter:
         top: int,
         height: int,
         size_pt: int,
-        font: str | None = None,
     ) -> None:
         box = slide.shapes.add_textbox(
             _PPTX_MARGIN, top, _PPTX_WIDTH - 2 * _PPTX_MARGIN, height
@@ -276,12 +262,11 @@ class summaryWriter:
         frame.text = "\n".join(lines)
         for paragraph in frame.paragraphs:
             paragraph.font.size = Pt(size_pt)
-            if font is not None:
-                paragraph.font.name = font
 
     def write_pptx(self) -> None:
         """Write the summary as a 16:9 deck with the PDF's content: a title
-        slide, the metadata as text, then one slide per rendered image.
+        slide, the short summary, then one slide per rendered image. The full
+        metadata record is the summary slide's speaker notes.
 
         The images are placed as pictures scaled to fit under the slide title,
         so their pixel size only sets how sharp they are, not how large they
@@ -310,17 +295,14 @@ class summaryWriter:
             14,
         )
 
-        for heading, lines in self._metadata_sections():
-            for start in range(0, len(lines), _PPTX_LINES_PER_SLIDE):
-                title = heading if start == 0 else f"{heading} (continued)"
-                self._pptx_text(
-                    new_slide(title),
-                    lines[start : start + _PPTX_LINES_PER_SLIDE],
-                    body_top,
-                    body_height,
-                    _PPTX_BODY_PT,
-                    font=_PPTX_BODY_FONT,
-                )
+        slide = new_slide(_SUMMARY_HEADING)
+        lines = summary_lines(self.export_metadata)
+        if self.export_metadata is not None:
+            lines += ["", _NOTES_NOTE]
+            slide.notes_slide.notes_text_frame.text = metadata_json(
+                self.export_metadata
+            )
+        self._pptx_text(slide, lines, body_top, body_height, _PPTX_BODY_PT)
 
         body_width = _PPTX_WIDTH - 2 * _PPTX_MARGIN
         for fname in self._summary_images():
