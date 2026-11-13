@@ -220,3 +220,75 @@
     border-width: 1px;
   }
 }
+
+/* AG Grid takes its colours from the Bootstrap theme, so the ThemeSwitchAIO
+   swap restyles it with the rest of the page. The shades are mixed from the
+   body colours because the dark Bootswatch theme leaves Bootstrap's
+   secondary and tertiary backgrounds at their light values. */
+.si-grid {
+  --si-grid-shade: color-mix(
+    in srgb,
+    var(--bs-body-color) 10%,
+    var(--bs-body-bg)
+  );
+  --ag-background-color: var(--bs-body-bg);
+  --ag-foreground-color: var(--bs-body-color);
+  --ag-header-background-color: var(--si-grid-shade);
+  --ag-header-text-color: var(--bs-body-color);
+  --ag-border-color: color-mix(
+    in srgb,
+    var(--bs-body-color) 25%,
+    var(--bs-body-bg)
+  );
+  --ag-odd-row-background-color: var(--bs-body-bg);
+  --ag-row-hover-color: var(--si-grid-shade);
+  --ag-selected-row-background-color: rgba(var(--bs-warning-rgb), 0.35);
+  --ag-menu-background-color: var(--bs-body-bg);
+  --ag-accent-color: var(--bs-primary);
+  --ag-font-family: inherit;
+  --ag-font-size: 0.875rem;
+}
+
+.si-dataset-grid .ag-row {
+  cursor: pointer;
+}
+
+.si-dataset-toolbar,
+.si-dataset-footer,
+.si-active-dataset {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.si-dataset-toolbar {
+  margin-bottom: 0.5rem;
+}
+
+.si-dataset-footer {
+  min-height: 2rem;
+  margin-top: 0.25rem;
+}
+
+/* dbc.RadioItems as a button group: each option is wrapped in a .form-check,
+   which keeps Bootstrap's own .btn-group rules from joining the buttons. */
+.si-button-radio .form-check {
+  padding-left: 0;
+  margin: 0;
+}
+
+.si-button-radio .form-check:not(:first-child) .btn {
+  margin-left: -1px;
+  border-top-left-radius: 0;
+  border-bottom-left-radius: 0;
+}
+
+.si-button-radio .form-check:not(:last-child) .btn {
+  border-top-right-radius: 0;
+  border-bottom-right-radius: 0;
+}
+
+.si-button-radio .btn-outline-secondary {
+  --bs-btn-color: var(--bs-body-color);
+}

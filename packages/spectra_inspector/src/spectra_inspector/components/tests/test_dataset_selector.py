@@ -19,7 +19,12 @@ LISTING = AvailableDatasets(
     available_files=["C-1"],
     available_spectra=["C-1", "S-1"],
 )
-LISTS = {"available_files": ["C-1"], "available_spectra": ["C-1", "S-1"]}
+LISTS = {
+    "available_files": ["C-1"],
+    "available_spectra": ["C-1", "S-1"],
+    "sample_metadata": None,
+    "truncated": False,
+}
 
 
 def test_dataset_selector_no_connection():
@@ -84,7 +89,12 @@ def test_dataset_names_by_mode():
     assert dataset_names(AvailableDatasets(available_files=["C-1"]), True) == []
     assert dataset_names({}, spectrum_only=False) == []
     assert dataset_names(None, spectrum_only=True) == []
-    assert list_store_data(None) == {"available_files": [], "available_spectra": []}
+    assert list_store_data(None) == {
+        "available_files": [],
+        "available_spectra": [],
+        "sample_metadata": None,
+        "truncated": False,
+    }
 
 
 def test_dropdown_options_start_with_none():

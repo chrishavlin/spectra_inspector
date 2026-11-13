@@ -453,7 +453,12 @@ def test_use_directory_populates_the_sample_dropdown(mocker):
         "sample_metadata": {"records": [], "map_samples": {}},
         "truncated": False,
     }
-    assert lists == {"available_files": ["C-1", "C-2"], "available_spectra": []}
+    assert lists == {
+        "available_files": ["C-1", "C-2"],
+        "available_spectra": [],
+        "sample_metadata": committed["sample_metadata"],
+        "truncated": False,
+    }
 
 
 def test_use_directory_reports_the_real_root_in_desktop_mode(mocker):
@@ -560,7 +565,8 @@ def test_use_directory_in_spectrum_only_mode(mocker):
     assert "Loaded 2 spectra" in status.children
     assert committed["available_files"] == ["C-1"]
     assert committed["available_spectra"] == ["C-1", "S-1"]
-    assert lists == {"available_files": ["C-1"], "available_spectra": ["C-1", "S-1"]}
+    assert lists["available_files"] == ["C-1"]
+    assert lists["available_spectra"] == ["C-1", "S-1"]
 
 
 def test_standalone_spectra_stay_out_of_the_map_list(mocker):

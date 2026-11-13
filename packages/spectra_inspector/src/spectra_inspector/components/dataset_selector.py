@@ -6,8 +6,8 @@ list the dropdown shows. Only one of the two is shown at a time -- a standalone
 ``.spc`` never appears in the map list -- and the same name means a different
 thing in each mode, so flipping the switch drops the current selection.
 
-Both lists are kept in a page-local store next to the dropdown so that a flip
-costs no round trip, and the mode itself lives in the user store, where the
+Both lists are kept in a page-local store next to the dropdown (together with
+the sample sheet records of the listing) so that a flip costs no round trip, and the mode itself lives in the user store, where the
 inspector reads it to skip the image panels.
 """
 
@@ -20,7 +20,11 @@ from dash.dcc import Dropdown
 from dash_bootstrap_components import Button, Col, Row
 
 from spectra_inspector.components.layout_ids import indexedLayoutIDMapper
-from spectra_inspector.user_store_model import USER_STORE_DIV_ID, updateDataStore
+from spectra_inspector.user_store_model import (
+    USER_STORE_DIV_ID,
+    sample_metadata_for_store,
+    updateDataStore,
+)
 from spectra_inspector.utilities.interface import SpectraInspectorServerInterface
 from spectra_inspector.utilities.model import AvailableDatasets
 
@@ -65,13 +69,22 @@ def format_selections(values: list[str]) -> list[dict[str, Any]]:
     return [_format_selection(fi) for fi in values]
 
 
-def list_store_data(available: AvailableDatasets | None) -> dict[str, list[str]]:
-    """Both name lists of a dataset listing, as the page-local store holds them."""
+def list_store_data(available: AvailableDatasets | None) -> dict[str, Any]:
+    """A dataset listing as the page-local store holds it: both name lists,
+    the sample sheet records that go with them, and whether the scan behind
+    them stopped at the server's dataset limit."""
     if available is None:
-        return {"available_files": [], "available_spectra": []}
+        return {
+            "available_files": [],
+            "available_spectra": [],
+            "sample_metadata": None,
+            "truncated": False,
+        }
     return {
         "available_files": list(available.available_files),
         "available_spectra": list(available.available_spectra or []),
+        "sample_metadata": sample_metadata_for_store(available.sample_metadata),
+        "truncated": bool(available.truncated),
     }
 
 
