@@ -54,8 +54,6 @@ def mpl_color(color: str | None, default: str) -> str | tuple[float, ...]:
     return (*rgb, parts[3]) if len(parts) > 3 else rgb
 
 
-_place_holder = "___"
-
 _PLOTLY_DASHES = {"solid": "-", "dash": "--", "dot": ":", "dashdot": "-."}
 _PLOTLY_HALIGN = {"left": "left", "center": "center", "right": "right"}
 _PLOTLY_VALIGN = {"top": "top", "middle": "center", "bottom": "bottom"}
@@ -78,14 +76,6 @@ def get_sequential_colorscales(restrict_to_common: bool = True) -> list[str]:
 
     plotly_colormaps.sort()
     return plotly_colormaps
-
-
-def spaces_to_placeholder(input: str) -> str:
-    return input.replace(" ", _place_holder)
-
-
-def placeholder_to_spaces(input: str) -> str:
-    return input.replace(_place_holder, " ")
 
 
 def plotly_im_trace_to_array(trace_data: dict) -> npt.NDArray:

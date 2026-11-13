@@ -23,10 +23,10 @@ from spectra_inspector.user_store_model import (
     sample_metadata_for_store,
     updateDataStore,
 )
-from spectra_inspector.utilities.coerce import spaces_to_placeholder
 from spectra_inspector.utilities.export_metadata import sample_metadata_display_dict
 from spectra_inspector.utilities.interface import SpectraInspectorServerInterface
 from spectra_inspector.utilities.model import AvailableDatasets
+from spectra_inspector.utilities.sample_url import sample_name_to_url
 
 dash.register_page(__name__, path="/", order=0)
 
@@ -150,13 +150,13 @@ def update_selected_dataset(
     new_user_data = updateDataStore(new_user_data, "metadata_json", meta_json_str)
 
     if is_dropdown and has_input:
-        valid_input_vale = spaces_to_placeholder(input_value)
+        url_sample = sample_name_to_url(input_value)
     else:
-        valid_input_vale = "none"
+        url_sample = "none"
 
     # the inspector renders its own selector from the URL, so carry the mode
     # along: the user store is not readable at layout time.
-    href = f"/inspector/{valid_input_vale}"
+    href = f"/inspector/{url_sample}"
     if spectrum_only:
         href += "?spectrum_only=true"
     nl = dbc.NavLink(dbc.Button("Load Selected"), href=href)
