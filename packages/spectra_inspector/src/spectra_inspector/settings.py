@@ -21,7 +21,7 @@ class Settings(BaseSettings):
     # is reduced by: 1 writes every map pixel, 2 half the width and height, and
     # so on. A comma separated list; the first entry is the one preselected,
     # so a deployment short on bandwidth can lead with a larger factor.
-    export_scale_factors: Annotated[list[PositiveInt], NoDecode] = [1, 2, 4]
+    export_scale_factors: Annotated[list[PositiveInt], NoDecode] = [2, 1]
 
     # connection info for the fastapi spectra_inspector_server
     # compose.yaml overrides this with the backend's service name in docker

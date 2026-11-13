@@ -172,12 +172,12 @@ def scale_options(
         factors = worthwhile or [min(factors)]
     options: list[dict[str, str | int]] = []
     for factor in factors:
-        note = "full resolution" if factor == 1 else f"1/{factor} size"
+        note = " (full resolution)" if factor == 1 else ""
         if image_shape is None:
             label = note
         else:
             rows, cols = export_image_size(image_shape, factor)
-            label = f"{cols} x {rows} px ({note})"
+            label = f"{cols} x {rows} px{note}"
         options.append({"label": label, "value": factor})
     return options
 
