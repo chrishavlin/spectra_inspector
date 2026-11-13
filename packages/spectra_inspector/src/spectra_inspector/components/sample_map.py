@@ -24,7 +24,7 @@ _map_styles = {
 RING_TRACE = 0
 SAMPLE_TRACE = 1
 
-MAP_HEIGHT = "30rem"
+MAP_HEIGHT = "50rem"
 
 _SAMPLE_COLOR = "blue"
 _RING_COLOR = "orange"
