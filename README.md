@@ -34,6 +34,9 @@ need. Every frontend setting is read with a `SPECTRA_INSPECTOR_` prefix
   picker on the data selection and inspector pages. Defaults to `false`. The
   backend must be started with `SPECTRA_INSPECTOR_DESKTOP_MODE=true` as well;
   see [Configuration for local deployment](#configuration-for-local-deployment).
+- `SPECTRA_INSPECTOR_INACTIVITY_TIMEOUT_SECONDS`: desktop mode only. Seconds
+  without mouse or keyboard input before an overlay asks whether to continue or
+  start a new session. Defaults to `1800`; `0` turns it off.
 - `SPECTRA_INSPECTOR_N_FRONTEND_WORKERS`: number of gunicorn worker processes
   the docker image starts. Defaults to `2`. Only used by the docker deployment;
   `serve.py` runs the flask development server instead.
