@@ -1,9 +1,12 @@
 import logging
-from pathlib import Path
+from pathlib import Path, PureWindowsPath
 
 import pytest
 
-from spectra_inspector_server._database.on_disk_db import get_expected_files
+from spectra_inspector_server._database.on_disk_db import (
+    _mixed_basename_key,
+    get_expected_files,
+)
 from spectra_inspector_server._file_tree_handling import EDAXPathHandler
 
 
@@ -98,6 +101,12 @@ def test_mixed_basenames_working_directory_keys_relative_to_root(
 
     assert set(ph.database.available_maps) == {"session-a/C-12 Map1.spd"}
     assert ph.database.available_samples["session-a/C-12 Map1.spd"] == "C-12"
+
+
+def test_mixed_basename_key_is_posix_separated_on_windows() -> None:
+    root = PureWindowsPath(r"C:\data_root")
+    spd = root / "session-a" / "nested" / "C-12 Map2.spd"
+    assert _mixed_basename_key(spd, root) == "session-a/nested/C-12 Map2.spd"
 
 
 def test_dotted_basename_keeps_its_name_in_common_mode(tmp_path: Path) -> None:

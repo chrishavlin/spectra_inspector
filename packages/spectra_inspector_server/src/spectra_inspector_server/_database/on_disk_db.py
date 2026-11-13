@@ -1,5 +1,5 @@
 from dataclasses import dataclass
-from pathlib import Path
+from pathlib import Path, PurePath
 from typing import TYPE_CHECKING
 
 from spectra_inspector_server._database.sample_metadata import SampleMetadataMapper
@@ -263,14 +263,15 @@ def _inventory_directory(directory: Path) -> tuple[dict[str, list[Path]], list[P
     return files, subdirs
 
 
-def _mixed_basename_key(path: Path, key_root: Path | None) -> str:
+def _mixed_basename_key(path: PurePath, key_root: PurePath | None) -> str:
     """The database key for ``path`` in mixed-basename mode: its path relative
     to ``key_root`` (the data root), so that the key neither depends on where
     the root is mounted nor leaks the server's filesystem layout to clients.
+    Always "/"-separated, so that the key is the same on every platform.
     """
     if key_root is not None:
         try:
-            return str(path.relative_to(key_root))
+            return path.relative_to(key_root).as_posix()
         except ValueError:
             return str(path)
     return str(path)
