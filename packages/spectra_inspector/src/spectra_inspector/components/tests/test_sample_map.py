@@ -1,51 +1,141 @@
 import pytest
+from dash import Patch
 
 from spectra_inspector.components import sample_map
+from spectra_inspector.components.sample_map import RING_TRACE, SAMPLE_TRACE
+from spectra_inspector.utilities.model import (
+    AvailableDatasets,
+    sampleMetadata,
+    sampleMetadataCSVrecord,
+)
+
+RECORDS = [
+    {"sample_id": "C-12", "lat": -50.9, "lon": -72.9},
+    {"sample_id": "C-29", "lat": -51.0, "lon": -73.0},
+    {"sample_id": "C-36", "lat": None, "lon": None},
+]
 
 
-def _options(*names: str) -> list[dict]:
-    return [{"label": n, "value": n} for n in ("none", *names)]
+def _available(records: list[dict]) -> AvailableDatasets:
+    return AvailableDatasets(
+        available_files=[],
+        sample_metadata=sampleMetadata(
+            records=[
+                sampleMetadataCSVrecord(
+                    elevation=None,
+                    group_name="g",
+                    sample_type="t",
+                    description="d",
+                    **record,
+                )
+                for record in records
+            ]
+        ),
+    )
 
 
-def test_sample_id_from_click_data_reads_last_customdata_column():
-    click = {"points": [{"customdata": ["granite", 12.0, "C-29"]}]}
-    assert sample_map.sample_id_from_click_data(click) == "C-29"
+def _point(sample_id, curve=SAMPLE_TRACE) -> dict:
+    return {"curveNumber": curve, "customdata": ["granite", 12.0, sample_id]}
 
 
-def test_sample_id_from_click_data_scalar_customdata():
+def test_sample_ids_from_points_reads_last_customdata_column():
+    assert sample_map.sample_ids_from_points({"points": [_point("C-29")]}) == ["C-29"]
+
+
+def test_sample_ids_from_points_scalar_customdata():
     click = {"points": [{"customdata": "C-29"}]}
-    assert sample_map.sample_id_from_click_data(click) == "C-29"
+    assert sample_map.sample_ids_from_points(click) == ["C-29"]
+
+
+def test_sample_ids_from_points_keeps_order_without_repeats():
+    selected = {"points": [_point("C-29"), _point("C-12"), _point("C-29")]}
+    assert sample_map.sample_ids_from_points(selected) == ["C-29", "C-12"]
+
+
+def test_sample_ids_from_points_skips_the_active_marker():
+    selected = {"points": [_point("C-29", curve=RING_TRACE), _point("C-12")]}
+    assert sample_map.sample_ids_from_points(selected) == ["C-12"]
 
 
 @pytest.mark.parametrize(
-    "click", [None, {}, {"points": []}, {"points": [{"lat": 1.0, "lon": 2.0}]}]
+    "event", [None, {}, {"points": []}, {"points": [{"lat": 1.0, "lon": 2.0}]}]
 )
-def test_sample_id_from_click_data_handles_missing(click):
-    assert sample_map.sample_id_from_click_data(click) is None
+def test_sample_ids_from_points_handles_missing(event):
+    assert sample_map.sample_ids_from_points(event) == []
 
 
-def test_dataset_for_sample_single_match():
-    opts = _options("C-12", "C-29 Map 1", "C-29 Map 2")
-    assert sample_map.dataset_for_sample("C-12", opts, None) == "C-12"
+def test_point_styling_without_a_filter_dims_nothing():
+    styling = sample_map.point_styling(RECORDS)
+    assert styling == {
+        "selectedpoints": None,
+        "ring": {"lat": [], "lon": []},
+        "center": None,
+    }
 
 
-def test_dataset_for_sample_picks_first_of_several():
-    opts = _options("C-12", "C-29 Map 1", "C-29 Map 2")
-    assert sample_map.dataset_for_sample("C-29", opts, None) == "C-29 Map 1"
-    assert sample_map.dataset_for_sample("C-29", opts, "C-12") == "C-29 Map 1"
+def test_point_styling_with_every_sample_visible_dims_nothing():
+    styling = sample_map.point_styling(RECORDS, {"C-12", "C-29", "C-36", "other"})
+    assert styling["selectedpoints"] is None
 
 
-def test_dataset_for_sample_keeps_current_selection_of_same_sample():
-    opts = _options("C-12", "C-29 Map 1", "C-29 Map 2")
-    assert sample_map.dataset_for_sample("C-29", opts, "C-29 Map 2") == "C-29 Map 2"
+def test_point_styling_selects_the_visible_samples():
+    assert sample_map.point_styling(RECORDS, {"C-29"})["selectedpoints"] == [1]
+    assert sample_map.point_styling(RECORDS, set())["selectedpoints"] == []
 
 
-def test_dataset_for_sample_no_match():
-    opts = _options("C-12", "C-29 Map 1")
-    assert sample_map.dataset_for_sample("C-99", opts, None) is None
-    assert sample_map.dataset_for_sample(None, opts, None) is None
-    assert sample_map.dataset_for_sample("C-12", None, None) is None
+def test_point_styling_marks_and_centers_the_active_sample():
+    styling = sample_map.point_styling(RECORDS, None, "C-29")
+    assert styling["ring"] == {"lat": [-51.0], "lon": [-73.0]}
+    assert styling["center"] == {"lat": -51.0, "lon": -73.0}
 
 
-def test_dataset_for_sample_never_returns_none_option():
-    assert sample_map.dataset_for_sample("none", _options("C-12"), None) is None
+@pytest.mark.parametrize("active", ["C-36", "unknown"])
+def test_point_styling_without_a_location_for_the_active_sample(active):
+    styling = sample_map.point_styling(RECORDS, None, active)
+    assert styling["ring"] == {"lat": [], "lon": []}
+    assert styling["center"] is None
+
+
+def test_get_map_puts_the_active_marker_under_the_samples():
+    fig = sample_map.get_map("satellite", _available(RECORDS[:2]))
+    assert len(fig.data) == 2
+    assert list(fig.data[RING_TRACE].lat) == []
+    assert [row[-1] for row in fig.data[SAMPLE_TRACE].customdata] == ["C-12", "C-29"]
+    assert fig.layout.showlegend is False
+
+
+def test_get_map_revision_follows_the_samples():
+    one = sample_map.get_map("satellite", _available(RECORDS[:2]))
+    same = sample_map.get_map("open-street-map", _available(RECORDS[:2]))
+    other = sample_map.get_map("satellite", _available(RECORDS[:1]))
+    assert one.layout.uirevision == same.layout.uirevision
+    assert one.layout.uirevision != other.layout.uirevision
+
+
+@pytest.mark.parametrize("available", [None, _available([])])
+def test_get_map_without_samples_shows_the_placeholder(available):
+    fig = sample_map.get_map("satellite", available)
+    assert len(fig.data[SAMPLE_TRACE].lat) == 1
+
+
+def test_apply_point_styling_to_a_figure():
+    fig = sample_map.get_map("satellite", _available(RECORDS[:2]))
+    styling = sample_map.point_styling(RECORDS[:2], {"C-29"}, "C-29")
+    sample_map.apply_point_styling(fig, styling, recenter=True)
+    assert fig.data[SAMPLE_TRACE].selectedpoints == (1,)
+    assert list(fig.data[RING_TRACE].lat) == [-51.0]
+    assert fig.layout.map.center.lat == -51.0
+
+
+def test_apply_point_styling_to_a_patch_recenters_only_on_request():
+    styling = sample_map.point_styling(RECORDS, {"C-29"}, "C-29")
+
+    def paths(patch: Patch) -> list[list]:
+        return [op["location"] for op in patch.to_plotly_json()["operations"]]
+
+    kept = paths(sample_map.apply_point_styling(Patch(), styling))
+    assert ["layout", "map", "center"] not in kept
+    assert ["data", SAMPLE_TRACE, "selectedpoints"] in kept
+
+    moved = paths(sample_map.apply_point_styling(Patch(), styling, recenter=True))
+    assert ["layout", "map", "center"] in moved

@@ -1,3 +1,4 @@
+import zlib
 from dataclasses import dataclass
 
 import dash_bootstrap_components as dbc
@@ -5,7 +6,7 @@ import numpy as np
 import pandas as pd
 import plotly.express as px
 import plotly.graph_objects as go
-from dash import dcc
+from dash import Patch, dcc
 
 from spectra_inspector.components.layout_ids import indexedLayoutIDMapper
 from spectra_inspector.utilities.degrees import Latitude, Longitude
@@ -17,6 +18,15 @@ _map_styles = {
     "Satellite-Composite": "satellite-streets",
     "None": "white-bg",
 }
+
+
+# the figure's traces: a disc under the active sample's point, then the samples
+RING_TRACE = 0
+SAMPLE_TRACE = 1
+
+_SAMPLE_COLOR = "blue"
+_RING_COLOR = "orange"
+_DIMMED_OPACITY = 0.25
 
 
 @dataclass
@@ -111,7 +121,11 @@ def get_map(
 
     ms = mapSettings()
 
-    if available_data is None or available_data.sample_metadata is None:
+    records = []
+    if available_data is not None and available_data.sample_metadata is not None:
+        records = available_data.sample_metadata.records or []
+
+    if not records:
         recs = [
             {
                 "lat": ms.center_lat,
@@ -128,7 +142,6 @@ def get_map(
         hd_cols = ["group_name", "lat", "lon", "elevation"]
 
     else:
-        records = available_data.sample_metadata.records or []
         df = pd.DataFrame([record.model_dump() for record in records])
         df["marker_size"] = 10
 
@@ -176,11 +189,15 @@ def get_map(
     )
     fig.update_layout(
         autosize=True,
+        margin={"l": 0, "r": 0, "t": 0, "b": 0},
     )
+    # `selectedpoints` is what dims the samples the table has filtered out
+    # (`point_styling`), and what plotly's own box and lasso tools set, so a
+    # selected point looks like an ordinary one and an unselected one fades.
     fig.update_traces(
-        marker_color="blue",
-        selected={"marker": {"color": "orange", "opacity": 1.0}},
-        unselected={"marker": {"color": "blue", "opacity": 1.0}},
+        marker_color=_SAMPLE_COLOR,
+        selected={"marker": {"color": _SAMPLE_COLOR, "opacity": 1.0}},
+        unselected={"marker": {"color": _SAMPLE_COLOR, "opacity": _DIMMED_OPACITY}},
     )
 
     # too low res, but shows how to use the map_layers arg
@@ -226,6 +243,27 @@ def get_map(
             existing = np.asarray(trace.customdata, dtype=object)
             trace.customdata = np.column_stack([existing, ids])
 
+    # scattermap markers have no outline, so the active sample is marked by a
+    # larger disc drawn underneath its point. It sits first in the trace list
+    # to stay below the samples and out of the way of their hover and clicks.
+    fig.add_trace(
+        go.Scattermap(
+            lat=[],
+            lon=[],
+            mode="markers",
+            marker={"size": 40, "color": _RING_COLOR, "opacity": 0.9},
+            hoverinfo="skip",
+            showlegend=False,
+        )
+    )
+    fig.data = (fig.data[-1], *fig.data[:-1])
+    # The revision keeps the zoom and pan the user has set through the patches
+    # that restyle the points, which would otherwise snap the view back to the
+    # figure's own. It is derived from the samples, so a figure for another
+    # listing starts from its own view.
+    revision = zlib.crc32("\n".join(map(str, sample_ids)).encode())
+    fig.update_layout(showlegend=False, uirevision=f"samples-{revision}")
+
     return fig
 
 
@@ -238,121 +276,74 @@ def _sample_id_from_customdata(point_data) -> str | None:
     return str(point_data)
 
 
-def _validate_sample_name(sample_id: str | None):
-    """coerce "C-12 map 2" etc. to "C-12" """
-    if sample_id is None:
-        return None
-    return sample_id.split(" ")[0]
+def sample_ids_from_points(event_data: dict | None) -> list[str]:
+    """The sample ids of the points in a `clickData` or `selectedData` payload,
+    in the order given and without repeats."""
+    ids: list[str] = []
+    for point in (event_data or {}).get("points") or []:
+        if point.get("curveNumber", SAMPLE_TRACE) != SAMPLE_TRACE:
+            continue
+        custom = point.get("customdata")
+        if custom is None:
+            continue
+        sample_id = _sample_id_from_customdata(custom)
+        if sample_id is not None and sample_id not in ids:
+            ids.append(sample_id)
+    return ids
 
 
-def sample_id_from_click_data(click_data: dict | None) -> str | None:
-    """The sample id of the point in a `dcc.Graph` `clickData` payload."""
-    if not click_data:
-        return None
-    points = click_data.get("points") or []
-    if not points:
-        return None
-    custom = points[0].get("customdata")
-    if custom is None:
-        return None
-    return _sample_id_from_customdata(custom)
+def point_styling(
+    records: list[dict] | None,
+    visible_samples: set[str] | None = None,
+    active_sample: str | None = None,
+) -> dict:
+    """How the map should show a state of the dataset table.
 
+    ``records`` are the sample sheet records the figure was built from, in the
+    same order, which is what makes a point's index computable here.
+    ``visible_samples`` are the samples with a row left in the table, None for
+    "no filter"; ``active_sample`` is the sample of the selected dataset.
 
-def dataset_for_sample(
-    sample_id: str | None, options: list[dict] | None, current_value: str | None
-) -> str | None:
-    """The dropdown value to select for a sample clicked on the map.
-
-    A sample can carry several datasets ("C-29 Map 1", "C-29 Map 2") while
-    the map shows only the sample id ("C-29"). The current selection wins when
-    it already belongs to the sample; otherwise the first matching option in
-    dropdown order. None when nothing matches.
+    Returns ``selectedpoints`` for the sample trace (None while every sample is
+    visible, so nothing is dimmed), the coordinates of the active sample's
+    disc (empty lists without one) and, when the active sample has a location,
+    where to center the map.
     """
-    if sample_id is None:
-        return None
-    values = [
-        opt.get("value") if isinstance(opt, dict) else opt for opt in options or []
-    ]
-    matches = [
-        v
-        for v in values
-        if isinstance(v, str)
-        and v != "none"
-        and _validate_sample_name(v) == str(sample_id)
-    ]
-    if not matches:
-        return None
-    if current_value in matches:
-        return current_value
-    return matches[0]
+    records = records or []
 
+    selectedpoints: list[int] | None = None
+    if visible_samples is not None:
+        shown = [
+            i for i, r in enumerate(records) if str(r["sample_id"]) in visible_samples
+        ]
+        if len(shown) < len(records):
+            selectedpoints = shown
 
-def highlight_selected_point_in_figure(
-    figure: dict | go.Figure, sample_id: str | None, metadata: dict | None = None
-):
-    """Return a modified figure with the point matching `sample_id` selected.
-
-    The function looks for traces that include `customdata` (whose last column
-    holds sample ids) and sets `trace['selectedpoints']` to the index of the
-    matching point, centering the map on it. If no match is found, every
-    selection is cleared and the map recenters on the default location (see
-    `_default_center`).
-    """
-
-    if figure is None:
-        return figure
-
-    # work with a JSON-serializable dict representation
-    if hasattr(figure, "to_plotly_json"):
-        fig = figure.to_plotly_json()
-    else:
-        fig = dict(figure)
-
-    valid_sample_id = _validate_sample_name(sample_id)
-
-    records_df: pd.DataFrame | None = None
-    if metadata is not None and metadata.get("records"):
-        records_df = pd.DataFrame(metadata["records"])
-
-    selected_center: dict[str, float] | None = None
-    if records_df is not None and "sample_id" in records_df:
-        df_id = records_df[records_df.sample_id == valid_sample_id]
-        if len(df_id) == 1:
-            lat = pd.to_numeric(df_id.iloc[0].get("lat"), errors="coerce")
-            lon = pd.to_numeric(df_id.iloc[0].get("lon"), errors="coerce")
+    ring: dict[str, list[float]] = {"lat": [], "lon": []}
+    center: dict[str, float] | None = None
+    if active_sample is not None:
+        for record in records:
+            if str(record["sample_id"]) != str(active_sample):
+                continue
+            lat = pd.to_numeric(record.get("lat"), errors="coerce")
+            lon = pd.to_numeric(record.get("lon"), errors="coerce")
             if pd.notna(lat) and pd.notna(lon):
-                selected_center = {"lat": float(lat), "lon": float(lon)}
+                center = {"lat": float(lat), "lon": float(lon)}
+                ring = {"lat": [center["lat"]], "lon": [center["lon"]]}
+            break
 
-    matched = False
-    for trace in fig.get("data", []):
-        custom = trace.get("customdata", []) or []
-        sel_idx = None
-        if valid_sample_id not in (None, "none"):
-            for i, v in enumerate(custom):
-                if _sample_id_from_customdata(v) == str(valid_sample_id):
-                    sel_idx = i
-                    break
+    return {"selectedpoints": selectedpoints, "ring": ring, "center": center}
 
-        if sel_idx is not None:
-            matched = True
-            trace["selectedpoints"] = [sel_idx]
-        else:
-            # an empty list is an explicit "nothing selected" for plotly,
-            # which un-highlights whatever was selected before
-            trace["selectedpoints"] = []
 
-    # ensure selection persists sensibly across updates
-    fig.setdefault("layout", {})
-    fig["layout"].setdefault("uirevision", "samplemap-selection")
-
-    if matched and selected_center is not None:
-        new_center = selected_center
-    else:
-        new_center = _default_center(records_df)
-
-    # keep other map settings (zoom/bearing/style) intact if present
-    fig["layout"].setdefault("map", {})["center"] = new_center
-
+def apply_point_styling(
+    fig: go.Figure | Patch, styling: dict, recenter: bool = False
+) -> go.Figure | Patch:
+    """Write a `point_styling` result into a figure, or into a `Patch` of one."""
+    fig["data"][SAMPLE_TRACE]["selectedpoints"] = styling["selectedpoints"]
+    fig["data"][RING_TRACE]["lat"] = styling["ring"]["lat"]
+    fig["data"][RING_TRACE]["lon"] = styling["ring"]["lon"]
+    if recenter and styling["center"] is not None:
+        fig["layout"]["map"]["center"] = styling["center"]
     return fig
 
 
@@ -392,12 +383,6 @@ def get_layout(
                     dcc.Graph(
                         figure=fig,
                         id=IDS.get_id_with_index("samplemap"),
-                        config={
-                            "modeBarButtonsToRemove": [
-                                "lasso2d",
-                                "select2d",
-                            ]
-                        },
                         style={
                             "aspectRatio": "1 / 1",  # or "4 / 3", "16 / 9", etc.
                             "width": "100%",
