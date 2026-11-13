@@ -10,7 +10,11 @@ import fpdf
 import matplotlib.pyplot as plt
 import pandas as pd
 import plotly
+import pptx
 from matplotlib.figure import Figure
+from PIL import Image
+from pptx.slide import Slide
+from pptx.util import Inches, Pt
 
 from spectra_inspector.logging import spectraLogger
 from spectra_inspector.settings import Settings
@@ -18,6 +22,12 @@ from spectra_inspector.utilities.export_metadata import (
     flatten_for_display,
     readme_text,
     subselection_lines,
+)
+from spectra_inspector.utilities.image_export import (
+    FIGURE_DPI,
+    image_axes,
+    page_scale_factor,
+    render_image_figure,
 )
 
 # the core PDF fonts are latin-1 only; anything else (a µm axis unit is fine, a
@@ -29,9 +39,22 @@ def _pdf_safe(text: str) -> str:
     return text.encode(_PDF_ENCODING, errors="replace").decode(_PDF_ENCODING)
 
 
+# the deck is 16:9. PowerPoint does not paginate text the way fpdf does, so the
+# metadata is split over slides by line count: this many lines of the body font
+# fit under a slide title.
+_PPTX_WIDTH = Inches(13.333)
+_PPTX_HEIGHT = Inches(7.5)
+_PPTX_MARGIN = Inches(0.5)
+_PPTX_TITLE_HEIGHT = Inches(0.8)
+_PPTX_BODY_FONT = "Courier New"
+_PPTX_BODY_PT = 10
+_PPTX_LINES_PER_SLIDE = 34
+
+
 class summaryWriter:
     folder_name: Path = Path("spector-inspector")
     pdf_name: Path = Path("SpectraInspectorSummary.pdf")
+    pptx_name: Path = Path("SpectraInspectorSummary.pptx")
     element_weights_name: Path = Path("ElementWeights.txt")
     metadata_name: Path = Path("metadata.json")
     readme_name: Path = Path("README.txt")
@@ -39,7 +62,8 @@ class summaryWriter:
     unique_write_dir: Path
     settings: Settings
     # the record `build_export_metadata` produces, once `set_export_metadata`
-    # has been called; the PDF and the zip's json/README are rendered from it
+    # has been called; the PDF, the deck and the zip's json/README are rendered
+    # from it
     export_metadata: dict[str, Any] | None = None
 
     def __init__(
@@ -96,12 +120,25 @@ class summaryWriter:
         self,
         figures: dict[str, Figure | plotly.graph_objs.Figure],
         figformat: Literal["png", "svg", "pdf"] = "png",
+        scale_factor: int | None = None,
     ):
-
+        """Save the figures. An image panel's figure is written through
+        ``image_export`` with its map reduced by ``scale_factor`` (1 keeps
+        every pixel), or by whatever fits it on a page when none is given; any
+        other figure is saved as it is."""
         for name, fig in figures.items():
             outfile = self.full_file(f"{name}.{figformat}")
             if isinstance(fig, Figure):
-                fig.savefig(outfile, format=figformat, bbox_inches="tight")
+                ax = image_axes(fig) if figformat == "png" else None
+                if ax is not None:
+                    factor = scale_factor or page_scale_factor(
+                        ax.images[0].get_array().shape[:2]
+                    )
+                    render_image_figure(fig, factor).save(outfile)
+                else:
+                    fig.savefig(
+                        outfile, format=figformat, bbox_inches="tight", dpi=FIGURE_DPI
+                    )
                 plt.close(fig)
             else:
                 plotly.io.write_image(fig, outfile, format=figformat)
@@ -147,19 +184,13 @@ class summaryWriter:
 
         return Path(zfilename)
 
-    def _pdf_metadata_pages(self, pdf: fpdf.FPDF) -> None:
+    def _metadata_sections(self) -> list[tuple[str, list[str]]]:
         """The sample metadata (as the data-selection accordion shows it) and
-        the subselection, as text; a heading only when no record was set."""
-        pdf.add_page()
-        pdf.set_font("Helvetica", size=14)
-        pdf.cell(text="Sample metadata", new_x="LMARGIN", new_y="NEXT")
-        pdf.ln(2)
-
+        the subselection, as headed blocks of text lines; a single block saying
+        so when no record was set. The PDF and the deck both render these."""
         md = self.export_metadata
-        pdf.set_font("Courier", size=8)
         if md is None:
-            pdf.multi_cell(w=0, text="not available for this export")
-            return
+            return [("Sample metadata", ["not available for this export"])]
 
         header = [
             f"dataset: {md.get('dataset')}",
@@ -171,32 +202,37 @@ class summaryWriter:
             if sample is not None
             else ["unavailable: the server could not be reached for it"]
         )
-        pdf.multi_cell(w=0, text=_pdf_safe("\n".join([*header, "", *body])))
+        return [
+            ("Sample metadata", [*header, "", *body]),
+            ("Subselection", subselection_lines(md.get("subselection"))),
+        ]
 
-        pdf.ln(4)
-        pdf.set_font("Helvetica", size=14)
-        pdf.cell(text="Subselection", new_x="LMARGIN", new_y="NEXT")
-        pdf.ln(2)
-        pdf.set_font("Courier", size=8)
-        pdf.multi_cell(
-            w=0, text=_pdf_safe("\n".join(subselection_lines(md.get("subselection"))))
-        )
+    def _summary_images(self) -> list[Path]:
+        """The rendered images in presentation order: the image panels (each
+        followed by its subset), then the spectrum."""
+        bitmaps = []
+        spectrum = []
+        for f in self.write_dir.glob("*.png"):
+            if f.stem.startswith("bitmap"):
+                bitmaps.append(f)
+            elif f.stem.startswith("spectr"):
+                spectrum.append(f)
+        return sorted(bitmaps) + sorted(spectrum)
+
+    def _pdf_metadata_pages(self, pdf: fpdf.FPDF) -> None:
+        pdf.add_page()
+        for i, (heading, lines) in enumerate(self._metadata_sections()):
+            if i > 0:
+                pdf.ln(4)
+            pdf.set_font("Helvetica", size=14)
+            pdf.cell(text=heading, new_x="LMARGIN", new_y="NEXT")
+            pdf.ln(2)
+            pdf.set_font("Courier", size=8)
+            pdf.multi_cell(w=0, text=_pdf_safe("\n".join(lines)))
 
     def write_pdf(
         self,
     ):
-
-        files = [f for f in self.write_dir.glob("*") if f.is_file()]
-
-        bitmaps = []
-        spectrum = []
-        for f in files:
-            if f.stem.startswith("bitmap"):
-                bitmaps.append(self.write_dir / f)
-            elif f.stem.startswith("spectr") and f.suffix == ".png":
-                spectrum.append(self.write_dir / f)
-        bitmaps.sort()
-
         pdf = fpdf.FPDF(orientation="portrait", format="A4")
         pdf.set_font("Helvetica", size=18)
 
@@ -211,13 +247,103 @@ class summaryWriter:
         self._pdf_metadata_pages(pdf)
         pdf.set_font("Helvetica", size=18)
 
-        for fname in bitmaps + spectrum:
+        for fname in self._summary_images():
             pdf.add_page()
             pdf.write(text=f"{fname.stem}\n\n")
-            pdf.image(fname, w=pdf.epw)
+            # as wide as the page, unless a tall image would then run off it
+            with Image.open(fname) as im:
+                aspect = im.width / im.height
+            room = pdf.h - pdf.b_margin - pdf.get_y()
+            pdf.image(fname, w=min(pdf.epw, room * aspect))
 
         fout = self.full_file(self.pdf_name)
         pdf.output(fout)
+
+    @staticmethod
+    def _pptx_text(
+        slide: Slide,
+        lines: list[str],
+        top: int,
+        height: int,
+        size_pt: int,
+        font: str | None = None,
+    ) -> None:
+        box = slide.shapes.add_textbox(
+            _PPTX_MARGIN, top, _PPTX_WIDTH - 2 * _PPTX_MARGIN, height
+        )
+        frame = box.text_frame
+        frame.word_wrap = True
+        frame.text = "\n".join(lines)
+        for paragraph in frame.paragraphs:
+            paragraph.font.size = Pt(size_pt)
+            if font is not None:
+                paragraph.font.name = font
+
+    def write_pptx(self) -> None:
+        """Write the summary as a 16:9 deck with the PDF's content: a title
+        slide, the metadata as text, then one slide per rendered image.
+
+        The images are placed as pictures scaled to fit under the slide title,
+        so their pixel size only sets how sharp they are, not how large they
+        appear.
+        """
+        deck = pptx.Presentation()
+        deck.slide_width = _PPTX_WIDTH
+        deck.slide_height = _PPTX_HEIGHT
+        # the blank layout: every box is placed explicitly, so the deck does not
+        # depend on the default template's placeholders
+        layout = deck.slide_layouts[6]
+        body_top = _PPTX_MARGIN + _PPTX_TITLE_HEIGHT
+        body_height = _PPTX_HEIGHT - body_top - _PPTX_MARGIN
+
+        def new_slide(title: str) -> Slide:
+            slide = deck.slides.add_slide(layout)
+            self._pptx_text(slide, [title], _PPTX_MARGIN, _PPTX_TITLE_HEIGHT, 24)
+            return slide
+
+        slide = new_slide("Spectra Inspector auto-generated summary")
+        self._pptx_text(
+            slide,
+            [f"Generated: {datetime.datetime.now(tz=ZoneInfo('UTC'))}"],
+            body_top,
+            body_height,
+            14,
+        )
+
+        for heading, lines in self._metadata_sections():
+            for start in range(0, len(lines), _PPTX_LINES_PER_SLIDE):
+                title = heading if start == 0 else f"{heading} (continued)"
+                self._pptx_text(
+                    new_slide(title),
+                    lines[start : start + _PPTX_LINES_PER_SLIDE],
+                    body_top,
+                    body_height,
+                    _PPTX_BODY_PT,
+                    font=_PPTX_BODY_FONT,
+                )
+
+        body_width = _PPTX_WIDTH - 2 * _PPTX_MARGIN
+        for fname in self._summary_images():
+            slide = new_slide(fname.stem)
+            with Image.open(fname) as im:
+                px_width, px_height = im.size
+            scale = min(body_width / px_width, body_height / px_height)
+            width, height = int(px_width * scale), int(px_height * scale)
+            slide.shapes.add_picture(
+                str(fname),
+                int((_PPTX_WIDTH - width) / 2),
+                int(body_top + (body_height - height) / 2),
+                width=width,
+                height=height,
+            )
+
+        deck.save(str(self.full_file(self.pptx_name)))
+
+    def get_pptx_path(self) -> Path:
+        fout = self.full_file(self.pptx_name)
+        if not fout.is_file():
+            self.write_pptx()
+        return fout
 
     def get_pdf_path(self, generate_pdf: bool = True):
         fout = self.full_file(self.pdf_name)

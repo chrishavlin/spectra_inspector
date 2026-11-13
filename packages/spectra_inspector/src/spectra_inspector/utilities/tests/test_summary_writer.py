@@ -4,11 +4,14 @@ from unittest.mock import patch
 
 import numpy as np
 import pandas as pd
+import pptx
 import pytest
+from PIL import Image
+from pptx.enum.shapes import MSO_SHAPE_TYPE
 from pypdf import PdfReader
 
 from spectra_inspector.components.data_export_panel import get_element_weights
-from spectra_inspector.settings import Settings
+from spectra_inspector.settings import ENV_PREFIX, Settings
 from spectra_inspector.utilities import model as m
 from spectra_inspector.utilities.matplotib_importer import mpl_pyplot as plt
 from spectra_inspector.utilities.summary_writer import summaryWriter
@@ -90,6 +93,57 @@ def test_write_static_figures_writes_matplotlib_figure(writer):
     assert out_file.stat().st_size > 0
 
 
+class TestImageSize:
+    @staticmethod
+    def _image_figure(rows: int, cols: int):
+        # as coerce.plotly_to_matplotlib draws an image panel
+        fig, ax = plt.subplots(figsize=(6, 4), dpi=150)
+        ax.imshow(np.indices((rows, cols)).sum(axis=0) % 2, cmap="gray")
+        ax.set_aspect("equal", adjustable="box")
+        ax.set_axis_off()
+        return fig
+
+    def _written_size(self, writer, rows, cols, factor) -> tuple[int, int]:
+        writer.write_static_figures(
+            {"bitmap": self._image_figure(rows, cols)}, scale_factor=factor
+        )
+        with Image.open(writer.full_file("bitmap.png")) as im:
+            return im.size
+
+    def test_a_map_is_written_at_the_factor_asked_for(self, writer):
+        assert self._written_size(writer, 1800, 2400, 1) == (2400, 1800)
+        assert self._written_size(writer, 1800, 2400, 2) == (1200, 900)
+        assert self._written_size(writer, 3000, 500, 1) == (500, 3000)
+
+    def test_a_map_is_fitted_to_the_page_when_no_factor_is_given(self, writer):
+        assert self._written_size(writer, 1800, 2400, None) == (1200, 900)
+        assert self._written_size(writer, 4096, 4096, None) == (1366, 1366)
+        assert self._written_size(writer, 900, 1200, None) == (1200, 900)
+
+    def test_other_figures_are_saved_whole(self, writer):
+        fig = plt.figure(figsize=(6, 4))
+        fig.add_subplot(111).plot([0, 1], [0, 1])
+        writer.write_static_figures({"spectrum": fig}, scale_factor=4)
+        with Image.open(writer.full_file("spectrum.png")) as im:
+            # 6x4 inches at the fixed figure dpi, less what the tight crop trims
+            assert 900 < im.size[0] <= 1200
+
+
+class TestScaleFactorsSetting:
+    def test_default_offers_half_size_first(self):
+        assert Settings().export_scale_factors == [2, 1]
+
+    def test_reads_a_comma_separated_list_in_its_order(self, monkeypatch):
+        monkeypatch.setenv(f"{ENV_PREFIX}EXPORT_SCALE_FACTORS", "4, 2,1")
+        assert Settings().export_scale_factors == [4, 2, 1]
+
+    @pytest.mark.parametrize("value", ["", "0,1", "2,2", "1,half"])
+    def test_rejects_what_is_not_a_list_of_distinct_factors(self, monkeypatch, value):
+        monkeypatch.setenv(f"{ENV_PREFIX}EXPORT_SCALE_FACTORS", value)
+        with pytest.raises(ValueError, match="export_scale_factors"):
+            Settings()
+
+
 @pytest.fixture
 def export_record() -> dict:
     return {
@@ -169,6 +223,88 @@ class TestMetadataExport:
         pdf_path = writer.get_pdf_path()
         text = "\n".join(page.extract_text() for page in PdfReader(pdf_path).pages)
         assert "not available for this export" in text
+
+
+def _slide_texts(deck) -> list[str]:
+    return [
+        "\n".join(s.text_frame.text for s in slide.shapes if s.has_text_frame)
+        for slide in deck.slides
+    ]
+
+
+def _pictures(slide) -> list:
+    return [s for s in slide.shapes if s.shape_type == MSO_SHAPE_TYPE.PICTURE]
+
+
+class TestPptxExport:
+    def _figures(self, writer, names):
+        figs = {}
+        for name in names:
+            figs[name] = plt.figure(figsize=(6, 4))
+            figs[name].add_subplot(111).plot([0, 1], [0, 1])
+        writer.write_static_figures(figs)
+
+    def test_deck_has_metadata_then_one_slide_per_image(self, writer, export_record):
+        self._figures(
+            writer, ["spectrum", "bitmap_01_Si", "bitmap_00_Fe", "bitmap_00_Fe_subset"]
+        )
+        writer.set_export_metadata(export_record)
+
+        path = writer.get_pptx_path()
+        assert path.name == "SpectraInspectorSummary.pptx"
+        deck = pptx.Presentation(str(path))
+        texts = _slide_texts(deck)
+
+        # title, sample metadata, subselection, then the four images
+        assert len(texts) == 7
+        assert "Spectra Inspector" in texts[0]
+        assert "dataset: C-12" in texts[1]
+        assert "sample_id: S1" in texts[1]
+        # no latin-1 restriction here, unlike the PDF
+        assert "岩石 5 µm" in texts[1]
+        assert texts[2].startswith("Subselection")
+        assert "1.5 to 4.5" in texts[2]
+        assert texts[3:] == [
+            "bitmap_00_Fe",
+            "bitmap_00_Fe_subset",
+            "bitmap_01_Si",
+            "spectrum",
+        ]
+
+        for slide in list(deck.slides)[:3]:
+            assert _pictures(slide) == []
+        for slide in list(deck.slides)[3:]:
+            (pic,) = _pictures(slide)
+            assert pic.left >= 0
+            assert pic.top >= 0
+            assert pic.left + pic.width <= deck.slide_width
+            assert pic.top + pic.height <= deck.slide_height
+            # aspect ratio of the rendered image is kept
+            with Image.open(
+                writer.full_file(f"{slide.shapes[0].text_frame.text}.png")
+            ) as im:
+                assert pic.width / pic.height == pytest.approx(
+                    im.size[0] / im.size[1], rel=1e-3
+                )
+
+    def test_long_metadata_spills_onto_more_slides(self, writer, export_record):
+        export_record["sample"] = {f"key_{i:03d}": i for i in range(80)}
+        writer.set_export_metadata(export_record)
+
+        texts = _slide_texts(pptx.Presentation(str(writer.get_pptx_path())))
+        sample = [t for t in texts if t.startswith("Sample metadata")]
+        assert len(sample) == 3
+        assert sample[1].startswith("Sample metadata (continued)")
+        joined = "\n".join(sample)
+        assert "key_000: 0" in joined
+        assert "key_079: 79" in joined
+
+    def test_deck_without_a_record(self, writer):
+        self._figures(writer, ["spectrum"])
+
+        texts = _slide_texts(pptx.Presentation(str(writer.get_pptx_path())))
+        assert len(texts) == 3
+        assert "not available for this export" in texts[1]
 
 
 class TestElementWeightsExport:

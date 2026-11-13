@@ -1,9 +1,9 @@
 from pathlib import Path
-from typing import Any
+from typing import Annotated, Any
 
 from dotenv import dotenv_values
-from pydantic import NonNegativeInt, PositiveInt, model_validator
-from pydantic_settings import BaseSettings, SettingsConfigDict
+from pydantic import NonNegativeInt, PositiveInt, field_validator, model_validator
+from pydantic_settings import BaseSettings, NoDecode, SettingsConfigDict
 
 ENV_FILE = ".env"
 ENV_PREFIX = "SPECTRA_INSPECTOR_"
@@ -16,6 +16,12 @@ class Settings(BaseSettings):
     app_name: str = "Spectra Inspector"
     write_dir: str = "./"
     max_tmp_dirs: int = 100
+
+    # the image sizes the .zip summary export offers, as whole factors the map
+    # is reduced by: 1 writes every map pixel, 2 half the width and height, and
+    # so on. A comma separated list; the first entry is the one preselected,
+    # so a deployment short on bandwidth can lead with a larger factor.
+    export_scale_factors: Annotated[list[PositiveInt], NoDecode] = [2, 1]
 
     # connection info for the fastapi spectra_inspector_server
     # compose.yaml overrides this with the backend's service name in docker
@@ -45,6 +51,21 @@ class Settings(BaseSettings):
     n_frontend_workers: PositiveInt = 2
 
     model_config = SettingsConfigDict(env_file=ENV_FILE, env_prefix=ENV_PREFIX)
+
+    @field_validator("export_scale_factors", mode="before")
+    @classmethod
+    def _split_scale_factors(cls, value: Any) -> Any:
+        if isinstance(value, str):
+            return [part.strip() for part in value.split(",") if part.strip()]
+        return value
+
+    @field_validator("export_scale_factors")
+    @classmethod
+    def _distinct_scale_factors(cls, value: list[int]) -> list[int]:
+        if not value or len(set(value)) != len(value):
+            msg = "export_scale_factors needs at least one factor, each given once"
+            raise ValueError(msg)
+        return value
 
     @model_validator(mode="before")
     @classmethod
