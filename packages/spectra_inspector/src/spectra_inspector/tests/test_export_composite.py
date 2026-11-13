@@ -128,6 +128,9 @@ def test_panel_exports_name_single_and_composite_panels(inspector):
     assert panels[0].energy_range == (6.0, 6.5)
     assert panels[1].composite
     assert panels[1].channels == specs[1]
+    assert panels[0].title == "Fe"
+    assert panels[1].title == "Fe (red) + 2-3 keV (green)"
+    assert panels[1].subset_title == "Fe (red) + 2-3 keV (green) (subset)"
 
     # by position without them (the pre-composite export tests)
     panels = inspector._panel_exports(

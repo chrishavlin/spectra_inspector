@@ -33,6 +33,20 @@ def test_plotly_to_matplotlib_preserves_heatmap_box_annotation():
     assert ax.patches[0].get_linewidth() == 2
 
 
+def test_plotly_to_matplotlib_titles_the_image_as_asked():
+    im_data = [[1, 2], [3, 4]]
+    fig = {
+        "data": [{"type": "heatmap", "z": im_data}],
+        "layout": {"title": {"text": "from the layout"}},
+    }
+
+    mpl_fig = plotly_to_matplotlib(fig, im_data=np.asarray(im_data), title="Fe")
+    assert mpl_fig.axes[0].get_title() == "Fe"
+
+    mpl_fig = plotly_to_matplotlib(fig, im_data=np.asarray(im_data))
+    assert mpl_fig.axes[0].get_title() == "from the layout"
+
+
 def test_path_vertices_reads_the_polygon_path():
     assert path_vertices("M 2.0,1.0 L 8.5,1.0 L 5,6e0 Z") == [
         (2.0, 1.0),
