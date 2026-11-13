@@ -24,6 +24,8 @@ _map_styles = {
 RING_TRACE = 0
 SAMPLE_TRACE = 1
 
+MAP_HEIGHT = "30rem"
+
 _SAMPLE_COLOR = "blue"
 _RING_COLOR = "orange"
 _DIMMED_OPACITY = 0.25
@@ -383,10 +385,9 @@ def get_layout(
                     dcc.Graph(
                         figure=fig,
                         id=IDS.get_id_with_index("samplemap"),
-                        style={
-                            "aspectRatio": "1 / 1",  # or "4 / 3", "16 / 9", etc.
-                            "width": "100%",
-                        },
+                        # a fixed height, so the map takes whatever width
+                        # its column has without growing taller with it
+                        style={"height": MAP_HEIGHT, "width": "100%"},
                     ),
                     width=12,
                 )

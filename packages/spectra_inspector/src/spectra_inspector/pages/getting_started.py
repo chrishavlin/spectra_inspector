@@ -11,8 +11,8 @@ dash.register_page(__name__, name="Getting started", order=2)
 
 DATA_SELECTION_MARKERS = [
     screenshotMarker(
-        target=(1400, 771),
-        badge=(1400, 1190),
+        target=(1400, 1807),
+        badge=(1400, 2260),
         description=(
             "Every dataset is a row of the table, with what the sample sheet "
             "says about its sample. Click a row to select it; double click "
@@ -20,8 +20,8 @@ DATA_SELECTION_MARKERS = [
         ),
     ),
     screenshotMarker(
-        target=(306, 315),
-        badge=(420, 212),
+        target=(306, 1443),
+        badge=(420, 1352),
         description=[
             "Narrow the table: type in the search box, pick one or more values of ",
             html.B("Group"),
@@ -35,8 +35,8 @@ DATA_SELECTION_MARKERS = [
         ],
     ),
     screenshotMarker(
-        target=(689, 315),
-        badge=(689, 212),
+        target=(689, 1443),
+        badge=(689, 1352),
         description=[
             "Switch to ",
             html.B("Spectra"),
@@ -45,8 +45,8 @@ DATA_SELECTION_MARKERS = [
         ],
     ),
     screenshotMarker(
-        target=(1609, 407),
-        badge=(1480, 407),
+        target=(2444, 1443),
+        badge=(2310, 1443),
         description="The refresh button rescans the server for new datasets.",
     ),
     screenshotMarker(
@@ -59,16 +59,16 @@ DATA_SELECTION_MARKERS = [
         ],
     ),
     screenshotMarker(
-        target=(1200, 1835),
-        badge=(1400, 1835),
+        target=(2000, 805),
+        badge=(2000, 1000),
         description=(
             "The selected dataset's sample and metadata. Expand a section to "
             "see its details."
         ),
     ),
     screenshotMarker(
-        target=(2118, 688),
-        badge=(2300, 560),
+        target=(762, 825),
+        badge=(960, 690),
         description=(
             "Each sample is a point on the map, at the location the rock was "
             "collected, with the active dataset's sample ringed. Samples the "
@@ -78,8 +78,8 @@ DATA_SELECTION_MARKERS = [
         ),
     ),
     screenshotMarker(
-        target=(1874, 311),
-        badge=(2060, 311),
+        target=(430, 311),
+        badge=(640, 311),
         description="Switch the basemap between satellite, street and blank styles.",
     ),
 ]
@@ -273,7 +273,7 @@ EXPORT_MARKERS = [
 # each screenshot in assets/getting_started/, by file stem: its size in pixels
 # and its markers, in that image's pixel coordinates
 SCREENSHOTS: dict[str, tuple[tuple[int, int], list[screenshotMarker]]] = {
-    "data_selection": ((2568, 2060), DATA_SELECTION_MARKERS),
+    "data_selection": ((2568, 2464), DATA_SELECTION_MARKERS),
     "inspector_toolbox": ((2160, 688), TOOLBOX_MARKERS),
     "inspector_panels": ((2134, 1036), PANEL_MARKERS),
     "inspector_spectrum": ((2116, 1078), SPECTRUM_MARKERS),

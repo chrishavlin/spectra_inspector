@@ -278,7 +278,7 @@ def test_update_selected_dataset_clears_the_selection(page, mocker):
 
     sisi.get_combined_image_metadata.assert_not_called()
     assert "No dataset" in active[0].children
-    assert metadata.children is None
+    assert "Select a dataset" in metadata.children
     assert store["selected_dataset"] is None
     assert store["sample_metadata"] == LISTING["sample_metadata"]
 

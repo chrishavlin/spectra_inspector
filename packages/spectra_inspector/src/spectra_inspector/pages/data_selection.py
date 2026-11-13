@@ -1,5 +1,5 @@
-"""The data selection page: the dataset table, the sample map and the metadata
-of the selected dataset.
+"""The data selection page: the sample map beside the metadata of the selected
+dataset, and the dataset table across the page below them.
 
 The selection is the value of the (hidden) dataset dropdown, which
 `update_selected_dataset` carries into the user store; everything else on the
@@ -158,6 +158,13 @@ def sample_summary(dataset: str, sample_metadata: dict | None) -> html.Div:
     return html.Div(children, className="mb-2")
 
 
+def metadata_placeholder() -> html.Div:
+    return html.Div(
+        "Select a dataset in the table to see its metadata.",
+        className="text-muted",
+    )
+
+
 def layout(**kwargs) -> html.Div:  # noqa: ARG001
 
     sisi = SpectraInspectorServerInterface()
@@ -184,12 +191,20 @@ def layout(**kwargs) -> html.Div:  # noqa: ARG001
             directory_selector(component_index=0),
             dbc.Row(
                 [
-                    dbc.Col(dbc.Card(dbc.CardBody(_dataset_table)), xs=12, xl=8),
-                    dbc.Col(dbc.Card(dbc.CardBody(base_map)), xs=12, xl=4),
+                    dbc.Col(dbc.Card(dbc.CardBody(base_map)), xs=12, xl=7),
+                    dbc.Col(
+                        # as tall as the map beside it, scrolling past that
+                        dbc.Card(
+                            dbc.CardBody(metadata_placeholder(), id="metadata-display"),
+                            className="si-dataset-metadata",
+                        ),
+                        xs=12,
+                        xl=5,
+                    ),
                 ],
                 className="g-3 mt-0",
             ),
-            html.Div(id="metadata-display", className="mt-3"),
+            dbc.Card(dbc.CardBody(_dataset_table), className="mt-3"),
         ]
     )
     return _layout
@@ -242,16 +257,12 @@ def update_selected_dataset(
         sample_metadata = new_user_data.get("sample_metadata")
         # the same dict the summary export writes out
         meta_dict = sample_metadata_display_dict(meta, sample_metadata, input_value)
-        md = dbc.Card(
-            dbc.CardBody(
-                [
-                    sample_summary(input_value, sample_metadata),
-                    nested_accordian(meta_dict),
-                ]
-            )
-        )
+        md = [
+            sample_summary(input_value, sample_metadata),
+            nested_accordian(meta_dict),
+        ]
     else:
-        md = html.Div()
+        md = metadata_placeholder()
     new_user_data = updateDataStore(new_user_data, "metadata_json", meta_json_str)
 
     active = active_dataset_display(input_value if has_input else None, spectrum_only)

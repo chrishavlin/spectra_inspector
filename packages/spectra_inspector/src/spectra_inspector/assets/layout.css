@@ -344,3 +344,11 @@
   flex: 1 1 auto;
   min-width: 0;
 }
+
+/* The metadata card beside the sample map: no taller than the map's card
+   (the map, its style dropdown and the card padding), scrolling past that. */
+.si-dataset-metadata {
+  height: 100%;
+  max-height: 35.5rem;
+  overflow-y: auto;
+}
