@@ -179,11 +179,14 @@ def build_export_metadata(
     show_peak_windows: bool | None = None,
     now: datetime.datetime | None = None,
     polygon: list[list[float]] | None = None,
+    image_scale_factor: int | None = None,
 ) -> dict[str, Any]:
     """The full record written with an export. ``md`` may be None when the
     server could not be reached for the metadata; the record then says so
     rather than the export failing. ``polygon`` carries the corners when the
-    selection is one, with ``index_ranges`` its bounding box."""
+    selection is one, with ``index_ranges`` its bounding box.
+    ``image_scale_factor`` is what the image files were reduced by (1 for
+    every map pixel), None when the export wrote none at a chosen size."""
     now = now or datetime.datetime.now(tz=ZoneInfo("UTC"))
     subselection = None
     if md is not None and index_ranges is not None and not spectrum_only:
@@ -198,6 +201,7 @@ def build_export_metadata(
             else None
         ),
         "subselection": subselection,
+        "image_scale_factor": image_scale_factor,
         "images": list(images or []),
         "spectrum": {
             "zeroed_elements": list(zeroed_elements or []),
@@ -283,6 +287,19 @@ def readme_text(metadata: dict[str, Any], files: list[str]) -> str:
     for f in sorted(files):
         description = described.get(f)
         lines.append(f"{f}: {description}" if description else f)
+
+    factor = metadata.get("image_scale_factor")
+    if factor is not None and metadata.get("images"):
+        lines.extend(["", "Image size", "----------"])
+        lines.append(
+            "Full resolution: one image pixel per map pixel."
+            if factor == 1
+            else f"Reduced by {factor}: each image pixel is the average of "
+            f"{factor} x {factor} map pixels."
+        )
+        lines.append(
+            "A small map is enlarged by a whole factor, each pixel drawn as a block."
+        )
 
     lines.extend(["", "Subselection", "------------"])
     lines.extend(subselection_lines(metadata.get("subselection")))

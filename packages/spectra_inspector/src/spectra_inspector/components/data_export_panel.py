@@ -6,6 +6,10 @@ from dash import Input, Output, State, callback, dcc, html
 
 from spectra_inspector.components.layout_ids import indexedLayoutIDMapper
 from spectra_inspector.components.toolbox import color_input
+from spectra_inspector.utilities.image_export import (
+    MIN_IMAGE_SIDE,
+    export_image_size,
+)
 from spectra_inspector.utilities.peak_windows import (
     element_swatch,
     spectrum_element_colors,
@@ -67,6 +71,8 @@ class dataExportPanelIDS(indexedLayoutIDMapper):
         "includeoutline",
         "outlinelinecolor",
         "outlinedotcolor",
+        "exportscale",
+        "exportscalecontainer",
     )
 
     def __init__(
@@ -138,6 +144,43 @@ class dataExportPanelIDS(indexedLayoutIDMapper):
     def outlinedotcolor(self) -> str:
         return self.full_id("-outlinedotcolor")
 
+    @property
+    def exportscale(self) -> str:
+        return self.full_id("-exportscale")
+
+    @property
+    def exportscalecontainer(self) -> str:
+        return self.full_id("-exportscalecontainer")
+
+
+def scale_options(
+    image_shape: tuple[int, int] | None, factors: Iterable[int]
+) -> list[dict[str, str | int]]:
+    """The image sizes the .zip export offers for a map of ``image_shape``
+    (rows, columns), one per scale factor: labelled with the width and height
+    the image is written with, or with the factor alone while the map's shape
+    is not known.
+
+    A factor that would take the map below the size the export enlarges small
+    images back up to is not offered, since it would come out no smaller; a
+    map too small for any of them keeps the gentlest."""
+    factors = list(factors)
+    if image_shape is not None:
+        worthwhile = [
+            f for f in factors if max(image_shape) / f >= MIN_IMAGE_SIDE or f == 1
+        ]
+        factors = worthwhile or [min(factors)]
+    options: list[dict[str, str | int]] = []
+    for factor in factors:
+        note = "full resolution" if factor == 1 else f"1/{factor} size"
+        if image_shape is None:
+            label = note
+        else:
+            rows, cols = export_image_size(image_shape, factor)
+            label = f"{cols} x {rows} px ({note})"
+        options.append({"label": label, "value": factor})
+    return options
+
 
 def _outline_color_input(id_: str) -> dbc.Input:
     return color_input(id_, DEFAULT_OUTLINE_COLOR)
@@ -194,7 +237,7 @@ def get_layout(
             dbc.Col(dcc.Markdown("format:"), width=4),
             dbc.Col(
                 dcc.Dropdown(
-                    [".zip", "PDF"],
+                    [".zip", "PDF", ".pptx"],
                     value=".zip",
                     id=layoutIDs.formatdropdown,
                     className="text-info",
@@ -209,6 +252,27 @@ def get_layout(
                 width=4,
             ),
         ],
+    )
+
+    # the image sizes on offer depend on the map, so the inspector page fills
+    # this in (``update_export_scale_options``) and shows it for the .zip only
+    scale_row = dbc.Row(
+        [
+            dbc.Col(dcc.Markdown("image size:"), width=4),
+            dbc.Col(
+                dcc.Dropdown(
+                    [],
+                    id=layoutIDs.exportscale,
+                    className="text-info",
+                    searchable=False,
+                    clearable=False,
+                ),
+                width=8,
+            ),
+        ],
+        id=layoutIDs.exportscalecontainer,
+        className="mt-1",
+        style={"display": "none"},
     )
 
     msa_row = dbc.Row(
@@ -261,7 +325,11 @@ def get_layout(
                             html.Hr(),
                             html.H4("Export summary", className="card-subtitle"),
                             dbc.Container(
-                                [summary_row, figure_settings_layout(layoutIDs)]
+                                [
+                                    summary_row,
+                                    scale_row,
+                                    figure_settings_layout(layoutIDs),
+                                ]
                             ),
                             html.Hr(),
                             html.H4("Export Spectrum", className="card-subtitle"),

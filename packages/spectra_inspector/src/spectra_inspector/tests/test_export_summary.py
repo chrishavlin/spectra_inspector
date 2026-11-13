@@ -10,6 +10,7 @@ import zipfile
 from pathlib import Path
 
 import plotly.graph_objects as go
+import pptx
 import pytest
 
 from spectra_inspector.settings import ENV_PREFIX
@@ -730,3 +731,168 @@ def test_spectrum_only_pdf(
     assert result["filename"].endswith(".pdf")
     written = {f.name for f in tmp_path.glob("*/*/*") if f.is_file()}
     assert written == {"spectrum.png", "SpectraInspectorSummary.pdf"}
+
+
+@pytest.mark.parametrize(
+    ("fmt", "chosen", "offered", "expected"),
+    [
+        (".zip", 2, None, 2),
+        # nothing chosen yet, or a factor the deployment does not offer: its first
+        (".zip", None, None, 1),
+        (".zip", 1, "4,2", 4),
+        # the documents size their images to the page whatever is chosen
+        ("PDF", 2, None, None),
+        (".pptx", 1, None, None),
+    ],
+)
+def test_the_chosen_image_size_applies_to_the_zip_only(
+    inspector,
+    image_figures,
+    spectrum_figure,
+    spectrum_metadata,
+    monkeypatch,
+    tmp_path,
+    fmt,
+    chosen,
+    offered,
+    expected,
+):
+    from spectra_inspector.utilities.summary_writer import summaryWriter
+
+    if offered is not None:
+        monkeypatch.setenv(f"{ENV_PREFIX}EXPORT_SCALE_FACTORS", offered)
+    seen = []
+    real = summaryWriter.write_static_figures
+
+    def spy(self, figures, **kwargs):
+        seen.append(kwargs.get("scale_factor"))
+        return real(self, figures, **kwargs)
+
+    monkeypatch.setattr(summaryWriter, "write_static_figures", spy)
+    _export(
+        inspector,
+        image_figures,
+        spectrum_figure,
+        spectrum_metadata,
+        export_summary_format=fmt,
+        export_scale=chosen,
+    )
+    assert seen == [expected]
+    if fmt == ".zip":
+        assert _exported_metadata(tmp_path)["image_scale_factor"] == expected
+        readme = _zip_file(tmp_path).read("README.txt").decode()
+        assert ("Full resolution" in readme) == (expected == 1)
+        assert (f"Reduced by {expected}" in readme) == (expected != 1)
+
+
+class TestExportScaleOptions:
+    def test_sizes_are_labelled_in_pixels_with_the_first_preselected(
+        self, inspector, monkeypatch
+    ):
+        monkeypatch.setenv(f"{ENV_PREFIX}EXPORT_SCALE_FACTORS", "2,1,4")
+        monkeypatch.setattr(
+            inspector.UserStore,
+            "conditionally_fetch_metadata",
+            lambda _self: combined_metadata((1536, 2048)),
+        )
+        options, value = inspector.update_export_scale_options(
+            "C-12", {"selected_dataset": "C-12"}, False
+        )
+        assert options == [
+            {"label": "1024 x 768 px (1/2 size)", "value": 2},
+            {"label": "2048 x 1536 px (full resolution)", "value": 1},
+            {"label": "512 x 384 px (1/4 size)", "value": 4},
+        ]
+        assert value == 2
+
+    def test_a_small_map_is_not_offered_sizes_that_come_out_no_smaller(
+        self, inspector, monkeypatch
+    ):
+        monkeypatch.setenv(f"{ENV_PREFIX}EXPORT_SCALE_FACTORS", "4,2,1")
+        monkeypatch.setattr(
+            inspector.UserStore,
+            "conditionally_fetch_metadata",
+            lambda _self: combined_metadata((300, 600)),
+        )
+        options, value = inspector.update_export_scale_options(
+            "C-12", {"selected_dataset": "C-12"}, False
+        )
+        assert [o["label"] for o in options] == [
+            "300 x 150 px (1/2 size)",
+            "600 x 300 px (full resolution)",
+        ]
+        assert value == 2
+
+        # too small for any factor on offer: the gentlest is kept
+        monkeypatch.setenv(f"{ENV_PREFIX}EXPORT_SCALE_FACTORS", "4,8")
+        options, value = inspector.update_export_scale_options(
+            "C-12", {"selected_dataset": "C-12"}, False
+        )
+        assert [o["value"] for o in options] == [4]
+        assert value == 4
+
+    def test_a_spectrum_is_offered_nothing(self, inspector):
+        store = {"selected_dataset": "C-12", "spectrum_only": True}
+        assert inspector.update_export_scale_options("C-12", store, False) == ([], None)
+        assert inspector.update_export_scale_options(None, {}, False) == ([], None)
+
+    def test_an_unreachable_server_leaves_the_bare_factors(
+        self, inspector, monkeypatch
+    ):
+        import requests
+
+        def fail(_self):
+            raise requests.exceptions.ConnectionError
+
+        monkeypatch.setattr(inspector.UserStore, "conditionally_fetch_metadata", fail)
+        options, value = inspector.update_export_scale_options("C-12", None, False)
+        assert [o["label"] for o in options] == [
+            "full resolution",
+            "1/2 size",
+            "1/4 size",
+        ]
+        assert value == 1
+
+    def test_shown_for_the_zip_of_a_map_only(self, inspector):
+        options = [{"label": "full resolution", "value": 1}]
+        assert inspector.toggle_export_scale(".zip", options) == {}
+        hidden = {"display": "none"}
+        assert inspector.toggle_export_scale("PDF", options) == hidden
+        assert inspector.toggle_export_scale(".pptx", options) == hidden
+        assert inspector.toggle_export_scale(".zip", []) == hidden
+
+
+def test_spectrum_only_pptx(
+    inspector, image_figures, spectrum_figure, spectrum_metadata, tmp_path
+):
+    result = _export(
+        inspector,
+        image_figures,
+        spectrum_figure,
+        spectrum_metadata,
+        user_store_dict={"selected_dataset": "C-12", "spectrum_only": True},
+        export_summary_format=".pptx",
+    )
+    assert result["filename"].endswith(".pptx")
+    written = {f.name for f in tmp_path.glob("*/*/*") if f.is_file()}
+    assert written == {"spectrum.png", "SpectraInspectorSummary.pptx"}
+
+
+def test_pptx_has_a_slide_per_panel(
+    inspector, image_figures, spectrum_figure, spectrum_metadata, tmp_path
+):
+    _export(
+        inspector,
+        image_figures,
+        spectrum_figure,
+        spectrum_metadata,
+        export_summary_format=".pptx",
+    )
+    (deck_file,) = tmp_path.glob("*/*/*.pptx")
+    titles = [
+        slide.shapes[0].text_frame.text
+        for slide in pptx.Presentation(str(deck_file)).slides
+    ]
+    pngs = sorted(f.stem for f in deck_file.parent.glob("bitmap*.png"))
+    assert len(pngs) == len(image_figures)
+    assert titles[-len(pngs) - 1 :] == [*pngs, "spectrum"]

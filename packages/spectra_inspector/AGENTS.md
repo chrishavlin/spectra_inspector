@@ -60,10 +60,11 @@ Clientside callbacks and DOM listeners live in `assets/*.js`.
   `utilities/sample_url.py` encodes the name on the data-selection link and the
   inspector's `layout()` decodes it once; everything downstream sees the real
   name.
-- **Export** (`utilities/summary_writer.py`, `export_metadata.py`,
-  `coerce.plotly_to_matplotlib`) rebuilds figures from stores and metadata
-  rather than trusting the figure props; its `sample` record is the same dict
-  the data-selection accordion shows.
+- **Export** (`utilities/summary_writer.py`, `image_export.py`,
+  `export_metadata.py`, `coerce.plotly_to_matplotlib`) rebuilds figures from
+  stores and metadata rather than trusting the figure props; its `sample` record
+  is the same dict the data-selection accordion shows. Image panels are never
+  saved with `savefig`: `image_export` writes their pixels itself.
 
 ## Dash and plotly rules that python cannot enforce
 

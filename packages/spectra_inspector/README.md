@@ -19,6 +19,11 @@ package reads is prefixed with `SPECTRA_INSPECTOR_`, matching the
   container instead.
 - `SPECTRA_INSPECTOR_MAX_TMP_DIRS`=100 max number of tmp directories before they
   start clearing
+- `SPECTRA_INSPECTOR_EXPORT_SCALE_FACTORS`='1,2,4' the image sizes offered for
+  the `.zip` summary export, as whole factors the map is reduced by (`1` writes
+  every map pixel, `2` half the width and height). The first entry is the one
+  preselected, so lead with a larger factor where downloads are slow. The PDF
+  and `.pptx` always size their images to the page
 - `SPECTRA_INSPECTOR_SERVER_HOST`=host to use. Only read when running outside
   docker: the compose files set it to the backend's service name (`fastapi`),
   which resolves over the compose network, so the backend needs no host port.

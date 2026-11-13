@@ -75,6 +75,7 @@ from spectra_inspector.components.spectrum_toolbox import (
 )
 from spectra_inspector.components.toolbox import RESET_EXTENT, ZOOM_FACTORS
 from spectra_inspector.logging import spectraLogger
+from spectra_inspector.settings import Settings
 from spectra_inspector.user_store_model import (
     USER_STORE_DIV_ID,
     UserStore,
@@ -1188,6 +1189,7 @@ def export_msa(
     State(_dataExportIDS.outlinelinecolor, "value"),
     State(_dataExportIDS.outlinedotcolor, "value"),
     State(_IDS.scalebar_style_store, "data"),
+    State(_dataExportIDS.exportscale, "value"),
     prevent_initial_call=True,
     running=[
         (Output(_dataExportIDS.exportsummary, "disabled"), True, False),
@@ -1204,7 +1206,7 @@ def export_summary(
     spectrum_figure,
     colormaps,
     user_store_dict,
-    export_summary_format: Literal[".zip", "PDF"] | None,
+    export_summary_format: Literal[".zip", "PDF", ".pptx"] | None,
     active_spectrum_metadata: dict | None,
     msafileformat: Literal["Y", "XY"] | None,
     zeroed_elements: list[str] | None,
@@ -1226,10 +1228,12 @@ def export_summary(
     outline_line_color: str | None = None,
     outline_dot_color: str | None = None,
     scalebar_store: dict | None = None,
+    export_scale: int | None = None,
 ):
     """Write the summary export: the spectrum plus, for a map, every image
     panel (and its box subset). A spectrum-only dataset has no images, so the
     panels are not consulted at all in that mode, whatever the page holds.
+    The .zip's images are reduced by the "image size" chosen on the panel.
 
     The spectrum carries its peaks into the export exactly as the page shows
     them: the "peak windows" switch and the zeroed-out elements both apply.
@@ -1285,7 +1289,12 @@ def export_summary(
     )
 
     s = summaryWriter()
-    s.write_static_figures(figs_to_write)
+    # the zip is the data export, so its images are written at the size asked
+    # for; the PDF and the deck only need what a page or a slide can show
+    scale_factor = None
+    if export_summary_format == ".zip":
+        scale_factor = _export_scale_factor(export_scale, s.settings)
+    s.write_static_figures(figs_to_write, scale_factor=scale_factor)
     s.set_export_metadata(
         _export_metadata(
             user_store,
@@ -1294,11 +1303,14 @@ def export_summary(
             panels,
             zeroed_elements,
             show_peak_windows,
+            scale_factor,
         )
     )
 
     if export_summary_format == "PDF":
         return dcc.send_file(s.get_pdf_path(generate_pdf=True))
+    if export_summary_format == ".pptx":
+        return dcc.send_file(s.get_pptx_path())
     if export_summary_format == ".zip" and active_spectrum_metadata is not None:
         # include the MSA for the zip as .msa and .csv
         _ = s.write_MSA(
@@ -1319,6 +1331,57 @@ def export_summary(
         return dcc.send_file(s.get_zip())
     msg = f"Unexpected value for format, {export_summary_format=}"
     raise ValueError(msg)
+
+
+def _export_scale_factor(chosen: int | None, settings: Settings) -> int:
+    """The factor the .zip's images are reduced by: the one picked on the
+    panel when the deployment offers it, else the deployment's first."""
+    factors = settings.export_scale_factors
+    return chosen if chosen in factors else factors[0]
+
+
+@callback(
+    Output(_dataExportIDS.exportscale, "options"),
+    Output(_dataExportIDS.exportscale, "value"),
+    Input(_IDS.sample_name, "children"),
+    State(USER_STORE_DIV_ID, "data"),
+    State(selectorIDs.get_id_with_index("spectrumonly"), "value"),
+)
+def update_export_scale_options(
+    sample_name: str | None,
+    user_store_dict: dict | None,
+    spectrum_only_switch: bool | None = False,
+):
+    """Offer the .zip's image sizes for the map on the page, each labelled
+    with the pixels it comes to, the deployment's first factor preselected.
+    A spectrum has no images, so it is offered nothing; a map whose shape the
+    server cannot be asked for is offered the bare factors."""
+    if not _valid_sample_name(sample_name) or resolve_spectrum_only(
+        user_store_dict, spectrum_only_switch
+    ):
+        return [], None
+    factors = Settings().export_scale_factors
+    store = _ensure_dataset(dict(user_store_dict or {}), sample_name)
+    try:
+        shape = _image_shape_or_none(UserStore(**store).conditionally_fetch_metadata())
+    except LOAD_ERRORS:
+        spectraLogger.exception("could not fetch the map's shape for the export sizes")
+        shape = None
+    options = data_export_panel.scale_options(shape, factors)
+    return options, options[0]["value"]
+
+
+@callback(
+    Output(_dataExportIDS.exportscalecontainer, "style"),
+    Input(_dataExportIDS.formatdropdown, "value"),
+    Input(_dataExportIDS.exportscale, "options"),
+)
+def toggle_export_scale(export_summary_format: str | None, options: list | None):
+    """The image size is the .zip's to choose: the PDF and the deck size their
+    images to the page, and a spectrum has none."""
+    if export_summary_format == ".zip" and options:
+        return {}
+    return {"display": "none"}
 
 
 @dataclass
@@ -1426,6 +1489,7 @@ def _export_metadata(
     panels: list[panelExport],
     zeroed_elements: list[str] | None,
     show_peak_windows: bool | None,
+    image_scale_factor: int | None = None,
 ) -> dict:
     """The record written next to the exported files: the sample
     metadata as the data-selection accordion shows it, the box in index and
@@ -1461,6 +1525,7 @@ def _export_metadata(
         images=images,
         zeroed_elements=zeroed_elements,
         show_peak_windows=show_peak_windows,
+        image_scale_factor=None if spectrum_only else image_scale_factor,
     )
 
 
