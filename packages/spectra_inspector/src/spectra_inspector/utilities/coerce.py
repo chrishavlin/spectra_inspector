@@ -261,13 +261,15 @@ def plotly_to_matplotlib(
     cmap: str | None = None,
     include_colorbar: bool = False,
     yaxis_scale: str | None = None,
+    title: str | None = None,
 ):
     """Convert a Plotly figure into a Matplotlib figure for static exports.
 
     The conversion preserves the underlying data values and carries over common
     styling cues such as axis titles, visible axes, and line styling. When
     ``yaxis_scale`` is given ("linear" or "log") it overrides the y-axis type
-    recorded in the figure's layout.
+    recorded in the figure's layout, and ``title`` likewise overrides the
+    layout's title.
     """
     if fig is None:
         return None
@@ -284,7 +286,7 @@ def plotly_to_matplotlib(
     layout = fig_dict.get("layout", {})
     xaxis = layout.get("xaxis", {})
     yaxis = layout.get("yaxis", {})
-    title = layout.get("title", {})
+    title = {"text": title} if title else layout.get("title", {})
 
     first_trace = data[0]
     trace_type = first_trace.get("type", "scatter")

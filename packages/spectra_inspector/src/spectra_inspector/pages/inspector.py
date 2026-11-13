@@ -1338,6 +1338,25 @@ class panelExport:
     def composite(self) -> bool:
         return self.channels is not None
 
+    @property
+    def title(self) -> str:
+        """What the exported image is titled: the element, or the energy
+        window of a custom range; a composite names each active channel with
+        its colour."""
+        if self.channels is not None:
+            return " + ".join(
+                f"{ch.label} ({ch.color})" for ch in self.channels if ch.active
+            )
+        if self.element_label and self.element_label != "none":
+            return self.element_label
+        assert self.energy_range is not None
+        lo, hi = self.energy_range
+        return f"{lo:g}-{hi:g} keV"
+
+    @property
+    def subset_title(self) -> str:
+        return f"{self.title} (subset)" if self.title else "subset"
+
     def metadata(self, has_subset: bool) -> dict[str, Any]:
         if self.channels is not None:
             return composite_image_metadata(
@@ -1494,7 +1513,9 @@ def _image_figures_to_write(
     figs_to_write = {}
     for panel in panels:
         figs_to_write[panel.stem] = plotly_to_matplotlib(
-            styled(panel.figure, full_shapes), cmap=panel.colormap
+            styled(panel.figure, full_shapes),
+            cmap=panel.colormap,
+            title=panel.title,
         )
         if not (index0_range and index1_range):
             continue
@@ -1519,7 +1540,9 @@ def _image_figures_to_write(
                 shapes=subset_shapes,
             )
             figs_to_write[subset_name] = plotly_to_matplotlib(
-                scalebar_styled(newfig.to_plotly_json(), scalebar), im_data=rgb
+                scalebar_styled(newfig.to_plotly_json(), scalebar),
+                im_data=rgb,
+                title=panel.subset_title,
             )
             continue
 
@@ -1544,6 +1567,7 @@ def _image_figures_to_write(
             scalebar_styled(newfig.to_plotly_json(), scalebar),
             im_data=im,
             cmap=panel.colormap,
+            title=panel.subset_title,
         )
 
     return figs_to_write

@@ -467,6 +467,30 @@ def test_box_export_draws_the_selected_pixels_in_the_chosen_colour(
     assert all(fig["layout"].get("shapes", []) == [] for fig in subsets)
 
 
+def test_exported_images_are_titled_with_their_element(
+    inspector, spectrum_figure, spectrum_metadata, monkeypatch
+):
+    titles: list[str] = []
+    convert = inspector.plotly_to_matplotlib
+
+    def capture(fig, **kwargs):
+        if fig["data"][0]["type"] == "heatmap":
+            titles.append(kwargs.get("title"))
+        return convert(fig, **kwargs)
+
+    monkeypatch.setattr(inspector, "plotly_to_matplotlib", capture)
+    _export(
+        inspector,
+        [_browser_figure_with_box()] * 2,
+        spectrum_figure,
+        spectrum_metadata,
+        shapes_store=BOX_STORE,
+        slider_range_list=[[0.5, 1.25], [6.2, 6.5]],
+    )
+    # a custom range has no element to name, so it is titled by its window
+    assert titles == ["0.5-1.25 keV", "0.5-1.25 keV (subset)", "Fe", "Fe (subset)"]
+
+
 def test_box_past_the_image_edge_exports_the_part_inside(
     inspector, image_figures, spectrum_figure, spectrum_metadata, tmp_path, monkeypatch
 ):
