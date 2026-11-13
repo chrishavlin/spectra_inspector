@@ -4,6 +4,7 @@ import dash_bootstrap_components as dbc
 from dash import ALL, Dash, Input, Output, State, callback, ctx, dcc, html
 from dash_bootstrap_templates import ThemeSwitchAIO
 
+from .components.inactivity_guard import inactivity_guard
 from .user_store_model import USER_STORE_DIV_ID
 
 # Set style sheet
@@ -99,20 +100,27 @@ def toggle_nav_offcanvas(_toggle_clicks, _link_clicks, is_open):
 # Content
 content = html.Div(dash.page_container, id="page-content", className="si-content")
 
+
 # App Layout
-app.layout = html.Div(
-    [
-        topbar,
-        offcanvas,
-        sidebar,
-        dcc.Store(
-            id=USER_STORE_DIV_ID,
-            storage_type="memory",
-            data={},
-        ),
-        content,
-    ]
-)
+def _layout() -> html.Div:
+    # a function, so each page load reads the settings the guard depends on
+    return html.Div(
+        [
+            topbar,
+            offcanvas,
+            sidebar,
+            dcc.Store(
+                id=USER_STORE_DIV_ID,
+                storage_type="memory",
+                data={},
+            ),
+            content,
+            inactivity_guard(),
+        ]
+    )
+
+
+app.layout = _layout
 
 # Run the App
 if __name__ == "__main__":

@@ -30,6 +30,10 @@ package reads is prefixed with `SPECTRA_INSPECTOR_`, matching the
   the sample dropdown. Requires `SPECTRA_INSPECTOR_DESKTOP_MODE=true` in the
   `spectra_inspector_server` `.env` as well — the endpoints it calls return
   `403` otherwise.
+- `SPECTRA_INSPECTOR_INACTIVITY_TIMEOUT_SECONDS`=1800. Desktop mode only: after
+  this long without mouse or keyboard input an overlay asks whether to continue
+  or start a new session (which reloads the start page and drops the selected
+  dataset, working directory and panels). `0` turns it off.
 - `SPECTRA_INSPECTOR_N_FRONTEND_WORKERS`=2 gunicorn worker processes started by
   the docker image (`gunicorn spectra_inspector.main:server`). Not read by
   `serve.py`, which runs the flask development server.
