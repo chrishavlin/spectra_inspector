@@ -538,7 +538,7 @@ def layout(
     mode_switch = dbc.RadioItems(
         id=_IDS.image_mode,
         options=list(IMAGE_MODES),
-        value=IMAGE_MODE_SINGLE,
+        value=IMAGE_MODE_MULTI,
         className="btn-group btn-group-sm",
         inputClassName="btn-check",
         labelClassName="btn btn-outline-secondary text-nowrap",
