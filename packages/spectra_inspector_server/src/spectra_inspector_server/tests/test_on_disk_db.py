@@ -1,9 +1,12 @@
 import logging
-from pathlib import Path
+from pathlib import Path, PureWindowsPath
 
 import pytest
 
-from spectra_inspector_server._database.on_disk_db import get_expected_files
+from spectra_inspector_server._database.on_disk_db import (
+    _mixed_basename_key,
+    get_expected_files,
+)
 from spectra_inspector_server._file_tree_handling import EDAXPathHandler
 
 
@@ -57,3 +60,57 @@ def test_add_fileset_return_value(tmp_path: Path) -> None:
     assert ph.database.add_fileset("C-1", files) is True
     assert ph.database.add_fileset("C-1", files) is False
     assert len(ph.database.available_maps) == 1
+
+
+def test_mixed_basenames_key_relative_to_root_and_derive_sample(
+    tmp_path: Path,
+) -> None:
+    root = tmp_path / "data_root"
+    _write_edax_set(root / "session-a", "C-12 Map1")
+    _write_edax_set(root / "session-a" / "nested", "C-12 Map2")
+    ph = EDAXPathHandler(root, init_db=True, allow_mixed_basenames=True)
+
+    # keyed by path relative to the data root, not the absolute server path
+    assert set(ph.database.available_maps) == {
+        "session-a/C-12 Map1.spd",
+        "session-a/nested/C-12 Map2.spd",
+    }
+    assert set(ph.database.available_spectra) == {
+        "session-a/C-12 Map1.spc",
+        "session-a/nested/C-12 Map2.spc",
+    }
+    assert ph.database.available_maps["session-a/C-12 Map1.spd"].spd == (
+        root / "session-a" / "C-12 Map1.spd"
+    )
+    # the sample id comes from the stem, so it matches the metadata csv
+    assert ph.database.available_samples == {
+        "session-a/C-12 Map1.spd": "C-12",
+        "session-a/C-12 Map1.spc": "C-12",
+        "session-a/nested/C-12 Map2.spd": "C-12",
+        "session-a/nested/C-12 Map2.spc": "C-12",
+    }
+
+
+def test_mixed_basenames_working_directory_keys_relative_to_root(
+    tmp_path: Path,
+) -> None:
+    root = tmp_path / "data_root"
+    _write_edax_set(root / "session-a", "C-12 Map1")
+    ph = EDAXPathHandler(root, init_db=False, allow_mixed_basenames=True)
+    ph.set_working_directory(root / "session-a")
+
+    assert set(ph.database.available_maps) == {"session-a/C-12 Map1.spd"}
+    assert ph.database.available_samples["session-a/C-12 Map1.spd"] == "C-12"
+
+
+def test_mixed_basename_key_is_posix_separated_on_windows() -> None:
+    root = PureWindowsPath(r"C:\data_root")
+    spd = root / "session-a" / "nested" / "C-12 Map2.spd"
+    assert _mixed_basename_key(spd, root) == "session-a/nested/C-12 Map2.spd"
+
+
+def test_dotted_basename_keeps_its_name_in_common_mode(tmp_path: Path) -> None:
+    _write_edax_set(tmp_path, "C-1.v2 Map1")
+    ph = EDAXPathHandler(tmp_path, init_db=True)
+
+    assert ph.database.available_samples == {"C-1.v2 Map1": "C-1.v2"}
