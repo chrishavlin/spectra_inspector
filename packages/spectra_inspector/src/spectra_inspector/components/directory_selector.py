@@ -1,17 +1,46 @@
 """A picker for the server-side working directory.
 
 Desktop deployments point the server at a data root holding far more datasets
-than a sample dropdown can usefully list, and scanning all of it at startup is
+than a dataset list can usefully show, and scanning all of it at startup is
 slow. In desktop mode the server defers that scan and instead lets a client walk
-the tree (always within the data root) and pick one directory to scan. This
-component drives that: browse with the dropdown / Up button, then commit with
-"Use this directory", which repopulates the dataset selector alongside it.
+the tree (always within the data root) and pick one directory to scan.
+
+The page shows one line, the directory in use and what was loaded from it,
+with a button that opens the picker as a dialog laid out like a file explorer:
+a breadcrumb of the position, the subdirectories of that position in a grid,
+and "Use" to commit. Browsing never walks a subtree: every position costs the
+server one listing of one directory, and the count shown is of that directory
+alone. Only committing scans, and only then does "Include subdirectories" mean
+anything -- it says whether that scan is recursive.
+
+"Use" commits the subdirectory selected in the grid, or the directory being
+browsed when none is, and its label says which. A double click (or Enter, see
+``assets/dataset_table.js``) descends instead.
+
+Two stores hold the state: the browse position, which only the dialog shows,
+and the committed directory, whose payload `store_working_directory` copies
+into the user store. The line on the page is rendered from the user store, so
+it never shows a position that was merely browsed.
 """
 
 from typing import Any
 
+import dash_ag_grid as dag
 import dash_bootstrap_components as dbc
-from dash import ALL, MATCH, Input, Output, State, callback, ctx, dcc, html, no_update
+from dash import (
+    ALL,
+    MATCH,
+    ClientsideFunction,
+    Input,
+    Output,
+    State,
+    callback,
+    clientside_callback,
+    ctx,
+    dcc,
+    html,
+    no_update,
+)
 
 from spectra_inspector.components.dataset_selector import (
     dataset_names,
@@ -39,15 +68,22 @@ DATA_ROOT_LABEL = "<data root>"
 class directorySelectorLayoutIDs(indexedLayoutIDMapper):
     prop_names: tuple[str, ...] = (
         "div",
+        "current",
+        "loaded",
+        "open",
+        "modal",
+        "cancel",
         "path",
+        "crumb",
+        "filter",
         "entries",
-        "entry",
-        "up",
+        "count",
         "use",
         "recursive",
         "status",
         "browsestore",
         "committedstore",
+        "rootstore",
     )
 
     def __init__(
@@ -56,20 +92,44 @@ class directorySelectorLayoutIDs(indexedLayoutIDMapper):
         super().__init__(id_type_base, index)
 
     @property
+    def current(self) -> str:
+        return self.full_id("-current")
+
+    @property
+    def loaded(self) -> str:
+        return self.full_id("-loaded")
+
+    @property
+    def open(self) -> str:
+        return self.full_id("-open")
+
+    @property
+    def modal(self) -> str:
+        return self.full_id("-modal")
+
+    @property
+    def cancel(self) -> str:
+        return self.full_id("-cancel")
+
+    @property
     def path(self) -> str:
         return self.full_id("-path")
+
+    @property
+    def crumb(self) -> str:
+        return self.full_id("-crumb")
+
+    @property
+    def filter(self) -> str:
+        return self.full_id("-filter")
 
     @property
     def entries(self) -> str:
         return self.full_id("-entries")
 
     @property
-    def entry(self) -> str:
-        return self.full_id("-entry")
-
-    @property
-    def up(self) -> str:
-        return self.full_id("-up")
+    def count(self) -> str:
+        return self.full_id("-count")
 
     @property
     def use(self) -> str:
@@ -90,6 +150,14 @@ class directorySelectorLayoutIDs(indexedLayoutIDMapper):
     @property
     def committedstore(self) -> str:
         return self.full_id("-committedstore")
+
+    @property
+    def rootstore(self) -> str:
+        return self.full_id("-rootstore")
+
+
+USE_CURRENT_LABEL = "Use this directory"
+NO_DIRECTORY_LABEL = "none chosen yet"
 
 
 def desktop_mode_enabled() -> bool:
@@ -127,23 +195,11 @@ def path_label(path: str | None, root: str | None = None) -> str:
     return f"{root_label.rstrip('/')}/{path}"
 
 
-def parent_path(path: str | None) -> str | None:
-    """The parent of a data-root-relative path, or None at the data root.
-
-    The server always sends these as posix paths relative to the data root, so
-    the parent can be derived here without another round trip.
-    """
-    if not path:
-        return None
-    parent, _, _ = path.rpartition("/")
-    return parent
-
-
 def directory_selector(
     component_index: int = 0,
     enabled: bool | None = None,
 ) -> html.Div:
-    """The working-directory picker.
+    """The working-directory line and the dialog it opens.
 
     Returns an empty div outside of desktop mode, which leaves every callback
     below inert: none of their inputs exist on the page.
@@ -157,83 +213,139 @@ def directory_selector(
     if not enabled:
         return html.Div(id=IDS.full_id(f"-disabled-{component_index}"))
 
-    browse_controls = dbc.Row(
+    root = data_root_label()
+
+    stores = [
+        # None rather than a path: it means "not hydrated yet", and
+        # `hydrate_browse_position` fills it in on mount from the user
+        # store. Both pages embed a picker of their own and dash rebuilds a
+        # page's layout on every navigation, so a hardcoded path here is
+        # what used to reset the picker to the data root on a page switch.
+        dcc.Store(
+            id=IDS.get_id_with_index("browsestore"),
+            storage_type="memory",
+            data=None,
+        ),
+        dcc.Store(
+            id=IDS.get_id_with_index("committedstore"),
+            storage_type="memory",
+            data={},
+        ),
+        dcc.Store(
+            id=IDS.get_id_with_index("rootstore"),
+            storage_type="memory",
+            data=root,
+        ),
+    ]
+
+    summary = html.Div(
         [
-            dbc.Col(
-                dbc.Button(
-                    "Up",
-                    id=IDS.get_id_with_index("up"),
-                    n_clicks=0,
-                    color="secondary",
-                    title="Go to the parent directory",
-                ),
-                width=4,
+            html.Span("Working directory:", className="fw-bold"),
+            html.Span(
+                NO_DIRECTORY_LABEL,
+                id=IDS.get_id_with_index("current"),
+                style={"wordBreak": "break-all"},
             ),
-            dbc.Col(
-                dbc.Button(
-                    "Use this directory",
-                    id=IDS.get_id_with_index("use"),
-                    n_clicks=0,
-                    color="primary",
-                ),
-                width=8,
+            dbc.Button(
+                "Change…",
+                id=IDS.get_id_with_index("open"),
+                n_clicks=0,
+                color="secondary",
+                size="sm",
             ),
+            html.Span(id=IDS.get_id_with_index("loaded"), className="text-muted small"),
         ],
-        align="center",
-        className="g-1",
+        className="si-working-directory",
     )
 
-    # a directory can hold a lot of subdirectories, so the list scrolls rather
-    # than pushing the rest of the page down.
-    subdirectories = dbc.ListGroup(
-        [],
+    # a directory can hold a great many subdirectories; the grid only renders
+    # the rows in view, and its quick filter narrows them without a round trip.
+    entries = dag.AgGrid(
         id=IDS.get_id_with_index("entries"),
-        flush=True,
-        style={"maxHeight": "16rem", "overflowY": "auto"},
+        columnDefs=[{"field": "name", "headerName": "Subdirectories"}],
+        rowData=[],
+        getRowId="params.data.path",
+        defaultColDef={"sortable": True, "flex": 1},
+        dashGridOptions={
+            "rowSelection": {
+                "mode": "singleRow",
+                "checkboxes": False,
+                "enableClickSelection": True,
+            },
+            "animateRows": False,
+            "localeText": {"noRowsToShow": "No subdirectories."},
+        },
+        className="si-grid si-directory-grid",
+        style={"height": "20rem", "width": "100%"},
+    )
+
+    dialog = dbc.Modal(
+        [
+            dbc.ModalHeader(dbc.ModalTitle("Choose working directory")),
+            dbc.ModalBody(
+                [
+                    html.Div(
+                        [
+                            html.Div(
+                                breadcrumb("", root, component_index),
+                                id=IDS.get_id_with_index("path"),
+                                className="si-directory-path",
+                            ),
+                            dbc.Input(
+                                id=IDS.get_id_with_index("filter"),
+                                type="search",
+                                placeholder="Filter…",
+                                size="sm",
+                                style={"maxWidth": "12rem"},
+                            ),
+                        ],
+                        className="si-directory-bar",
+                    ),
+                    entries,
+                    html.Div(
+                        id=IDS.get_id_with_index("count"),
+                        className="text-muted small mt-2",
+                    ),
+                ]
+            ),
+            dbc.ModalFooter(
+                [
+                    dbc.Checkbox(
+                        id=IDS.get_id_with_index("recursive"),
+                        label="Include subdirectories when loading",
+                        value=True,
+                        className="me-auto mb-0",
+                    ),
+                    dcc.Loading(
+                        html.Div(
+                            id=IDS.get_id_with_index("status"),
+                            className="text-danger small",
+                        ),
+                        type="circle",
+                    ),
+                    dbc.Button(
+                        "Cancel",
+                        id=IDS.get_id_with_index("cancel"),
+                        n_clicks=0,
+                        color="secondary",
+                    ),
+                    dbc.Button(
+                        USE_CURRENT_LABEL,
+                        id=IDS.get_id_with_index("use"),
+                        n_clicks=0,
+                        color="primary",
+                    ),
+                ]
+            ),
+        ],
+        id=IDS.get_id_with_index("modal"),
+        is_open=False,
+        size="lg",
+        centered=True,
     )
 
     return html.Div(
-        [
-            # None rather than a path: it means "not hydrated yet", and
-            # `hydrate_browse_position` fills it in on mount from the user
-            # store. Both pages embed a picker of their own and dash rebuilds a
-            # page's layout on every navigation, so a hardcoded path here is
-            # what used to reset the picker to the data root on a page switch.
-            dcc.Store(
-                id=IDS.get_id_with_index("browsestore"),
-                storage_type="memory",
-                data=None,
-            ),
-            dcc.Store(
-                id=IDS.get_id_with_index("committedstore"),
-                storage_type="memory",
-                data={},
-            ),
-            dbc.Card(
-                dbc.CardBody(
-                    [
-                        html.Div("Working directory: ", className="fw-bold"),
-                        html.Div(
-                            path_label("", root=data_root_label()),
-                            id=IDS.get_id_with_index("path"),
-                            style={"wordBreak": "break-all"},
-                        ),
-                        html.Br(),
-                        browse_controls,
-                        subdirectories,
-                        dbc.Checkbox(
-                            id=IDS.get_id_with_index("recursive"),
-                            label="Include subdirectories",
-                            value=True,
-                        ),
-                        dcc.Loading(
-                            html.Div(id=IDS.get_id_with_index("status")),
-                            type="circle",
-                        ),
-                    ]
-                )
-            ),
-        ],
+        [*stores, summary, dialog],
         id=IDS.get_id_with_index("div"),
     )
 
@@ -255,71 +367,94 @@ def _matched_index() -> int:
         return 0
 
 
-def entry_id(component_index: int, path: str) -> dict[str, Any]:
-    """The id of one clickable subdirectory.
+def crumb_id(component_index: int, path: str) -> dict[str, Any]:
+    """The id of one clickable breadcrumb segment.
 
     The extra `name` key carries the path, so the navigation callback can read
     it straight off ctx.triggered_id. It is an ALL wildcard there, which is
     allowed alongside the MATCH on `index`.
     """
-    return {"type": _IDS.entry, "index": component_index, "name": path}
+    return {"type": _IDS.crumb, "index": component_index, "name": path}
 
 
-def _subdir_items(listing, component_index: int) -> list:
-    if not listing.directories:
-        return [
-            dbc.ListGroupItem(
-                "No subdirectories.", disabled=True, className="text-muted"
+def breadcrumb(path: str | None, root: str, component_index: int) -> list:
+    """The browse position as segments, each but the last a link to it.
+
+    The first segment is the data root, spelled out as `data_root_label` has
+    it; the last is the position itself, so it is plain text.
+    """
+    segments = [(root, "")]
+    walked = ""
+    for part in (path or "").split("/"):
+        if not part:
+            continue
+        walked = f"{walked}/{part}" if walked else part
+        segments.append((part, walked))
+
+    children: list = []
+    for i, (label, target) in enumerate(segments):
+        if i:
+            children.append(html.Span("/", className="text-muted"))
+        if i == len(segments) - 1:
+            children.append(html.Span(label, className="fw-bold"))
+        else:
+            children.append(
+                dbc.Button(
+                    label,
+                    id=crumb_id(component_index, target),
+                    n_clicks=0,
+                    color="link",
+                    size="sm",
+                    className="p-0 text-start",
+                )
             )
-        ]
+    return children
 
-    return [
-        dbc.ListGroupItem(
-            d.name,
-            id=entry_id(component_index, d.path),
-            action=True,
-            n_clicks=0,
-            style={"cursor": "pointer"},
-        )
-        for d in listing.directories
-    ]
+
+def _entry_rows(listing) -> list[dict[str, str]]:
+    return [{"name": d.name, "path": d.path} for d in listing.directories]
 
 
 @callback(
     Output({"type": _IDS.browsestore, "index": MATCH}, "data"),
-    Input({"type": _IDS.entry, "index": MATCH, "name": ALL}, "n_clicks"),
-    Input({"type": _IDS.up, "index": MATCH}, "n_clicks"),
+    Input({"type": _IDS.entries, "index": MATCH}, "cellDoubleClicked"),
+    Input({"type": _IDS.crumb, "index": MATCH, "name": ALL}, "n_clicks"),
+    Input({"type": _IDS.committedstore, "index": MATCH}, "data"),
     State({"type": _IDS.browsestore, "index": MATCH}, "data"),
     prevent_initial_call=True,
 )
 def navigate_directory(
-    entry_clicks: list[int | None], n_up: int, browse_data: dict | None
+    double_clicked: dict | None,
+    crumb_clicks: list[int | None],
+    committed: dict | None,
+    browse_data: dict | None,
 ):
-    """Move the browse position down into a subdirectory or up to the parent.
-
-    Descending is driven by clicks on the listed subdirectories rather than by a
-    dropdown value: a dropdown would need clearing after each navigation, and
-    clearing it from the callback that renders the listing is a dependency cycle
-    (browse store -> dropdown value -> browse store).
-    """
+    """Move the browse position: down into a double-clicked subdirectory, up to
+    a breadcrumb segment, or onto a directory that was just committed (which
+    may be a subdirectory picked in the grid rather than the position)."""
 
     triggered = ctx.triggered_id or {}
+    current = (browse_data or {}).get("path", "")
 
-    if triggered.get("type") == _IDS.up:
-        parent = parent_path((browse_data or {}).get("path", ""))
-        if not n_up or parent is None:
-            # already at the data root
+    if triggered.get("type") == _IDS.entries:
+        path = (double_clicked or {}).get("rowId")
+        if not path:
             return no_update
-        return {"path": parent}
+        return {"path": path}
 
-    if triggered.get("type") != _IDS.entry:
-        return no_update
+    if triggered.get("type") == _IDS.crumb:
+        if not any(crumb_clicks or []):
+            # the breadcrumb was just re-rendered, which fires this with every
+            # count at 0
+            return no_update
+        return {"path": triggered.get("name", "")}
 
-    if not any(entry_clicks or []):
-        # the list was just re-rendered, which fires this with every count at 0
-        return no_update
+    if triggered.get("type") == _IDS.committedstore:
+        if not committed or committed.get("path", "") == current:
+            return no_update
+        return {"path": committed.get("path", "")}
 
-    return {"path": triggered.get("name", "")}
+    return no_update
 
 
 @callback(
@@ -349,12 +484,12 @@ def _count_label(n: int, spectrum_only: bool = False) -> str:
 
 
 def loaded_status(
-    n_datasets: int, label: str, truncated: bool = False, spectrum_only: bool = False
-) -> html.Div:
-    """The message shown for a directory that has been scanned into the server.
+    n_datasets: int, truncated: bool = False, spectrum_only: bool = False
+) -> html.Span:
+    """What the page says was loaded from the directory in use.
 
     A truncated scan is called out explicitly: the server stopped at its
-    SPECTRA_INSPECTOR_MAX_DATASETS limit, so the dropdown holds the first N of
+    SPECTRA_INSPECTOR_MAX_DATASETS limit, so the listing holds the first N of
     an unknown larger number and the missing ones are only reachable by picking
     a narrower directory.
     """
@@ -362,61 +497,36 @@ def loaded_status(
     counted = _count_label(n_datasets, spectrum_only)
 
     if not truncated:
-        return html.Div(f"Loaded {counted} from {label}.")
+        return html.Span(f"{counted} loaded.")
 
-    return html.Div(
-        [
-            html.Div(
-                f"Showing the first {counted} in {label}.",
-                className="fw-bold",
-            ),
-            html.Div(
-                "The server stopped scanning at its dataset limit, so this "
-                "directory holds more than are listed. Pick a subdirectory to "
-                "reach the rest.",
-            ),
-        ],
+    return html.Span(
+        f"Showing the first {counted}: the server stopped scanning at its "
+        "dataset limit, so this directory holds more than are listed. Pick a "
+        "subdirectory to reach the rest.",
         className="text-warning",
     )
 
 
-def browse_status(
-    n_datasets: int, has_subdirectories: bool, spectrum_only: bool = False
-) -> str:
-    """What a directory that is only being browsed reports.
+def browse_status(n_datasets: int, n_spectra: int) -> str:
+    """What the dialog says about the directory being browsed. The counts are
+    of this directory alone, and say so: the subdirectories are not walked
+    until a directory is committed."""
+    return (
+        f"This directory: {_count_label(n_datasets)}, "
+        f"{_count_label(n_spectra, spectrum_only=True)}."
+    )
 
-    The count is of this directory alone, which read as though it covered the
-    whole subtree, so point at the button that does search the subtree -- but
-    only where there is a subtree to search.
+
+def committed_status(user_data: dict | None) -> html.Span | None:
+    """`loaded_status` for the directory in use, or None before one is chosen.
+
+    Built from the user store rather than remembered per mount: the line is
+    page-local, and both pages show one. The store holds what was found in the
+    working directory, counted here as spectra or datasets by its mode.
     """
-    status = f"{_count_label(n_datasets, spectrum_only)} in this directory."
-    if has_subdirectories:
-        status += ' Click "Use this directory" to search the subdirectories.'
-    return status
-
-
-def committed_status(path: str, user_data: dict | None, root: str) -> html.Div | None:
-    """The "loaded" message for `path`, or None if it is not the directory in
-    use.
-
-    Rebuilt from the user store rather than remembered per mount: the status
-    div is page-local, so the message `use_directory` wrote on one page is gone
-    by the time the other page's picker mounts, the same way the browse
-    position is. The store holds the working directory and what was found in
-    it, which is everything the message needs.
-    """
-
-    return committed_status_for_label(path, user_data, path_label(path, root=root))
-
-
-def committed_status_for_label(
-    path: str, user_data: dict | None, label: str
-) -> html.Div | None:
-    """`committed_status` with the directory label already rendered, counting
-    spectra or datasets according to the mode in the store."""
 
     store = UserStore(**(user_data or {}))
-    if store.available_files is None or (store.working_directory or "") != path:
+    if store.working_directory is None or store.available_files is None:
         return None
     if store.spectrum_only:
         n_loaded = len(store.available_spectra or [])
@@ -424,7 +534,6 @@ def committed_status_for_label(
         n_loaded = len(store.available_files)
     return loaded_status(
         n_loaded,
-        label,
         truncated=store.truncated,
         spectrum_only=store.spectrum_only,
     )
@@ -432,18 +541,17 @@ def committed_status_for_label(
 
 @callback(
     Output({"type": _IDS.path, "index": MATCH}, "children"),
-    Output({"type": _IDS.entries, "index": MATCH}, "children"),
-    Output({"type": _IDS.up, "index": MATCH}, "disabled"),
-    Output({"type": _IDS.status, "index": MATCH}, "children"),
+    Output({"type": _IDS.entries, "index": MATCH}, "rowData"),
+    Output({"type": _IDS.entries, "index": MATCH}, "selectedRows"),
+    Output({"type": _IDS.count, "index": MATCH}, "children"),
     Input({"type": _IDS.browsestore, "index": MATCH}, "data"),
-    State(USER_STORE_DIV_ID, "data"),
 )
-def show_directory_listing(browse_data: dict | None, user_data: dict | None):
-    """Fetch the listing for the current browse position and render it.
+def show_directory_listing(browse_data: dict | None):
+    """Fetch the listing for the current browse position and render it: one
+    request for one directory, however deep the tree below it is.
 
-    The user store is a State rather than an Input: it is read to restore the
-    status message on a fresh mount, and re-fetching the listing every time
-    something else writes the store would be a round trip for nothing.
+    The grid's selection is emptied with every listing. Left alone, the prop
+    keeps naming a row of the previous directory, and "Use" would commit that.
     """
 
     if browse_data is None:
@@ -453,13 +561,12 @@ def show_directory_listing(browse_data: dict | None, user_data: dict | None):
         return no_update, no_update, no_update, no_update
 
     path = browse_data.get("path", "")
-    at_root = parent_path(path) is None
     component_index = _matched_index()
 
     sisi = SpectraInspectorServerInterface()
     if not sisi.connected:
         msg = "Could not connect to spectra_inspector_server backend."
-        return path_label(path), [], at_root, html.Div(msg)
+        return breadcrumb(path, DATA_ROOT_LABEL, component_index), [], [], msg
 
     root = data_root_label(sisi)
 
@@ -467,51 +574,94 @@ def show_directory_listing(browse_data: dict | None, user_data: dict | None):
         listing = sisi.browse_directory(path)
     except ServerRequestError as err:
         spectraLogger.warning(f"Could not browse '{path}': {err}")
-        return path_label(path, root=root), [], at_root, html.Div(str(err))
-
-    spectrum_only = UserStore(**(user_data or {})).spectrum_only
-    n_here = listing.spectrum_count if spectrum_only else listing.dataset_count
-    status = committed_status(listing.path, user_data, root) or html.Div(
-        browse_status(n_here, bool(listing.directories), spectrum_only=spectrum_only)
-    )
+        return breadcrumb(path, root, component_index), [], [], str(err)
 
     return (
-        path_label(listing.path, root=root),
-        _subdir_items(listing, component_index),
-        listing.parent_path is None,
-        status,
+        breadcrumb(listing.path, root, component_index),
+        _entry_rows(listing),
+        [],
+        browse_status(listing.dataset_count, listing.spectrum_count),
     )
+
+
+clientside_callback(
+    ClientsideFunction(namespace="dataset_table", function_name="quick_filter"),
+    Output({"type": _IDS.entries, "index": MATCH}, "dashGridOptions"),
+    Input({"type": _IDS.filter, "index": MATCH}, "value"),
+    State({"type": _IDS.entries, "index": MATCH}, "dashGridOptions"),
+)
+
+# a filter typed for one directory says nothing about the next
+clientside_callback(
+    ClientsideFunction(namespace="dataset_table", function_name="clear"),
+    Output({"type": _IDS.filter, "index": MATCH}, "value"),
+    Input({"type": _IDS.browsestore, "index": MATCH}, "data"),
+    prevent_initial_call=True,
+)
+
+
+def selected_entry(selected_rows: list[dict] | dict | None) -> dict | None:
+    """The subdirectory selected in the grid, as its row."""
+    if not selected_rows or isinstance(selected_rows, dict):
+        return None
+    row = selected_rows[0]
+    return row if row.get("path") else None
 
 
 @callback(
-    Output({"type": _IDS.status, "index": MATCH}, "children", allow_duplicate=True),
-    Input(USER_STORE_DIV_ID, "data"),
-    Input({"type": _IDS.div, "index": MATCH}, "id"),
-    State({"type": _IDS.browsestore, "index": MATCH}, "data"),
-    State({"type": _IDS.path, "index": MATCH}, "children"),
+    Output({"type": _IDS.use, "index": MATCH}, "children"),
+    Input({"type": _IDS.entries, "index": MATCH}, "selectedRows"),
+)
+def label_use_button(selected_rows: list[dict] | None):
+    """Say on the button what it will commit."""
+    entry = selected_entry(selected_rows)
+    if entry is None:
+        return USE_CURRENT_LABEL
+    return f'Use "{entry.get("name") or entry["path"]}"'
+
+
+@callback(
+    Output({"type": _IDS.modal, "index": MATCH}, "is_open"),
+    Input({"type": _IDS.open, "index": MATCH}, "n_clicks"),
+    Input({"type": _IDS.cancel, "index": MATCH}, "n_clicks"),
+    Input({"type": _IDS.committedstore, "index": MATCH}, "data"),
     prevent_initial_call=True,
 )
-def recount_committed_status(
-    user_data: dict | None,
-    _div_id: dict,
-    browse_data: dict | None,
-    path_children: str | None,
-):
-    """Keep the "Loaded N ..." line counting the kind of dataset the mode shows.
+def toggle_directory_dialog(n_open: int, n_cancel: int, committed: dict | None):
+    """Open on "Change…", close on "Cancel" and once a directory is committed.
+    A scan that failed commits nothing, so the dialog stays up with its error."""
+    triggered = (ctx.triggered_id or {}).get("type")
+    if triggered == _IDS.open:
+        return True if n_open else no_update
+    if triggered == _IDS.cancel:
+        return False if n_cancel else no_update
+    if triggered == _IDS.committedstore and committed:
+        return False
+    return no_update
 
-    It listens to the user store rather than to the "Spectrum only" switch: the
-    switch's own callback is what writes the mode into the store, and a sibling
-    triggered by the switch would read the store before that write lands. The
-    div's static id is only there to anchor the MATCH. Nothing here needs the
-    server -- the counts and the rendered label are already on the page.
+
+@callback(
+    Output({"type": _IDS.current, "index": MATCH}, "children"),
+    Output({"type": _IDS.loaded, "index": MATCH}, "children"),
+    Input(USER_STORE_DIV_ID, "data"),
+    Input({"type": _IDS.div, "index": MATCH}, "id"),
+    State({"type": _IDS.rootstore, "index": MATCH}, "data"),
+)
+def show_committed_directory(user_data: dict | None, _div_id: dict, root: str | None):
+    """The line on the page: the directory in use and what was loaded from it.
+
+    It follows the user store, so it is right on a freshly mounted page and
+    recounts when the mode flips between datasets and spectra. The div's static
+    id is only there to anchor the MATCH.
     """
-
-    if browse_data is None or not isinstance(path_children, str):
-        return no_update
-    status = committed_status_for_label(
-        browse_data.get("path", ""), user_data, path_children
+    store = UserStore(**(user_data or {}))
+    if store.working_directory is None:
+        return NO_DIRECTORY_LABEL, ""
+    status = committed_status(user_data)
+    return (
+        path_label(store.working_directory, root=root),
+        status if status is not None else "",
     )
-    return status if status is not None else no_update
 
 
 @callback(
@@ -525,6 +675,7 @@ def recount_committed_status(
     State({"type": _IDS.browsestore, "index": MATCH}, "data"),
     State({"type": _IDS.recursive, "index": MATCH}, "value"),
     State({"type": _datasetIDS.spectrumonly, "index": MATCH}, "value"),
+    State({"type": _IDS.entries, "index": MATCH}, "selectedRows"),
     prevent_initial_call=True,
 )
 def use_directory(
@@ -532,14 +683,18 @@ def use_directory(
     browse_data: dict | None,
     recursive: bool,
     spectrum_only: bool | None = False,
+    selected_rows: list[dict] | None = None,
 ):
-    """Scan the browsed directory on the server and load what it holds into the
-    sample dropdown sitting next to this component.
+    """Scan a directory on the server and load what it holds into the dataset
+    selector sitting next to this component: the subdirectory selected in the
+    grid, or the browsed directory itself when none is. This is the one place
+    a subtree is walked, and only when ``recursive`` asks for it.
 
     Everything the rest of the app needs goes into the committed store rather
     than straight into the user store: every output here has to carry the same
     MATCH keys, and the user store is a plain id. `store_working_directory`
-    picks it up from there.
+    picks it up from there. The status output is the dialog's, for a scan that
+    failed.
 
     This sets the dropdown's options but deliberately leaves its *value* alone;
     `store_working_directory` clears that, and the note there explains why the
@@ -553,14 +708,15 @@ def use_directory(
     if not n_clicks:
         return no_update, no_update, no_update, no_update
 
-    path = (browse_data or {}).get("path", "")
+    entry = selected_entry(selected_rows)
+    path = entry["path"] if entry else (browse_data or {}).get("path", "")
     sisi = SpectraInspectorServerInterface()
 
     try:
         available = sisi.get_datasets_in_directory(path, recursive=bool(recursive))
     except ServerRequestError as err:
         spectraLogger.warning(f"Could not scan '{path}': {err}")
-        return no_update, html.Div(str(err)), no_update, no_update
+        return no_update, str(err), no_update, no_update
 
     lists = list_store_data(available)
     available_files = lists["available_files"]
@@ -570,17 +726,13 @@ def use_directory(
         f"{len(available_spectra)} spectra"
     )
 
-    label = path_label(path, root=data_root_label(sisi))
     shown = dataset_names(lists, bool(spectrum_only))
 
     return (
         dropdown_options(shown),
-        loaded_status(
-            len(shown),
-            label,
-            truncated=available.truncated,
-            spectrum_only=bool(spectrum_only),
-        ),
+        # the dialog closes on a commit; what was loaded is reported on the
+        # page, by `show_committed_directory`
+        "",
         {
             "path": path,
             "recursive": bool(recursive),

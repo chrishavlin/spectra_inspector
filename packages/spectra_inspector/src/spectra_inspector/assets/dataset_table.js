@@ -14,6 +14,9 @@ window.dash_clientside.dataset_table = {
   quick_filter: function (text, options) {
     return { ...(options || {}), quickFilterText: text || "" };
   },
+  clear: function () {
+    return "";
+  },
 };
 
 document.addEventListener("keydown", (event) => {

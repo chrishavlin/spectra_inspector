@@ -578,7 +578,8 @@ def filter_table_from_map(
     not re-trigger anything).
     """
     current = current or []
-    known = {str(r["sample_id"]) for r in _listing_metadata(listing).get("records", [])}
+    records = _listing_metadata(listing).get("records") or []
+    known = {str(r["sample_id"]) for r in records}
     trigger_props = {t["prop_id"].rpartition(".")[2] for t in ctx.triggered}
 
     samples: list[str] = []

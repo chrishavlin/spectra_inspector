@@ -258,7 +258,7 @@ def count_label(
     if truncated:
         label += (
             f" (the first {n_total} found: the scan stopped at the server's "
-            "dataset limit, pick a narrower directory to reach the rest)"
+            "dataset limit)"
         )
     return label
 
