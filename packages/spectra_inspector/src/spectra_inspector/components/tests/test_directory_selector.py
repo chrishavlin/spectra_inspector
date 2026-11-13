@@ -10,6 +10,7 @@ from dash._utils import AttributeDict
 # the components package re-exports the directory_selector *function* under the
 # module's own name, so these have to come off the module path directly.
 from spectra_inspector.components.directory_selector import (
+    MAX_RECENT_DIRECTORIES,
     NO_DIRECTORY_LABEL,
     USE_CURRENT_LABEL,
     breadcrumb,
@@ -24,9 +25,14 @@ from spectra_inspector.components.directory_selector import (
     loaded_status,
     navigate_directory,
     path_label,
+    recent_directories,
+    recent_id,
+    remember_directory,
     selected_entry,
     show_committed_directory,
     show_directory_listing,
+    show_recent_directories,
+    store_recent_directory,
     store_working_directory,
     toggle_directory_dialog,
     use_directory,
@@ -92,7 +98,11 @@ def test_directory_selector_builds_the_line_and_the_dialog():
     parts = _by_type(div)
     # everything inside the div but the breadcrumb segments, which only exist
     # below the root
-    expected = {getattr(ids, p) for p in ids.prop_names} - {ids.div, ids.crumb}
+    expected = {getattr(ids, p) for p in ids.prop_names} - {
+        ids.div,
+        ids.crumb,
+        ids.recententry,
+    }
     assert set(parts) == expected
 
     assert parts[ids.current].children == NO_DIRECTORY_LABEL
@@ -268,23 +278,74 @@ _COMMITTED_ID = {"type": "directory-selector-committedstore", "index": 0}
 def test_double_click_descends():
     _set_triggered_id(_ENTRIES_ID, "cellDoubleClicked")
     cell = {"rowId": "a/b", "value": "b"}
-    assert navigate_directory(cell, [], {}, {"path": "a"}) == {"path": "a/b"}
-    assert navigate_directory(None, [], {}, {"path": "a"}) is no_update
+    assert navigate_directory(cell, [], [], {}, {"path": "a"}) == {"path": "a/b"}
+    assert navigate_directory(None, [], [], {}, {"path": "a"}) is no_update
 
 
 def test_breadcrumb_click_moves_up():
     _set_triggered_id(crumb_id(0, "a"), "n_clicks")
-    assert navigate_directory(None, [0, 1], {}, {"path": "a/b/c"}) == {"path": "a"}
+    assert navigate_directory(None, [0, 1], [], {}, {"path": "a/b/c"}) == {"path": "a"}
 
     _set_triggered_id(crumb_id(0, ""), "n_clicks")
-    assert navigate_directory(None, [1, 0], {}, {"path": "a/b/c"}) == {"path": ""}
+    assert navigate_directory(None, [1, 0], [], {}, {"path": "a/b/c"}) == {"path": ""}
 
 
 def test_navigate_ignores_a_freshly_rendered_breadcrumb():
     # re-rendering the breadcrumb fires this with every count still at 0
     _set_triggered_id(crumb_id(0, "a"), "n_clicks")
-    assert navigate_directory(None, [0, 0], {}, {"path": "a/b"}) is no_update
-    assert navigate_directory(None, [], {}, {"path": "a/b"}) is no_update
+    assert navigate_directory(None, [0, 0], [], {}, {"path": "a/b"}) is no_update
+    assert navigate_directory(None, [], [], {}, {"path": "a/b"}) is no_update
+
+
+def test_recent_directory_click_browses_it():
+    _set_triggered_id(recent_id(0, "x/y"), "n_clicks")
+    assert navigate_directory(None, [], [1, 0], {}, {"path": "a"}) == {"path": "x/y"}
+    # a freshly rendered list
+    assert navigate_directory(None, [1], [0, 0], {}, {"path": "a"}) is no_update
+
+
+def test_remember_directory_moves_a_path_to_the_front():
+    assert remember_directory(None, "a") == ["a"]
+    assert remember_directory(["a", "b"], "b") == ["b", "a"]
+    assert remember_directory(["a", "b"], "c") == ["c", "a", "b"]
+
+
+def test_remember_directory_skips_the_data_root_and_junk():
+    assert remember_directory(["a"], "") == ["a"]
+    assert remember_directory(["a", "", None, 3, "a"], None) == ["a"]
+
+
+def test_remember_directory_is_bounded():
+    many = [f"d{i}" for i in range(MAX_RECENT_DIRECTORIES + 4)]
+    kept = remember_directory(many, "new")
+    assert len(kept) == MAX_RECENT_DIRECTORIES
+    assert kept[:2] == ["new", "d0"]
+
+
+def test_recent_directories_lists_links():
+    _, listed = recent_directories(["a/b", "c"], 1)
+    assert [item.id for item in listed.children] == [
+        recent_id(1, "a/b"),
+        recent_id(1, "c"),
+    ]
+    assert [item.children for item in listed.children] == ["a/b", "c"]
+
+    _, empty = recent_directories([], 0)
+    assert "None yet" in empty.children
+
+
+def test_store_recent_directory():
+    _set_inputs_list([{"type": "directory-selector-committedstore", "index": 0}])
+    assert store_recent_directory([_COMMIT], ["other"]) == ["session-a", "other"]
+    # already at the head: nothing to write
+    assert store_recent_directory([_COMMIT], ["session-a"]) is no_update
+    assert store_recent_directory([{}], ["other"]) is no_update
+
+
+def test_show_recent_directories_uses_the_matched_index():
+    _set_outputs_for_index(1)
+    _, listed = show_recent_directories(["a"], {})
+    assert listed.children[0].id == recent_id(1, "a")
 
 
 def test_browse_position_follows_a_commit():
@@ -292,9 +353,10 @@ def test_browse_position_follows_a_commit():
     # should then reopen on what is in use
     _set_triggered_id(_COMMITTED_ID, "data")
     commit = {"path": "a/b"}
-    assert navigate_directory(None, [], commit, {"path": "a"}) == {"path": "a/b"}
-    assert navigate_directory(None, [], commit, {"path": "a/b"}) is no_update
-    assert navigate_directory(None, [], {}, {"path": "a"}) is no_update
+    here, there = {"path": "a"}, {"path": "a/b"}
+    assert navigate_directory(None, [], [], commit, here) == there
+    assert navigate_directory(None, [], [], commit, there) is no_update
+    assert navigate_directory(None, [], [], {}, here) is no_update
 
 
 _LISTING = directoryListing(

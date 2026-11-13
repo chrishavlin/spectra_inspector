@@ -21,6 +21,10 @@ Two stores hold the state: the browse position, which only the dialog shows,
 and the committed directory, whose payload `store_working_directory` copies
 into the user store. The line on the page is rendered from the user store, so
 it never shows a position that was merely browsed.
+
+The directories committed lately are kept in the browser's local storage and
+listed in the dialog, a click away however deep they are. The list is the
+browser's own: it outlives the session, and nothing about it is on the server.
 """
 
 from typing import Any
@@ -84,6 +88,8 @@ class directorySelectorLayoutIDs(indexedLayoutIDMapper):
         "browsestore",
         "committedstore",
         "rootstore",
+        "recent",
+        "recententry",
     )
 
     def __init__(
@@ -155,6 +161,19 @@ class directorySelectorLayoutIDs(indexedLayoutIDMapper):
     def rootstore(self) -> str:
         return self.full_id("-rootstore")
 
+    @property
+    def recent(self) -> str:
+        return self.full_id("-recent")
+
+    @property
+    def recententry(self) -> str:
+        return self.full_id("-recententry")
+
+
+# One list for both pages' pickers, so it has a plain id rather than an
+# indexed one: a store in local storage is keyed by its id.
+RECENT_STORE_ID = "directory-selector-recentstore"
+MAX_RECENT_DIRECTORIES = 8
 
 USE_CURRENT_LABEL = "Use this directory"
 NO_DIRECTORY_LABEL = "none chosen yet"
@@ -236,6 +255,7 @@ def directory_selector(
             storage_type="memory",
             data=root,
         ),
+        dcc.Store(id=RECENT_STORE_ID, storage_type="local", data=[]),
     ]
 
     summary = html.Div(
@@ -301,7 +321,17 @@ def directory_selector(
                         ],
                         className="si-directory-bar",
                     ),
-                    entries,
+                    html.Div(
+                        [
+                            html.Div(
+                                recent_directories([], component_index),
+                                id=IDS.get_id_with_index("recent"),
+                                className="si-directory-recent",
+                            ),
+                            html.Div(entries, className="si-directory-entries"),
+                        ],
+                        className="si-directory-body",
+                    ),
                     html.Div(
                         id=IDS.get_id_with_index("count"),
                         className="text-muted small mt-2",
@@ -411,6 +441,45 @@ def breadcrumb(path: str | None, root: str, component_index: int) -> list:
     return children
 
 
+def recent_id(component_index: int, path: str) -> dict[str, Any]:
+    """The id of one recent directory, carrying its path like `crumb_id`."""
+    return {"type": _IDS.recententry, "index": component_index, "name": path}
+
+
+def remember_directory(recent: list[str] | None, path: str | None) -> list[str]:
+    """The recent list with ``path`` moved to the front. The data root is left
+    out: it is always one click away on the breadcrumb."""
+    kept = [path] if path else []
+    for known in recent or []:
+        if isinstance(known, str) and known and known not in kept:
+            kept.append(known)
+    return kept[:MAX_RECENT_DIRECTORIES]
+
+
+def recent_directories(recent: list[str] | None, component_index: int) -> list:
+    """The dialog's list of recent directories, each a link to browse it."""
+    paths = remember_directory(recent, None)
+    heading = html.Div("Recent", className="fw-bold small mb-1")
+    if not paths:
+        return [heading, html.Div("None yet.", className="text-muted small")]
+    return [
+        heading,
+        dbc.ListGroup(
+            [
+                dbc.ListGroupItem(
+                    path,
+                    id=recent_id(component_index, path),
+                    action=True,
+                    n_clicks=0,
+                    className="small px-2 py-1",
+                )
+                for path in paths
+            ],
+            flush=True,
+        ),
+    ]
+
+
 def _entry_rows(listing) -> list[dict[str, str]]:
     return [{"name": d.name, "path": d.path} for d in listing.directories]
 
@@ -419,6 +488,7 @@ def _entry_rows(listing) -> list[dict[str, str]]:
     Output({"type": _IDS.browsestore, "index": MATCH}, "data"),
     Input({"type": _IDS.entries, "index": MATCH}, "cellDoubleClicked"),
     Input({"type": _IDS.crumb, "index": MATCH, "name": ALL}, "n_clicks"),
+    Input({"type": _IDS.recententry, "index": MATCH, "name": ALL}, "n_clicks"),
     Input({"type": _IDS.committedstore, "index": MATCH}, "data"),
     State({"type": _IDS.browsestore, "index": MATCH}, "data"),
     prevent_initial_call=True,
@@ -426,12 +496,14 @@ def _entry_rows(listing) -> list[dict[str, str]]:
 def navigate_directory(
     double_clicked: dict | None,
     crumb_clicks: list[int | None],
+    recent_clicks: list[int | None],
     committed: dict | None,
     browse_data: dict | None,
 ):
     """Move the browse position: down into a double-clicked subdirectory, up to
-    a breadcrumb segment, or onto a directory that was just committed (which
-    may be a subdirectory picked in the grid rather than the position)."""
+    a breadcrumb segment, across to a recent directory, or onto a directory
+    that was just committed (which may be a subdirectory picked in the grid
+    rather than the position)."""
 
     triggered = ctx.triggered_id or {}
     current = (browse_data or {}).get("path", "")
@@ -442,9 +514,10 @@ def navigate_directory(
             return no_update
         return {"path": path}
 
-    if triggered.get("type") == _IDS.crumb:
-        if not any(crumb_clicks or []):
-            # the breadcrumb was just re-rendered, which fires this with every
+    if triggered.get("type") in (_IDS.crumb, _IDS.recententry):
+        clicks = crumb_clicks if triggered["type"] == _IDS.crumb else recent_clicks
+        if not any(clicks or []):
+            # the links were just re-rendered, which fires this with every
             # count at 0
             return no_update
         return {"path": triggered.get("name", "")}
@@ -800,6 +873,31 @@ def store_working_directory(
     new_user_data = updateDataStore(new_user_data, "selected_dataset", "none")
     new_user_data = updateDataStore(new_user_data, "metadata_json", "")
     return new_user_data, [None] * n_dropdowns
+
+
+@callback(
+    Output(RECENT_STORE_ID, "data"),
+    Input({"type": _IDS.committedstore, "index": ALL}, "data"),
+    State(RECENT_STORE_ID, "data"),
+    prevent_initial_call=True,
+)
+def store_recent_directory(committed: list[dict | None], recent: list[str] | None):
+    """Put a committed directory at the head of the browser's recent list."""
+    payload = _triggered_commit(committed)
+    if not payload:
+        return no_update
+    updated = remember_directory(recent, payload.get("path", ""))
+    return no_update if updated == recent else updated
+
+
+@callback(
+    Output({"type": _IDS.recent, "index": MATCH}, "children"),
+    Input(RECENT_STORE_ID, "data"),
+    Input({"type": _IDS.div, "index": MATCH}, "id"),
+)
+def show_recent_directories(recent: list[str] | None, _div_id: dict):
+    """Render the recent list; the div's static id only anchors the MATCH."""
+    return recent_directories(recent, _matched_index())
 
 
 def _triggered_commit(committed: list[dict | None]) -> dict | None:

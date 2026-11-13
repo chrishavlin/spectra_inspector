@@ -162,6 +162,8 @@ def test_count_label():
     assert count_label(4, 4) == "4 datasets"
     assert count_label(2, 4) == "2 of 4 datasets"
     assert count_label(1, 2, spectrum_only=True) == "1 of 2 spectra"
+    assert count_label(1, 1) == "1 dataset"
+    assert count_label(0, 1, spectrum_only=True) == "0 of 1 spectrum"
     truncated = count_label(4, 4, truncated=True)
     assert truncated.startswith("4 datasets (the first 4 found")
 

@@ -250,7 +250,10 @@ def count_label(
 ) -> str:
     """The line under the grid: how many rows survive the filters, and a note
     when the listing itself is only the first part of what is on disk."""
-    kind = "spectra" if spectrum_only else "datasets"
+    if spectrum_only:
+        kind = "spectrum" if n_total == 1 else "spectra"
+    else:
+        kind = "dataset" if n_total == 1 else "datasets"
     if n_shown == n_total:
         label = f"{n_total} {kind}"
     else:

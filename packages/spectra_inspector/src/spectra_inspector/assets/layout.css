@@ -327,3 +327,20 @@
   margin-right: 0.5rem;
   opacity: 0.7;
 }
+
+.si-directory-body {
+  display: flex;
+  gap: 1rem;
+}
+
+.si-directory-recent {
+  flex: 0 0 12rem;
+  max-height: 20rem;
+  overflow-y: auto;
+  word-break: break-all;
+}
+
+.si-directory-entries {
+  flex: 1 1 auto;
+  min-width: 0;
+}
