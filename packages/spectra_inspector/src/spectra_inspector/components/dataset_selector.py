@@ -6,9 +6,16 @@ list the dropdown shows. Only one of the two is shown at a time -- a standalone
 ``.spc`` never appears in the map list -- and the same name means a different
 thing in each mode, so flipping the switch drops the current selection.
 
-Both lists are kept in a page-local store next to the dropdown so that a flip
-costs no round trip, and the mode itself lives in the user store, where the
+Both lists are kept in a page-local store next to the dropdown (together with
+the sample sheet records of the listing) so that a flip costs no round trip, and the mode itself lives in the user store, where the
 inspector reads it to skip the image panels.
+
+Where the listing comes from depends on the deployment (`initial_listing`).
+A hosted server has one listing, its whole data root, and a page is rendered
+with it. In desktop mode the listing belongs to the session: the server only
+remembers the directory it scanned last, for whichever client asked, so a page
+is rendered empty and `hydrate_listing` fills it from the user store once
+mounted. A session that has not chosen a working directory lists nothing.
 """
 
 from typing import Any
@@ -20,7 +27,13 @@ from dash.dcc import Dropdown
 from dash_bootstrap_components import Button, Col, Row
 
 from spectra_inspector.components.layout_ids import indexedLayoutIDMapper
-from spectra_inspector.user_store_model import USER_STORE_DIV_ID, updateDataStore
+from spectra_inspector.settings import Settings
+from spectra_inspector.user_store_model import (
+    USER_STORE_DIV_ID,
+    UserStore,
+    sample_metadata_for_store,
+    updateDataStore,
+)
 from spectra_inspector.utilities.interface import SpectraInspectorServerInterface
 from spectra_inspector.utilities.model import AvailableDatasets
 
@@ -65,13 +78,55 @@ def format_selections(values: list[str]) -> list[dict[str, Any]]:
     return [_format_selection(fi) for fi in values]
 
 
-def list_store_data(available: AvailableDatasets | None) -> dict[str, list[str]]:
-    """Both name lists of a dataset listing, as the page-local store holds them."""
+def list_store_data(available: AvailableDatasets | None) -> dict[str, Any]:
+    """A dataset listing as the page-local store holds it: both name lists,
+    the sample sheet records that go with them, and whether the scan behind
+    them stopped at the server's dataset limit."""
     if available is None:
-        return {"available_files": [], "available_spectra": []}
+        return {
+            "available_files": [],
+            "available_spectra": [],
+            "sample_metadata": None,
+            "truncated": False,
+        }
     return {
         "available_files": list(available.available_files),
         "available_spectra": list(available.available_spectra or []),
+        "sample_metadata": sample_metadata_for_store(available.sample_metadata),
+        "truncated": bool(available.truncated),
+    }
+
+
+def initial_listing(
+    sisi: SpectraInspectorServerInterface,
+) -> AvailableDatasets | None:
+    """The listing a page is rendered with, None without a backend.
+
+    Asking for the datasets doubles as the connection check, which saves a
+    round trip on every page render. Not in desktop mode: there the request
+    would return whatever directory the server scanned last, so the listing
+    starts empty and the connection is probed on its own.
+    """
+    if Settings().desktop_mode:
+        return AvailableDatasets(available_files=[]) if sisi.connected else None
+    try:
+        return sisi.get_available_datasets()
+    except requests.exceptions.RequestException:
+        return None
+
+
+def session_listing(user_data: dict | None) -> dict[str, Any] | None:
+    """The listing of the working directory this session committed, as the
+    listing store holds it. None when the session has none, which is always
+    the case outside desktop mode."""
+    store = UserStore(**(user_data or {}))
+    if store.available_files is None:
+        return None
+    return {
+        "available_files": list(store.available_files),
+        "available_spectra": list(store.available_spectra or []),
+        "sample_metadata": store.sample_metadata,
+        "truncated": bool(store.truncated),
     }
 
 
@@ -107,20 +162,17 @@ def dataset_selector(
     dropdown_label: str = "Select a sample: ",
     spectrum_only: bool = False,
 ) -> tuple[html.Div, AvailableDatasets | None]:
-    datasets = None
-
     dataset_selector_IDS = datasetSelectorLayoutIDs(index=component_index)
 
-    # ask for the datasets directly rather than probing /info first: a failed
-    # connection shows up here just as well, and it saves a round trip on every
-    # page render.
-    try:
-        datasets = sisi.get_available_datasets()
-    except requests.exceptions.RequestException:
-        datasets = None
+    datasets = initial_listing(sisi)
 
     if datasets is not None:
-        _menu_items = dropdown_options(dataset_names(datasets, spectrum_only))
+        names = dataset_names(datasets, spectrum_only)
+        if sample_id and sample_id != "none" and sample_id not in names:
+            # the session's listing arrives after mount (`hydrate_listing`),
+            # and the dropdown drops a value it has no option for
+            names.append(sample_id)
+        _menu_items = dropdown_options(names)
         placeholder = "Select a spectrum" if spectrum_only else "Select an EDAX set"
         _data_selector = html.Div(
             [
@@ -189,6 +241,27 @@ _IDS = datasetSelectorLayoutIDs()
 
 
 @callback(
+    Output({"type": _IDS.liststore, "index": MATCH}, "data", allow_duplicate=True),
+    Output({"type": _IDS.dropdown, "index": MATCH}, "options", allow_duplicate=True),
+    Input({"type": _IDS.liststore, "index": MATCH}, "id"),
+    State(USER_STORE_DIV_ID, "data"),
+    prevent_initial_call="initial_duplicate",
+)
+def hydrate_listing(_store_id: dict, user_data: dict | None):
+    """Give a freshly mounted selector the listing the session already has.
+
+    Only desktop mode has one to give (`session_listing`); a page there is
+    rendered empty, and without this it would forget the working directory's
+    datasets on every navigation.
+    """
+    listing = session_listing(user_data)
+    if listing is None:
+        return no_update, no_update
+    spectrum_only = bool((user_data or {}).get("spectrum_only"))
+    return listing, dropdown_options(dataset_names(listing, spectrum_only))
+
+
+@callback(
     Output({"type": _IDS.spectrumonly, "index": MATCH}, "value"),
     Input({"type": _IDS.liststore, "index": MATCH}, "id"),
     State(USER_STORE_DIV_ID, "data"),
@@ -241,8 +314,11 @@ def toggle_spectrum_only(
         return no_update, [], []
 
     spectrum_only = bool(switch_values[-1])
+    # on a fresh mount the listing store may not have been hydrated yet, so the
+    # session's own listing is preferred when there is one
+    session = session_listing(user_data)
     options = [
-        dropdown_options(dataset_names(listing or {}, spectrum_only))
+        dropdown_options(dataset_names(session or listing or {}, spectrum_only))
         for listing in list_data
     ]
     store = dict(user_data or {})

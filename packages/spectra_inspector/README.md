@@ -32,7 +32,7 @@ package reads is prefixed with `SPECTRA_INSPECTOR_`, matching the
 - `SPECTRA_INSPECTOR_DESKTOP_MODE`=false. Set to `true` to show the
   working-directory picker on the data selection and inspector pages: it browses
   the server's data root and loads the datasets of the directory you pick into
-  the sample dropdown. Requires `SPECTRA_INSPECTOR_DESKTOP_MODE=true` in the
+  the dataset table. Requires `SPECTRA_INSPECTOR_DESKTOP_MODE=true` in the
   `spectra_inspector_server` `.env` as well — the endpoints it calls return
   `403` otherwise.
 - `SPECTRA_INSPECTOR_INACTIVITY_TIMEOUT_SECONDS`=1800. Desktop mode only: after
