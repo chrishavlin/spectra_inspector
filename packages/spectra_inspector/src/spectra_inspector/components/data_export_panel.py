@@ -154,31 +154,24 @@ class dataExportPanelIDS(indexedLayoutIDMapper):
 
 
 def scale_options(
-    image_shape: tuple[int, int] | None, factors: Iterable[int]
+    image_shape: tuple[int, int], factors: Iterable[int]
 ) -> list[dict[str, str | int]]:
     """The image sizes the .zip export offers for a map of ``image_shape``
-    (rows, columns), one per scale factor: labelled with the width and height
-    the image is written with, or with the factor alone while the map's shape
-    is not known.
+    (rows, columns), one per scale factor, labelled with the width and height
+    the image is written with.
 
     A factor that would take the map below the size the export enlarges small
     images back up to is not offered, since it would come out no smaller; a
     map too small for any of them keeps the gentlest."""
     factors = list(factors)
-    if image_shape is not None:
-        worthwhile = [
-            f for f in factors if max(image_shape) / f >= MIN_IMAGE_SIDE or f == 1
-        ]
-        factors = worthwhile or [min(factors)]
+    worthwhile = [
+        f for f in factors if max(image_shape) / f >= MIN_IMAGE_SIDE or f == 1
+    ]
     options: list[dict[str, str | int]] = []
-    for factor in factors:
+    for factor in worthwhile or [min(factors)]:
+        rows, cols = export_image_size(image_shape, factor)
         note = " (full resolution)" if factor == 1 else ""
-        if image_shape is None:
-            label = note
-        else:
-            rows, cols = export_image_size(image_shape, factor)
-            label = f"{cols} x {rows} px{note}"
-        options.append({"label": label, "value": factor})
+        options.append({"label": f"{cols} x {rows} px{note}", "value": factor})
     return options
 
 

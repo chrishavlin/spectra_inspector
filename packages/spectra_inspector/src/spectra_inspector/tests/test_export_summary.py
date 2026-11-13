@@ -738,7 +738,7 @@ def test_spectrum_only_pdf(
     [
         (".zip", 2, None, 2),
         # nothing chosen yet, or a factor the deployment does not offer: its first
-        (".zip", None, None, 1),
+        (".zip", None, None, 2),
         (".zip", 1, "4,2", 4),
         # the documents size their images to the page whatever is chosen
         ("PDF", 2, None, None),
@@ -799,9 +799,9 @@ class TestExportScaleOptions:
             "C-12", {"selected_dataset": "C-12"}, False
         )
         assert options == [
-            {"label": "1024 x 768 px (1/2 size)", "value": 2},
+            {"label": "1024 x 768 px", "value": 2},
             {"label": "2048 x 1536 px (full resolution)", "value": 1},
-            {"label": "512 x 384 px (1/4 size)", "value": 4},
+            {"label": "512 x 384 px", "value": 4},
         ]
         assert value == 2
 
@@ -818,7 +818,7 @@ class TestExportScaleOptions:
             "C-12", {"selected_dataset": "C-12"}, False
         )
         assert [o["label"] for o in options] == [
-            "300 x 150 px (1/2 size)",
+            "300 x 150 px",
             "600 x 300 px (full resolution)",
         ]
         assert value == 2
@@ -836,22 +836,14 @@ class TestExportScaleOptions:
         assert inspector.update_export_scale_options("C-12", store, False) == ([], None)
         assert inspector.update_export_scale_options(None, {}, False) == ([], None)
 
-    def test_an_unreachable_server_leaves_the_bare_factors(
-        self, inspector, monkeypatch
-    ):
+    def test_an_unreachable_server_offers_nothing(self, inspector, monkeypatch):
         import requests
 
         def fail(_self):
             raise requests.exceptions.ConnectionError
 
         monkeypatch.setattr(inspector.UserStore, "conditionally_fetch_metadata", fail)
-        options, value = inspector.update_export_scale_options("C-12", None, False)
-        assert [o["label"] for o in options] == [
-            "full resolution",
-            "1/2 size",
-            "1/4 size",
-        ]
-        assert value == 1
+        assert inspector.update_export_scale_options("C-12", None, False) == ([], None)
 
     def test_shown_for_the_zip_of_a_map_only(self, inspector):
         options = [{"label": "full resolution", "value": 1}]

@@ -130,8 +130,8 @@ class TestImageSize:
 
 
 class TestScaleFactorsSetting:
-    def test_default_offers_full_resolution_first(self):
-        assert Settings().export_scale_factors == [1, 2, 4]
+    def test_default_offers_half_size_first(self):
+        assert Settings().export_scale_factors == [2, 1]
 
     def test_reads_a_comma_separated_list_in_its_order(self, monkeypatch):
         monkeypatch.setenv(f"{ENV_PREFIX}EXPORT_SCALE_FACTORS", "4, 2,1")

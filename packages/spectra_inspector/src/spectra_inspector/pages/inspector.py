@@ -1354,8 +1354,9 @@ def update_export_scale_options(
 ):
     """Offer the .zip's image sizes for the map on the page, each labelled
     with the pixels it comes to, the deployment's first factor preselected.
-    A spectrum has no images, so it is offered nothing; a map whose shape the
-    server cannot be asked for is offered the bare factors."""
+    A spectrum has no images, so it is offered nothing, and neither is a map
+    whose shape the server cannot be asked for: the choice stays hidden and
+    the export falls back to the deployment's first factor."""
     if not _valid_sample_name(sample_name) or resolve_spectrum_only(
         user_store_dict, spectrum_only_switch
     ):
@@ -1367,6 +1368,8 @@ def update_export_scale_options(
     except LOAD_ERRORS:
         spectraLogger.exception("could not fetch the map's shape for the export sizes")
         shape = None
+    if shape is None:
+        return [], None
     options = data_export_panel.scale_options(shape, factors)
     return options, options[0]["value"]
 

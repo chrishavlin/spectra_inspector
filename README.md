@@ -29,7 +29,7 @@ need. Every frontend setting is read with a `SPECTRA_INSPECTOR_` prefix
 - `SPECTRA_INSPECTOR_EXPORT_SCALE_FACTORS`: the image sizes offered for the
   `.zip` summary export, as a comma separated list of whole factors the map is
   reduced by (`1` is full resolution); the first is preselected. Defaults to
-  `1,2,4`.
+  `2,1`.
 - `SPECTRA_INSPECTOR_SERVER_HOST`: host name or address of the FastAPI backend
   used by the frontend. Defaults to `localhost`.
 - `SPECTRA_INSPECTOR_SERVER_PORT`: port number of the FastAPI backend used by
