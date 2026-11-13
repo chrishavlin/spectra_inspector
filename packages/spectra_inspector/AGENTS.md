@@ -13,7 +13,7 @@ keeps only what no single module can tell you.
 
 Dash multi-page app: `main.py` builds `Dash(use_pages=True)` with a fixed
 sidebar and theme switcher; `pages/*.py` self-register via `dash.register_page`.
-`pages/data_selection.py` is `/` (sample picker + map), `pages/inspector.py` is
+`pages/data_selection.py` is `/` (dataset table + map), `pages/inspector.py` is
 `/inspector/<sample_name>` and holds nearly all the callback logic. `serve.py`
 is the entry point. Page-chrome CSS lives in `assets/layout.css`; use
 Bootstrap's `--bs-*` variables there so the `ThemeSwitchAIO` swap keeps working.
@@ -77,7 +77,9 @@ up, so verify callback changes in an actual browser (recipe below).
   and copy it across in an `ALL` callback. `tests/test_callback_wildcards.py`
   checks this over `app._callback_list`.
 - A prop cannot be both written and read back around a loop (clearing a dropdown
-  from the callback that renders it is a cycle).
+  from the callback that renders it is a cycle). One callback may list a prop as
+  input and output; a loop through several is refused.
+  `tests/test_callback_cycles.py` checks this over `app._callback_list`.
 - Callbacks whose outputs already exist in the layout **do** fire when only
   their inputs are inserted with a page, despite `prevent_initial_call=True`.
 - Pages are rebuilt on navigation and a layout cannot read the user store, so

@@ -116,7 +116,7 @@ When serving as a desktop app:
   the frontend. Set to false for production deployments (this can be an
   expensive step).
 - set `SPECTRA_INSPECTOR_DESKTOP_MODE=true` in **both** `.env` files when the
-  data root holds more datasets than are usable in one sample dropdown, or when
+  data root holds more datasets than are usable in one dataset list, or when
   scanning all of it at startup is too slow.
 
   In desktop mode the backend does not scan `SPECTRA_INSPECTOR_DATA_ROOT` at
