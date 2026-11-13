@@ -52,6 +52,7 @@ _PPTX_HEIGHT = Inches(7.5)
 _PPTX_MARGIN = Inches(0.5)
 _PPTX_TITLE_HEIGHT = Inches(0.8)
 _PPTX_BODY_PT = 14
+_PPTX_NOTES_PT = 10
 
 
 class summaryWriter:
@@ -299,9 +300,10 @@ class summaryWriter:
         lines = summary_lines(self.export_metadata)
         if self.export_metadata is not None:
             lines += ["", _NOTES_NOTE]
-            slide.notes_slide.notes_text_frame.text = metadata_json(
-                self.export_metadata
-            )
+            notes = slide.notes_slide.notes_text_frame
+            notes.text = metadata_json(self.export_metadata)
+            for paragraph in notes.paragraphs:
+                paragraph.font.size = Pt(_PPTX_NOTES_PT)
         self._pptx_text(slide, lines, body_top, body_height, _PPTX_BODY_PT)
 
         body_width = _PPTX_WIDTH - 2 * _PPTX_MARGIN

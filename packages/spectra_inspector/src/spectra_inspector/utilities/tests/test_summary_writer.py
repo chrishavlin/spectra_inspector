@@ -269,8 +269,9 @@ class TestPptxExport:
         assert "1.5 to 4.5" in texts[1]
         assert "speaker notes" in texts[1]
         assert "sample_id" not in texts[1]
-        notes = deck.slides[1].notes_slide.notes_text_frame.text
-        assert json.loads(notes) == export_record
+        notes = deck.slides[1].notes_slide.notes_text_frame
+        assert json.loads(notes.text) == export_record
+        assert {p.font.size.pt for p in notes.paragraphs} == {10}
         assert texts[2:] == [
             "bitmap_00_Fe",
             "bitmap_00_Fe_subset",
