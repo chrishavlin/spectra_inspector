@@ -6,7 +6,7 @@ import json
 
 import dash
 import pytest
-from dash import Patch, no_update
+from dash import no_update
 from dash._callback_context import context_value
 from dash._utils import AttributeDict
 
@@ -346,36 +346,64 @@ def test_clear_button_and_a_new_listing_lift_the_map_filter(page, trigger):
     )
 
 
-def _operations(patch: Patch) -> dict:
-    return {
-        tuple(op["location"]): op["params"].get("value")
-        for op in patch.to_plotly_json()["operations"]
-    }
-
-
-def test_map_is_patched_for_a_filter_and_recentered_for_a_selection(page):
+def test_map_figure_dims_filtered_samples_and_rings_the_active_one(page):
     rows = [{"name": "C-12", "sample_id": "C-12"}]
 
-    _trigger((page._GRID_ID, "virtualRowData"))
-    ops = _operations(page.update_map_figure(LISTING, "Satellite", rows, "C-12", []))
-    assert ops["data", 1, "selectedpoints"] == [0]
-    assert ops["data", 0, "lat"] == [-50.9]
-    assert ops["layout", "selections"] == []
-    assert ("layout", "map", "center") not in ops
-
-    _trigger((page._DROPDOWN_ID, "value"))
-    ops = _operations(
-        page.update_map_figure(LISTING, "OpenStreetMap", None, "C-29 Map 1", ["C-29"])
-    )
-    assert ops["layout", "map", "center"] == {"lat": -51.0, "lon": -73.0}
-    assert ops["layout", "map", "style"] == "open-street-map"
-    assert ops["data", 1, "selectedpoints"] is None
-    # a map selection is still filtering: its outline stays
-    assert ("layout", "selections") not in ops
-
-
-def test_map_is_rebuilt_for_a_new_listing(page):
-    _trigger((page._LISTSTORE_ID, "data"))
-    fig = page.update_map_figure(LISTING, "Satellite", None, None, [])
-    assert not isinstance(fig, Patch)
+    fig = page.update_map_figure(LISTING, "Satellite", rows, "C-12", [])
     assert [row[-1] for row in fig.data[1].customdata] == ["C-12", "C-29"]
+    assert fig.data[1].selectedpoints == (0,)
+    assert list(fig.data[0].lat) == [-50.9]
+    assert fig.layout.map.center.lat == -50.9
+    assert fig.layout.map.style == "satellite"
+
+
+def test_map_figure_follows_the_style_and_the_selection(page):
+    fig = page.update_map_figure(LISTING, "OpenStreetMap", None, "C-29 Map 1", [])
+    assert fig.layout.map.style == "open-street-map"
+    assert fig.data[1].selectedpoints is None
+    assert fig.layout.map.center.lat == -51.0
+
+    # nothing selected: no ring, and the listing's own center
+    fig = page.update_map_figure(LISTING, "OpenStreetMap", None, None, [])
+    assert list(fig.data[0].lat) == []
+    assert fig.layout.map.center.lat == pytest.approx(-50.95)
+
+
+def test_map_figure_keeps_the_view_but_not_a_spent_selection_outline(page):
+    args = (LISTING, "Satellite", None, None)
+    plain = page.update_map_figure(*args, [])
+    filtered = page.update_map_figure(*args, ["C-29"])
+    # same samples: plotly keeps the user's zoom and pan
+    assert plain.layout.uirevision == filtered.layout.uirevision
+    # the map filter changed: the outline that set or stood for it goes
+    assert plain.layout.selectionrevision != filtered.layout.selectionrevision
+
+
+def test_map_figure_for_a_listing_without_samples(page):
+    fig = page.update_map_figure(list_store_data(None), "Satellite", [], None, [])
+    assert len(fig.data[1].lat) == 1
+
+
+SESSION = {
+    "working_directory": "session-a",
+    "available_files": AVAILABLE.available_files,
+    "available_spectra": AVAILABLE.available_spectra,
+    "sample_metadata": LISTING["sample_metadata"],
+}
+
+
+def test_hydrate_selection_reads_the_sessions_listing_before_the_store_has_it(page):
+    # desktop mode renders the page empty; the listing store is hydrated by a
+    # sibling callback that may not have landed yet
+    store = {**SESSION, "selected_dataset": "C-29 Map 1"}
+    options, value = page.hydrate_selection({}, list_store_data(None), store)
+    assert value == "C-29 Map 1"
+    assert [o["value"] for o in options] == ["none", *AVAILABLE.available_files]
+
+
+def test_update_selected_dataset_keeps_a_sessions_sample_records(page, mocker):
+    _mock_interface(mocker, page)
+    _, _, store = page.update_selected_dataset(
+        None, dict(SESSION), list_store_data(None), False
+    )
+    assert store["sample_metadata"] == LISTING["sample_metadata"]

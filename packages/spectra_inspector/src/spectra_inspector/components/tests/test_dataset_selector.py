@@ -1,3 +1,4 @@
+import pytest
 from dash import html, no_update
 from dash.dcc import Dropdown, Store
 from dash_bootstrap_components import Switch
@@ -7,9 +8,12 @@ from spectra_inspector.components.dataset_selector import (
     dataset_selector,
     datasetSelectorLayoutIDs,
     dropdown_options,
+    hydrate_listing,
     hydrate_spectrum_only,
+    initial_listing,
     list_store_data,
     resolve_spectrum_only,
+    session_listing,
     toggle_spectrum_only,
 )
 from spectra_inspector.utilities.interface import SpectraInspectorServerInterface
@@ -157,3 +161,91 @@ def test_toggle_without_a_selector_on_the_page():
 def test_toggle_tolerates_a_missing_list_store():
     _, options, _ = toggle_spectrum_only([True], [None], {})
     assert [o["value"] for o in options[0]] == ["none"]
+
+
+def _desktop_mode(mocker, enabled: bool) -> None:
+    mocker.patch(
+        "spectra_inspector.components.dataset_selector.Settings",
+        mocker.MagicMock(return_value=mocker.MagicMock(desktop_mode=enabled)),
+    )
+
+
+SESSION = {
+    "working_directory": "session-a",
+    "available_files": ["C-1"],
+    "available_spectra": ["C-1", "S-1"],
+    "sample_metadata": {"records": [], "map_samples": {"C-1": "C-1"}},
+    "truncated": True,
+}
+
+
+def test_initial_listing_is_the_servers_when_hosted(mocker):
+    _desktop_mode(mocker, False)
+    sisi = mocker.MagicMock()
+    sisi.get_available_datasets.return_value = LISTING
+    assert initial_listing(sisi) is LISTING
+
+
+def test_initial_listing_starts_empty_in_desktop_mode(mocker):
+    # the server would answer with the directory it scanned last, for whoever
+    # asked: that is not this session's listing
+    _desktop_mode(mocker, True)
+    sisi = mocker.MagicMock(connected=True)
+    listing = initial_listing(sisi)
+    sisi.get_available_datasets.assert_not_called()
+    assert listing.available_files == []
+    assert not listing.available_spectra
+
+
+@pytest.mark.parametrize("desktop", [False, True])
+def test_initial_listing_without_a_backend(mocker, desktop):
+    _desktop_mode(mocker, desktop)
+    assert initial_listing(SpectraInspectorServerInterface(port=1)) is None
+
+
+def test_session_listing():
+    assert session_listing(SESSION) == {
+        "available_files": ["C-1"],
+        "available_spectra": ["C-1", "S-1"],
+        "sample_metadata": SESSION["sample_metadata"],
+        "truncated": True,
+    }
+    # nothing committed: hosted mode, or a desktop session before its first pick
+    assert session_listing({}) is None
+    assert session_listing(None) is None
+    assert session_listing({"selected_dataset": "C-1"}) is None
+
+
+def test_hydrate_listing_restores_the_sessions_listing():
+    listing, options = hydrate_listing({}, SESSION)
+    assert listing == session_listing(SESSION)
+    assert [o["value"] for o in options] == ["none", "C-1"]
+
+    _, options = hydrate_listing({}, {**SESSION, "spectrum_only": True})
+    assert [o["value"] for o in options] == ["none", "C-1", "S-1"]
+
+
+def test_hydrate_listing_leaves_a_hosted_page_alone():
+    assert hydrate_listing({}, {}) == (no_update, no_update)
+    assert hydrate_listing({}, None) == (no_update, no_update)
+
+
+def test_desktop_selector_keeps_the_sample_of_the_url(mocker):
+    # rendered before the session's listing arrives, and the dropdown drops a
+    # value it has no option for
+    _desktop_mode(mocker, True)
+    div, _ = dataset_selector(mocker.MagicMock(connected=True), sample_id="C-9")
+    (dropdown,) = _find(div, Dropdown)
+    assert dropdown.value == "C-9"
+    assert [o["value"] for o in dropdown.options] == ["none", "C-9"]
+
+    div, _ = dataset_selector(mocker.MagicMock(connected=True), sample_id="none")
+    (dropdown,) = _find(div, Dropdown)
+    assert [o["value"] for o in dropdown.options] == ["none"]
+
+
+def test_toggle_prefers_the_sessions_listing_over_an_unhydrated_store():
+    empty = list_store_data(None)
+    user_data = {**SESSION, "spectrum_only": True}
+    _, options, _ = toggle_spectrum_only([True], [empty], user_data)
+    assert [o["value"] for o in options[0]] == ["none", "C-1", "S-1"]

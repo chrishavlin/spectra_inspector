@@ -27,13 +27,13 @@ from typing import Any
 
 import dash_ag_grid as dag
 import dash_bootstrap_components as dbc
-import requests
 from dash import dcc, html
 
 from spectra_inspector.components.dataset_selector import (
     dataset_names,
     datasetSelectorLayoutIDs,
     dropdown_options,
+    initial_listing,
     list_store_data,
 )
 from spectra_inspector.components.layout_ids import indexedLayoutIDMapper
@@ -297,10 +297,7 @@ def dataset_table(
     IDS = datasetTableLayoutIDs(index=component_index)
     selector_ids = datasetSelectorLayoutIDs(index=component_index)
 
-    try:
-        datasets = sisi.get_available_datasets()
-    except requests.exceptions.RequestException:
-        datasets = None
+    datasets = initial_listing(sisi)
 
     if datasets is None:
         return (

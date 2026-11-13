@@ -1,5 +1,4 @@
 import pytest
-from dash import Patch
 
 from spectra_inspector.components import sample_map
 from spectra_inspector.components.sample_map import RING_TRACE, SAMPLE_TRACE
@@ -121,21 +120,15 @@ def test_get_map_without_samples_shows_the_placeholder(available):
 def test_apply_point_styling_to_a_figure():
     fig = sample_map.get_map("satellite", _available(RECORDS[:2]))
     styling = sample_map.point_styling(RECORDS[:2], {"C-29"}, "C-29")
-    sample_map.apply_point_styling(fig, styling, recenter=True)
+    sample_map.apply_point_styling(fig, styling)
     assert fig.data[SAMPLE_TRACE].selectedpoints == (1,)
     assert list(fig.data[RING_TRACE].lat) == [-51.0]
     assert fig.layout.map.center.lat == -51.0
 
 
-def test_apply_point_styling_to_a_patch_recenters_only_on_request():
-    styling = sample_map.point_styling(RECORDS, {"C-29"}, "C-29")
-
-    def paths(patch: Patch) -> list[list]:
-        return [op["location"] for op in patch.to_plotly_json()["operations"]]
-
-    kept = paths(sample_map.apply_point_styling(Patch(), styling))
-    assert ["layout", "map", "center"] not in kept
-    assert ["data", SAMPLE_TRACE, "selectedpoints"] in kept
-
-    moved = paths(sample_map.apply_point_styling(Patch(), styling, recenter=True))
-    assert ["layout", "map", "center"] in moved
+def test_apply_point_styling_without_an_active_sample_keeps_the_center():
+    fig = sample_map.get_map("satellite", _available(RECORDS[:2]))
+    center = fig.layout.map.center.lat
+    sample_map.apply_point_styling(fig, sample_map.point_styling(RECORDS[:2]))
+    assert fig.layout.map.center.lat == center
+    assert fig.data[SAMPLE_TRACE].selectedpoints is None

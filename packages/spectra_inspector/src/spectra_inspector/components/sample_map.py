@@ -6,7 +6,7 @@ import numpy as np
 import pandas as pd
 import plotly.express as px
 import plotly.graph_objects as go
-from dash import Patch, dcc
+from dash import dcc
 
 from spectra_inspector.components.layout_ids import indexedLayoutIDMapper
 from spectra_inspector.utilities.degrees import Latitude, Longitude
@@ -259,9 +259,10 @@ def get_map(
         )
     )
     fig.data = (fig.data[-1], *fig.data[:-1])
-    # The revision keeps the zoom and pan the user has set through the patches
-    # that restyle the points, which would otherwise snap the view back to the
-    # figure's own. It is derived from the samples, so a figure for another
+    # The revision keeps the zoom and pan the user has set when the page swaps
+    # in a restyled figure, which would otherwise snap the view back to the
+    # figure's own. A center that differs from the previous figure's still
+    # applies, which is how selecting a dataset moves the map. It is derived from the samples, so a figure for another
     # listing starts from its own view.
     revision = zlib.crc32("\n".join(map(str, sample_ids)).encode())
     fig.update_layout(showlegend=False, uirevision=f"samples-{revision}")
@@ -337,15 +338,14 @@ def point_styling(
     return {"selectedpoints": selectedpoints, "ring": ring, "center": center}
 
 
-def apply_point_styling(
-    fig: go.Figure | Patch, styling: dict, recenter: bool = False
-) -> go.Figure | Patch:
-    """Write a `point_styling` result into a figure, or into a `Patch` of one."""
-    fig["data"][SAMPLE_TRACE]["selectedpoints"] = styling["selectedpoints"]
-    fig["data"][RING_TRACE]["lat"] = styling["ring"]["lat"]
-    fig["data"][RING_TRACE]["lon"] = styling["ring"]["lon"]
-    if recenter and styling["center"] is not None:
-        fig["layout"]["map"]["center"] = styling["center"]
+def apply_point_styling(fig: go.Figure, styling: dict) -> go.Figure:
+    """Write a `point_styling` result into a figure. Without an active sample
+    to center on, the figure keeps the center `get_map` gave it."""
+    fig.data[SAMPLE_TRACE].selectedpoints = styling["selectedpoints"]
+    fig.data[RING_TRACE].lat = styling["ring"]["lat"]
+    fig.data[RING_TRACE].lon = styling["ring"]["lon"]
+    if styling["center"] is not None:
+        fig.update_layout(map_center=styling["center"])
     return fig
 
 

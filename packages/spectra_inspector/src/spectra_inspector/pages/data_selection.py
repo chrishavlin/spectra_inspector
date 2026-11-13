@@ -15,7 +15,6 @@ from dash import (
     ClientsideFunction,
     Input,
     Output,
-    Patch,
     State,
     callback,
     clientside_callback,
@@ -37,6 +36,7 @@ from spectra_inspector.components.dataset_selector import (
     dropdown_options,
     list_store_data,
     resolve_spectrum_only,
+    session_listing,
 )
 from spectra_inspector.components.dataset_table import (
     count_label,
@@ -242,8 +242,10 @@ def update_selected_dataset(
 
     new_user_data = updateDataStore(current_user_data, "selected_dataset", input_value)
     new_user_data = updateDataStore(new_user_data, "spectrum_only", spectrum_only)
-    if listing is not None:
-        # the sample sheet records of the listing the selection was made from
+    if listing is not None and session_listing(current_user_data) is None:
+        # the sample sheet records of the listing the selection was made from.
+        # A desktop session already holds its own, and on a fresh mount the
+        # listing store may not have caught up with it yet.
         new_user_data = updateDataStore(
             new_user_data, "sample_metadata", listing.get("sample_metadata")
         )
@@ -331,6 +333,8 @@ def hydrate_selection(_store_id: dict, listing: dict | None, user_data: dict | N
     """
     store = UserStore(**(user_data or {}))
     selected = store.selected_dataset
+    # a desktop session's listing reaches the store after mount, like this
+    listing = session_listing(user_data) or listing
     names = dataset_names(listing or {}, store.spectrum_only)
     if not selected or selected == "none" or selected not in names:
         return no_update, no_update
@@ -516,14 +520,16 @@ def update_map_figure(
     selected: str | None,
     sample_filter: list[str] | None,
 ):
-    """The one writer of the map figure.
+    """The one writer of the map figure, and always a whole figure.
 
-    A new listing (another working directory, a refresh) means other samples,
-    so the figure is rebuilt; everything else is a `Patch`: the map style, the
-    samples dimmed because the table has no row left for them, and the disc
-    under the active dataset's sample, on which the map is centered when the
-    selection is what changed. Doing all of it in one callback keeps a patch
-    from racing the rebuild it belongs to.
+    Everything that decides the figure is an input: the listing's samples, the
+    map style, the samples dimmed because the table has no row left for them,
+    and the active dataset's sample, which is ringed and centered on. Answering
+    some of these with a `Patch` does not work: several inputs change in one
+    round (a new listing changes the rows and clears the selection), dash then
+    calls this again before the first answer is back and drops that answer, so
+    a patch would land on a figure that was never rebuilt. The figure is a few
+    kilobytes, and its ``uirevision`` keeps the user's zoom and pan.
     """
     meta = _listing_metadata(listing)
     records = meta.get("records") or []
@@ -533,27 +539,22 @@ def update_map_figure(
     )
     style = sample_map._map_styles.get(map_style or "Satellite", "satellite")
 
-    if ctx.triggered_id == _LISTSTORE_ID:
-        available = AvailableDatasets(
-            available_files=(listing or {}).get("available_files") or [],
-            sample_metadata=meta or None,
-        )
-        try:
-            fig = sample_map.get_map(style, available_data=available)
-        except (RuntimeError, KeyError, ValueError):
-            spectraLogger.exception("Failed to rebuild the sample map")
-            return no_update
-        return sample_map.apply_point_styling(fig, styling, recenter=True)
-
-    patch = Patch()
-    patch["layout"]["map"]["style"] = style
-    if not sample_filter:
-        # drop the outline a box or lasso selection leaves behind once the
-        # filter it stood for is gone
-        patch["layout"]["selections"] = []
-    return sample_map.apply_point_styling(
-        patch, styling, recenter=ctx.triggered_id == _DROPDOWN_ID
+    available = AvailableDatasets(
+        available_files=(listing or {}).get("available_files") or [],
+        sample_metadata=meta or None,
     )
+    try:
+        fig = sample_map.get_map(style, available_data=available)
+    except (RuntimeError, KeyError, ValueError):
+        spectraLogger.exception("Failed to build the sample map")
+        return no_update
+
+    sample_map.apply_point_styling(fig, styling)
+    # a box or lasso outline is the user's, so plotly keeps it across figures
+    # until this changes: once the selection has become (or stopped being) the
+    # table's filter, the dimmed points are what shows it
+    fig.update_layout(selectionrevision="|".join(sample_filter or []))
+    return fig
 
 
 @callback(
