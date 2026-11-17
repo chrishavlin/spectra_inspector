@@ -39,6 +39,9 @@ package reads is prefixed with `SPECTRA_INSPECTOR_`, matching the
   this long without mouse or keyboard input an overlay asks whether to continue
   or start a new session (which reloads the start page and drops the selected
   dataset, working directory and panels). `0` turns it off.
+- `SPECTRA_INSPECTOR_MAP_ZOOM_ON_SELECT_PERCENT`=10. Clicking a sample on the
+  data selection map zooms to a view spanning this percentage of the extent of
+  all the samples, around the one clicked. `0` leaves the zoom alone.
 - `SPECTRA_INSPECTOR_N_FRONTEND_WORKERS`=2 gunicorn worker processes started by
   the docker image (`gunicorn spectra_inspector.main:server`). Not read by
   `serve.py`, which runs the flask development server.

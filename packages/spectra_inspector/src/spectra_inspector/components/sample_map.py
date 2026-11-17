@@ -1,3 +1,4 @@
+import math
 import zlib
 from dataclasses import dataclass
 
@@ -6,7 +7,7 @@ import numpy as np
 import pandas as pd
 import plotly.express as px
 import plotly.graph_objects as go
-from dash import dcc
+from dash import dcc, html
 
 from spectra_inspector.components.layout_ids import indexedLayoutIDMapper
 from spectra_inspector.utilities.degrees import Latitude, Longitude
@@ -50,6 +51,18 @@ RING_TRACE = 0
 SAMPLE_TRACE = 1
 
 MAP_HEIGHT = "30rem"
+
+# the map's size in pixels as `select_zoom` assumes it. The height is
+# MAP_HEIGHT; the width follows the page and is not known here, so the view
+# it computes is approximate across the map.
+_VIEW_PX = (800, 480)
+# maplibre draws the world 512 pixels wide at zoom 0
+_WORLD_PX = 512
+# the deepest zoom a click goes to, short of where the imagery ends
+MAX_SELECT_ZOOM = 16.0
+# zoom levels `extent_view` stays back from an exact fit, which keeps the
+# outermost samples off the edge of the map
+_EXTENT_MARGIN = 0.4
 
 _SAMPLE_COLOR = "blue"
 _RING_COLOR = "orange"
@@ -121,6 +134,8 @@ class sampleMapLayoutIDs(indexedLayoutIDMapper):
         "div",
         "samplemap",
         "dropdown",
+        "focus",
+        "extent",
     )
 
     def __init__(self, id_type_base: str = "sample-map", index: int | None = None):
@@ -133,6 +148,14 @@ class sampleMapLayoutIDs(indexedLayoutIDMapper):
     @property
     def dropdown(self) -> str:
         return self.full_id("-dropdown")
+
+    @property
+    def focus(self) -> str:
+        return self.full_id("-focus")
+
+    @property
+    def extent(self) -> str:
+        return self.full_id("-extent")
 
 
 def _default_center(df: pd.DataFrame | None) -> dict[str, float]:
@@ -413,6 +436,72 @@ def colocated_sample_ids(
     return ids
 
 
+def sample_location(
+    records: list[dict] | None, sample_id: str | None
+) -> dict[str, float] | None:
+    """Where a sample is, as a map center; None if it has no location."""
+    if sample_id is None:
+        return None
+    for record in records or []:
+        if str(record["sample_id"]) == str(sample_id):
+            spot = _location(record)
+            return None if spot is None else {"lat": spot[0], "lon": spot[1]}
+    return None
+
+
+def _mercator_y(lat: float) -> float:
+    return math.log(math.tan(math.pi / 4 + math.radians(lat) / 2))
+
+
+def select_zoom(
+    records: list[dict] | None, percent: float, center: dict[str, float]
+) -> float | None:
+    """The zoom at which the map, centered on ``center``, spans ``percent`` of
+    the extent of all the located samples: of their longitudes across and of
+    their latitudes down, whichever needs the wider view. None when there is
+    nothing to derive it from: a percentage of 0, or samples all in one spot.
+    """
+    spots = [spot for r in records or [] if (spot := _location(r)) is not None]
+    if percent <= 0 or not spots:
+        return None
+    share = percent / 100
+    lats, lons = zip(*spots, strict=True)
+    dlon = (max(lons) - min(lons)) * share
+    dlat = (max(lats) - min(lats)) * share
+
+    zooms = []
+    if dlon > 0:
+        zooms.append(math.log2(_VIEW_PX[0] * 360 / (_WORLD_PX * dlon)))
+    if dlat > 0:
+        lat = center["lat"]
+        south = max(lat - dlat / 2, -85.0)
+        north = min(lat + dlat / 2, 85.0)
+        dy = _mercator_y(north) - _mercator_y(south)
+        if dy > 0:
+            zooms.append(math.log2(_VIEW_PX[1] * 2 * math.pi / (_WORLD_PX * dy)))
+    if not zooms:
+        return None
+    return min(max(min(zooms), 0.0), MAX_SELECT_ZOOM)
+
+
+def extent_view(records: list[dict] | None) -> tuple[dict[str, float], float] | None:
+    """The center and zoom that show every located sample: the middle of
+    their extent, which unlike their mean leaves none of them outside. None
+    when no sample has a location."""
+    spots = [spot for r in records or [] if (spot := _location(r)) is not None]
+    if not spots:
+        return None
+    lats, lons = zip(*spots, strict=True)
+    center = {
+        "lat": (min(lats) + max(lats)) / 2,
+        "lon": (min(lons) + max(lons)) / 2,
+    }
+    zoom = select_zoom(records, 100, center)
+    if zoom is None:
+        return center, mapSettings().init_zoom_level
+    return center, max(zoom - _EXTENT_MARGIN, 0.0)
+
+
 def point_styling(
     records: list[dict] | None,
     visible_samples: set[str] | None = None,
@@ -493,10 +582,24 @@ def get_layout(
 
     layout = dbc.Container(
         [
+            # what the page last moved the map to: a clicked sample or the
+            # extent of all of them
+            dcc.Store(id=IDS.get_id_with_index("focus")),
             dbc.Row(
                 [
                     dbc.Col(map_style, width=4),
-                ]
+                    dbc.Col(
+                        dbc.Button(
+                            [html.I(className="fa fa-expand"), " Full Dataset"],
+                            id=IDS.get_id_with_index("extent"),
+                            color="secondary",
+                            outline=True,
+                            size="sm",
+                        ),
+                        width="auto",
+                    ),
+                ],
+                className="g-2 align-items-center",
             ),
             dbc.Row(
                 dbc.Col(

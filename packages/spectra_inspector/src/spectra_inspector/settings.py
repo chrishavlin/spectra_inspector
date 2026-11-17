@@ -2,7 +2,13 @@ from pathlib import Path
 from typing import Annotated, Any
 
 from dotenv import dotenv_values
-from pydantic import NonNegativeInt, PositiveInt, field_validator, model_validator
+from pydantic import (
+    Field,
+    NonNegativeInt,
+    PositiveInt,
+    field_validator,
+    model_validator,
+)
 from pydantic_settings import BaseSettings, NoDecode, SettingsConfigDict
 
 ENV_FILE = ".env"
@@ -45,6 +51,11 @@ class Settings(BaseSettings):
     # "still working?" overlay is raised (components/inactivity_guard.py).
     # 0 turns it off.
     inactivity_timeout_seconds: NonNegativeInt = 1800
+
+    # a click on a sample of the data selection map zooms the map to a view
+    # spanning this percentage of the extent of all the samples, around the
+    # one clicked (components/sample_map.select_zoom). 0 leaves the zoom alone.
+    map_zoom_on_select_percent: Annotated[float, Field(ge=0, le=100)] = 10
 
     # gunicorn worker processes the docker image starts; only the Dockerfile
     # CMD reads it (serve.py runs the flask development server instead)

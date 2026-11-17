@@ -173,3 +173,59 @@ def test_spot_summary_counts_the_maps_of_stacked_samples():
         32,
         32,
     ]
+
+
+_SPREAD = [
+    {"sample_id": "a", "lat": -51.0, "lon": -73.0},
+    {"sample_id": "b", "lat": -50.9, "lon": -72.0},
+    {"sample_id": "c", "lat": None, "lon": None},
+]
+
+
+def test_sample_location():
+    assert sample_map.sample_location(_SPREAD, "b") == {"lat": -50.9, "lon": -72.0}
+    assert sample_map.sample_location(_SPREAD, "c") is None
+    assert sample_map.sample_location(_SPREAD, "unknown") is None
+    assert sample_map.sample_location(_SPREAD, None) is None
+
+
+def test_select_zoom_spans_a_share_of_the_extent():
+    center = {"lat": -51.0, "lon": -73.0}
+    whole = sample_map.select_zoom(_SPREAD, 100, center)
+    tenth = sample_map.select_zoom(_SPREAD, 10, center)
+    # the longitudes span a degree, which the assumed width shows at this zoom
+    assert whole == pytest.approx(9.136, abs=1e-3)
+    # a tenth of the extent is log2(10) zoom levels further in
+    assert tenth - whole == pytest.approx(3.3219, abs=1e-3)
+
+
+def test_select_zoom_stops_short_of_the_imagery_limit():
+    close = [
+        {"sample_id": "a", "lat": -51.0, "lon": -73.0},
+        {"sample_id": "b", "lat": -51.0, "lon": -72.9999},
+    ]
+    zoom = sample_map.select_zoom(close, 10, {"lat": -51.0, "lon": -73.0})
+    assert zoom == sample_map.MAX_SELECT_ZOOM
+
+
+@pytest.mark.parametrize(
+    ("records", "percent"),
+    [(_SPREAD, 0), (_SPREAD[:1], 10), (_SPREAD[2:], 10), ([], 10), (None, 10)],
+)
+def test_select_zoom_without_anything_to_span(records, percent):
+    assert (
+        sample_map.select_zoom(records, percent, {"lat": -51.0, "lon": -73.0}) is None
+    )
+
+
+def test_extent_view_shows_every_located_sample():
+    center, zoom = sample_map.extent_view(_SPREAD)
+    assert center == {"lat": pytest.approx(-50.95), "lon": pytest.approx(-72.5)}
+    assert zoom < sample_map.select_zoom(_SPREAD, 100, center)
+
+    # one spot has no extent to fit
+    center, zoom = sample_map.extent_view(_SPREAD[:1])
+    assert center == {"lat": -51.0, "lon": -73.0}
+    assert zoom == sample_map.mapSettings().init_zoom_level
+
+    assert sample_map.extent_view(_SPREAD[2:]) is None

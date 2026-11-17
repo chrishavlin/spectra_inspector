@@ -48,6 +48,7 @@ from spectra_inspector.components.dataset_table import (
 )
 from spectra_inspector.components.nested_accordian import nested_accordian
 from spectra_inspector.logging import spectraLogger
+from spectra_inspector.settings import Settings
 from spectra_inspector.user_store_model import (
     USER_STORE_DIV_ID,
     UserStore,
@@ -72,6 +73,8 @@ dirSelectorIDs = directorySelectorLayoutIDs(index=0)
 
 _MAP_ID = {"type": _basemapIDs.samplemap, "index": 0}
 _MAP_STYLE_ID = {"type": _basemapIDs.dropdown, "index": 0}
+_MAP_FOCUS_ID = {"type": _basemapIDs.focus, "index": 0}
+_MAP_EXTENT_ID = {"type": _basemapIDs.extent, "index": 0}
 _DROPDOWN_ID = selectorIDs.get_id_with_index("dropdown")
 _LISTSTORE_ID = selectorIDs.get_id_with_index("liststore")
 _MODE_ID = selectorIDs.get_id_with_index("spectrumonly")
@@ -95,6 +98,18 @@ def inspector_href(dataset: str | None, spectrum_only: bool) -> str:
     return href
 
 
+def open_inspector_link(dataset: str, spectrum_only: bool) -> dbc.NavLink:
+    return dbc.NavLink(
+        dbc.Button(
+            ["Open in inspector ", html.I(className="fa fa-arrow-right")],
+            color="primary",
+            size="sm",
+        ),
+        href=inspector_href(dataset, spectrum_only),
+        className="p-0",
+    )
+
+
 def active_dataset_display(dataset: str | None, spectrum_only: bool) -> list:
     """What the page header says about the selection, with the way into the
     inspector next to it."""
@@ -109,16 +124,16 @@ def active_dataset_display(dataset: str | None, spectrum_only: bool) -> list:
             # the themes' own "dark" text colours are too faint on the badge
             style={"color": "#212529"},
         ),
-        dbc.NavLink(
-            dbc.Button(
-                ["Open in inspector ", html.I(className="fa fa-arrow-right")],
-                color="primary",
-                size="sm",
-            ),
-            href=inspector_href(dataset, spectrum_only),
-            className="p-0",
-        ),
+        open_inspector_link(dataset, spectrum_only),
     ]
+
+
+def metadata_footer(dataset: str | None, spectrum_only: bool) -> list:
+    """The way into the inspector again, below the metadata. Empty without a
+    selection, which hides the footer (assets/layout.css)."""
+    if not dataset:
+        return []
+    return [open_inspector_link(dataset, spectrum_only)]
 
 
 def sample_summary(dataset: str, sample_metadata: dict | None) -> html.Div:
@@ -189,9 +204,18 @@ def layout(**kwargs) -> html.Div:  # noqa: ARG001
                 [
                     dbc.Col(dbc.Card(dbc.CardBody(base_map)), xs=12, xl=7),
                     dbc.Col(
-                        # as tall as the map beside it, scrolling past that
+                        # as tall as the map beside it, the body scrolling past
+                        # that above the footer
                         dbc.Card(
-                            dbc.CardBody(metadata_placeholder(), id="metadata-display"),
+                            [
+                                dbc.CardBody(
+                                    metadata_placeholder(), id="metadata-display"
+                                ),
+                                dbc.CardFooter(
+                                    metadata_footer(None, spectrum_only=False),
+                                    id="metadata-footer",
+                                ),
+                            ],
                             className="si-dataset-metadata",
                         ),
                         xs=12,
@@ -209,6 +233,7 @@ def layout(**kwargs) -> html.Div:  # noqa: ARG001
 @callback(
     Output("nav-link-loader-div", "children"),
     Output("metadata-display", "children"),
+    Output("metadata-footer", "children"),
     Output(USER_STORE_DIV_ID, "data"),
     Input(_DROPDOWN_ID, "value"),
     State(USER_STORE_DIV_ID, "data"),
@@ -263,9 +288,11 @@ def update_selected_dataset(
         md = metadata_placeholder()
     new_user_data = updateDataStore(new_user_data, "metadata_json", meta_json_str)
 
-    active = active_dataset_display(input_value if has_input else None, spectrum_only)
+    dataset = input_value if has_input else None
+    active = active_dataset_display(dataset, spectrum_only)
+    footer = metadata_footer(dataset, spectrum_only)
 
-    return active, md, new_user_data
+    return active, md, footer, new_user_data
 
 
 @callback(
@@ -503,6 +530,7 @@ def _visible_samples(virtual_rows: list[dict] | None) -> set[str] | None:
     Input(_GRID_ID, "virtualRowData"),
     Input(_DROPDOWN_ID, "value"),
     State(_SAMPLEFILTER_ID, "data"),
+    Input(_MAP_FOCUS_ID, "data"),
     prevent_initial_call=True,
 )
 def update_map_figure(
@@ -511,6 +539,7 @@ def update_map_figure(
     virtual_rows: list[dict] | None,
     selected: str | None,
     sample_filter: list[str] | None,
+    focus: dict | None = None,
 ):
     """The one writer of the map figure, and always a whole figure.
 
@@ -522,6 +551,15 @@ def update_map_figure(
     calls this again before the first answer is back and drops that answer, so
     a patch would land on a figure that was never rebuilt. The figure is a few
     kilobytes, and its ``uirevision`` keeps the user's zoom and pan.
+
+    ``focus`` is what the map was last told to show and the number of that
+    request: a sample clicked on the map (`filter_table_from_map`), which the
+    figure zooms to and centers on while no dataset is active, or the extent
+    of all the samples (`zoom_to_extent`), which holds until another dataset
+    becomes active. Plotly lets a figure's zoom or center override the user's
+    only when it differs from the previous figure's, so the request number is
+    folded into both as an offset too small to see: every request moves the
+    map, and the figures in between leave the user's view alone.
     """
     meta = _listing_metadata(listing)
     records = meta.get("records") or []
@@ -544,6 +582,29 @@ def update_map_figure(
         return no_update
 
     sample_map.apply_point_styling(fig, styling)
+    focus = focus or {}
+    center = zoom = None
+    if focus.get("extent"):
+        view = sample_map.extent_view(records)
+        if view is not None:
+            center, zoom = view
+            if selected != focus.get("at"):
+                center = styling["center"] or center
+    elif (
+        focus_center := sample_map.sample_location(records, focus.get("sample"))
+    ) is not None:
+        # at the clicked sample whatever the map centers on, so that the zoom
+        # stays the same figure to figure until the next click
+        zoom = sample_map.select_zoom(
+            records, Settings().map_zoom_on_select_percent, focus_center
+        )
+        center = styling["center"] or focus_center
+    if center is not None and zoom is not None:
+        offset = focus["n"] % 1000
+        fig.update_layout(
+            map_center={"lat": center["lat"] + offset * 1e-9, "lon": center["lon"]},
+            map_zoom=zoom + offset * 1e-6,
+        )
     # a box or lasso outline is the user's, so plotly keeps it across figures
     # until this changes: once the selection has become (or stopped being) the
     # table's filter, the dimmed points are what shows it
@@ -552,8 +613,23 @@ def update_map_figure(
 
 
 @callback(
+    Output(_MAP_FOCUS_ID, "data", allow_duplicate=True),
+    Input(_MAP_EXTENT_ID, "n_clicks"),
+    State(_MAP_FOCUS_ID, "data"),
+    State(_DROPDOWN_ID, "value"),
+    prevent_initial_call=True,
+)
+def zoom_to_extent(n_clicks: int | None, focus: dict | None, selected: str | None):
+    """ "Full Dataset": show every sample, whatever dataset is active."""
+    if not n_clicks:
+        return no_update
+    return {"extent": True, "at": selected, "n": (focus or {}).get("n", 0) + 1}
+
+
+@callback(
     Output(_SAMPLEFILTER_ID, "data"),
     Output(_DROPDOWN_ID, "value", allow_duplicate=True),
+    Output(_MAP_FOCUS_ID, "data"),
     Input(_MAP_ID, "selectedData"),
     Input(_MAP_ID, "clickData"),
     Input(tableIDs.get_id_with_index("clearsamples"), "n_clicks"),
@@ -561,6 +637,7 @@ def update_map_figure(
     State(_SAMPLEFILTER_ID, "data"),
     State(_MODE_ID, "value"),
     State(_DROPDOWN_ID, "value"),
+    State(_MAP_FOCUS_ID, "data"),
     prevent_initial_call=True,
 )
 def filter_table_from_map(
@@ -571,6 +648,7 @@ def filter_table_from_map(
     current: list[str] | None,
     spectrum_only: bool | None,
     current_value: str | None,
+    focus: dict | None = None,
 ):
     """Samples picked on the map filter the table.
 
@@ -584,6 +662,11 @@ def filter_table_from_map(
     Otherwise picking samples clears a selection that is not a dataset of one
     of them: the map named samples, and the active dataset is of another.
 
+    A click on a sample is also what the map zooms to (`update_map_figure`),
+    unless the setting turns that off: the sample and a running count of the
+    clicks go to the focus store. "Clear" and a new listing empty it, which
+    takes the map back to its overview.
+
     Dash only fires on a changed prop and clicking the same point twice yields
     the same `clickData`, so it is cleared once read (a side update, which does
     not re-trigger anything).
@@ -595,6 +678,8 @@ def filter_table_from_map(
 
     samples: list[str] = []
     new_value = no_update
+    new_focus = no_update
+    no_focus = None if focus else no_update
     clicked = False
     if "clickData" in trigger_props and click_data:
         set_props(_MAP_ID, {"clickData": None})
@@ -602,17 +687,22 @@ def filter_table_from_map(
             s for s in sample_map.sample_ids_from_points(click_data) if s in known
         ]
         if not samples:
-            return no_update, no_update
+            return no_update, no_update, no_update
+        if Settings().map_zoom_on_select_percent > 0:
+            new_focus = {"sample": samples[0], "n": (focus or {}).get("n", 0) + 1}
         samples = sample_map.colocated_sample_ids(records, samples)
         clicked = True
     elif "selectedData" in trigger_props:
         picked = sample_map.sample_ids_from_points(selected_data)
         samples = [s for s in picked if s in known]
     elif "n_clicks" in trigger_props and _n_clear:
+        new_focus = no_focus
         if current_value and current_value != "none":
             new_value = None
     elif "data" not in trigger_props:
-        return no_update, no_update
+        return no_update, no_update, no_update
+    else:
+        new_focus = no_focus
 
     if samples:
         rows = filter_rows(table_rows(listing, bool(spectrum_only)), samples=samples)
@@ -624,4 +714,4 @@ def filter_table_from_map(
             new_value = None
 
     new_filter = no_update if samples == current else samples
-    return new_filter, new_value
+    return new_filter, new_value, new_focus

@@ -347,9 +347,23 @@
 }
 
 /* The metadata card beside the sample map: no taller than the map's card
-   (the map, its style dropdown and the card padding), scrolling past that. */
+   (the map, its style dropdown and the card padding). Its body scrolls past
+   that, so the footer stays in view. */
 .si-dataset-metadata {
   height: 100%;
   max-height: 35.5rem;
+}
+
+.si-dataset-metadata > .card-body {
+  min-height: 0;
   overflow-y: auto;
+}
+
+.si-dataset-metadata > .card-footer {
+  display: flex;
+  justify-content: flex-end;
+}
+
+.si-dataset-metadata > .card-footer:empty {
+  display: none;
 }

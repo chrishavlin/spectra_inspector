@@ -100,6 +100,13 @@ def test_active_dataset_display(page):
     assert link.href == "/inspector/C-12?spectrum_only=true"
 
 
+def test_metadata_footer(page):
+    assert page.metadata_footer(None, spectrum_only=False) == []
+
+    (link,) = page.metadata_footer("C-12", spectrum_only=True)
+    assert link.href == "/inspector/C-12?spectrum_only=true"
+
+
 def test_sample_summary(page):
     summary = page.sample_summary("C-29 Map 1", LISTING["sample_metadata"])
     line, description = summary.children
@@ -266,11 +273,14 @@ def test_refresh_listing_without_a_click(page, mocker):
 
 def test_update_selected_dataset_clears_the_selection(page, mocker):
     sisi = _mock_interface(mocker, page)
-    active, metadata, store = page.update_selected_dataset(None, {}, LISTING, False)
+    active, metadata, footer, store = page.update_selected_dataset(
+        None, {}, LISTING, False
+    )
 
     sisi.get_combined_image_metadata.assert_not_called()
     assert "No dataset" in active[0].children
     assert "Select a dataset" in metadata.children
+    assert footer == []
     assert store["selected_dataset"] is None
     assert store["sample_metadata"] == LISTING["sample_metadata"]
 
@@ -281,6 +291,7 @@ def test_map_click_on_a_sample_with_one_dataset_selects_it(page):
     assert page.filter_table_from_map(None, click, 0, LISTING, [], False, None) == (
         ["C-12"],
         "C-12",
+        {"sample": "C-12", "n": 1},
     )
 
 
@@ -290,6 +301,7 @@ def test_map_click_on_a_sample_with_several_datasets_only_filters(page):
     assert page.filter_table_from_map(None, click, 0, LISTING, [], False, None) == (
         ["C-29"],
         no_update,
+        {"sample": "C-29", "n": 1},
     )
 
 
@@ -303,7 +315,7 @@ def test_map_click_on_a_sample_with_several_datasets_clears_another_selection(
     _trigger((page._MAP_ID, "clickData"))
     click = {"points": [{"curveNumber": 1, "customdata": ["x", "C-29"]}]}
     result = page.filter_table_from_map(None, click, 0, LISTING, [], False, current)
-    assert result == (["C-29"], expected)
+    assert result[:2] == (["C-29"], expected)
 
 
 def test_map_click_on_stacked_samples_filters_to_all_of_them(page):
@@ -322,16 +334,30 @@ def test_map_click_on_stacked_samples_filters_to_all_of_them(page):
     # one dataset each, but which was meant is not known: nothing is selected
     assert page.filter_table_from_map(
         None, click, 0, list_store_data(stacked), [], False, "C-12"
-    ) == (["C-13", "C-12"], no_update)
+    ) == (["C-13", "C-12"], no_update, {"sample": "C-13", "n": 1})
 
 
 def test_map_click_on_an_unknown_point_is_ignored(page):
     _trigger((page._MAP_ID, "clickData"))
     click = {"points": [{"curveNumber": 1, "customdata": ["x", "0"]}]}
     assert page.filter_table_from_map(None, click, 0, LISTING, [], False, None) == (
-        no_update,
-        no_update,
+        (no_update,) * 3
     )
+
+
+def test_map_click_counts_up_the_focus_and_the_setting_turns_it_off(page, monkeypatch):
+    _trigger((page._MAP_ID, "clickData"))
+    click = {"points": [{"curveNumber": 1, "customdata": ["x", "C-12"]}]}
+    args = (None, click, 0, LISTING, ["C-12"], False, "C-12")
+    # the same sample again: nothing to filter or select, but zoomed to anew
+    assert page.filter_table_from_map(*args, {"sample": "C-12", "n": 4}) == (
+        no_update,
+        no_update,
+        {"sample": "C-12", "n": 5},
+    )
+
+    monkeypatch.setenv(f"{ENV_PREFIX}MAP_ZOOM_ON_SELECT_PERCENT", "0")
+    assert page.filter_table_from_map(*args, None) == (no_update,) * 3
 
 
 def test_map_box_selection_filters_and_emptying_it_lifts_the_filter(page):
@@ -346,12 +372,14 @@ def test_map_box_selection_filters_and_emptying_it_lifts_the_filter(page):
     assert page.filter_table_from_map(selected, *args, [], False, None) == (
         ["C-29", "C-12"],
         no_update,
+        no_update,
     )
     assert page.filter_table_from_map(selected, *args, ["C-29", "C-12"], False, None)[
         0
     ] is (no_update)
     assert page.filter_table_from_map(None, *args, ["C-29"], False, None) == (
         [],
+        no_update,
         no_update,
     )
 
@@ -364,31 +392,34 @@ def test_map_box_selection_clears_a_selection_outside_it(page, current, expected
     _trigger((page._MAP_ID, "selectedData"))
     selected = {"points": [{"curveNumber": 1, "customdata": ["x", "C-29"]}]}
     result = page.filter_table_from_map(selected, None, 0, LISTING, [], False, current)
-    assert result == (["C-29"], expected)
+    assert result == (["C-29"], expected, no_update)
 
 
 def test_emptying_the_map_selection_keeps_the_active_dataset(page):
     _trigger((page._MAP_ID, "selectedData"))
     result = page.filter_table_from_map(None, None, 0, LISTING, ["C-29"], False, "C-12")
-    assert result == ([], no_update)
+    assert result == ([], no_update, no_update)
 
 
 def test_clear_button_lifts_the_map_filter_and_deselects(page):
     _trigger((page.tableIDs.get_id_with_index("clearsamples"), "n_clicks"))
     args = (None, None, 1, LISTING)
-    assert page.filter_table_from_map(*args, ["C-29"], False, "C-29 Map 1") == (
+    focus = {"sample": "C-29", "n": 1}
+    # the map goes back to its overview with it
+    assert page.filter_table_from_map(*args, ["C-29"], False, "C-29 Map 1", focus) == (
         [],
         None,
+        None,
     )
-    assert page.filter_table_from_map(*args, [], False, "C-12") == (no_update, None)
-    assert page.filter_table_from_map(*args, [], False, None) == (
+    assert page.filter_table_from_map(*args, [], False, "C-12") == (
         no_update,
+        None,
         no_update,
     )
+    assert page.filter_table_from_map(*args, [], False, None) == (no_update,) * 3
     # not a press: the button arriving with the page
     assert page.filter_table_from_map(None, None, 0, LISTING, [], False, "C-12") == (
-        no_update,
-        no_update,
+        (no_update,) * 3
     )
 
 
@@ -396,7 +427,10 @@ def test_a_new_listing_lifts_the_map_filter(page):
     _trigger((page._LISTSTORE_ID, "data"))
     assert page.filter_table_from_map(
         None, None, 0, LISTING, ["C-29"], False, "C-12"
-    ) == ([], no_update)
+    ) == ([], no_update, no_update)
+    assert page.filter_table_from_map(
+        None, None, 0, LISTING, [], False, None, {"sample": "C-29", "n": 2}
+    ) == (no_update, no_update, None)
 
 
 def test_map_figure_dims_filtered_samples_and_rings_the_active_one(page):
@@ -432,6 +466,51 @@ def test_map_figure_keeps_the_view_but_not_a_spent_selection_outline(page):
     assert plain.layout.selectionrevision != filtered.layout.selectionrevision
 
 
+def test_map_figure_zooms_to_the_clicked_sample(page, monkeypatch):
+    args = (LISTING, "Satellite", None, None, [])
+    overview = page.update_map_figure(*args)
+    first = page.update_map_figure(*args, {"sample": "C-29", "n": 1})
+    again = page.update_map_figure(*args, {"sample": "C-29", "n": 2})
+
+    # no dataset is active: the clicked sample is what the map centers on
+    assert first.layout.map.center.lat == pytest.approx(-51.0)
+    assert first.layout.map.zoom > overview.layout.map.zoom
+    # plotly applies a figure's zoom over the user's only when it changed
+    assert again.layout.map.zoom != first.layout.map.zoom
+    assert again.layout.map.zoom == pytest.approx(first.layout.map.zoom, abs=1e-3)
+
+    # an active dataset is what the map centers on, at the same zoom
+    active = page.update_map_figure(
+        LISTING, "Satellite", None, "C-12", [], {"sample": "C-29", "n": 1}
+    )
+    assert active.layout.map.center.lat == pytest.approx(-50.9)
+    assert active.layout.map.zoom == first.layout.map.zoom
+
+    monkeypatch.setenv(f"{ENV_PREFIX}MAP_ZOOM_ON_SELECT_PERCENT", "0")
+    off = page.update_map_figure(*args, {"sample": "C-29", "n": 1})
+    assert off.layout.map.zoom == overview.layout.map.zoom
+    assert off.layout.map.center.lat == overview.layout.map.center.lat
+
+
+def test_zoom_to_extent_shows_every_sample(page):
+    assert page.zoom_to_extent(0, None, None) is no_update
+    focus = page.zoom_to_extent(1, {"sample": "C-29", "n": 3}, "C-12")
+    assert focus == {"extent": True, "at": "C-12", "n": 4}
+
+    clicked = page.update_map_figure(
+        LISTING, "Satellite", None, "C-12", [], {"sample": "C-12", "n": 3}
+    )
+    fig = page.update_map_figure(LISTING, "Satellite", None, "C-12", [], focus)
+    # the middle of the samples although a dataset is active, and further out
+    assert fig.layout.map.center.lat == pytest.approx(-50.95)
+    assert fig.layout.map.center.lat != -50.95
+    assert fig.layout.map.zoom < clicked.layout.map.zoom
+
+    # another dataset becomes active: the map goes to it again
+    fig = page.update_map_figure(LISTING, "Satellite", None, "C-29 Map 1", [], focus)
+    assert fig.layout.map.center.lat == pytest.approx(-51.0)
+
+
 def test_map_figure_for_a_listing_without_samples(page):
     fig = page.update_map_figure(list_store_data(None), "Satellite", [], None, [])
     assert len(fig.data[1].lat) == 1
@@ -456,7 +535,7 @@ def test_hydrate_selection_reads_the_sessions_listing_before_the_store_has_it(pa
 
 def test_update_selected_dataset_keeps_a_sessions_sample_records(page, mocker):
     _mock_interface(mocker, page)
-    _, _, store = page.update_selected_dataset(
+    _, _, _, store = page.update_selected_dataset(
         None, dict(SESSION), list_store_data(None), False
     )
     assert store["sample_metadata"] == LISTING["sample_metadata"]
