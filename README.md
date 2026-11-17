@@ -41,6 +41,9 @@ need. Every frontend setting is read with a `SPECTRA_INSPECTOR_` prefix
 - `SPECTRA_INSPECTOR_INACTIVITY_TIMEOUT_SECONDS`: desktop mode only. Seconds
   without mouse or keyboard input before an overlay asks whether to continue or
   start a new session. Defaults to `1800`; `0` turns it off.
+- `SPECTRA_INSPECTOR_MAP_ZOOM_ON_SELECT_PERCENT`: clicking a sample on the data
+  selection map zooms to a view spanning this percentage of the extent of all
+  the samples. Defaults to `10`; `0` leaves the zoom alone.
 - `SPECTRA_INSPECTOR_N_FRONTEND_WORKERS`: number of gunicorn worker processes
   the docker image starts. Defaults to `2`. Only used by the docker deployment;
   `serve.py` runs the flask development server instead.
@@ -116,7 +119,7 @@ When serving as a desktop app:
   the frontend. Set to false for production deployments (this can be an
   expensive step).
 - set `SPECTRA_INSPECTOR_DESKTOP_MODE=true` in **both** `.env` files when the
-  data root holds more datasets than are usable in one sample dropdown, or when
+  data root holds more datasets than are usable in one dataset list, or when
   scanning all of it at startup is too slow.
 
   In desktop mode the backend does not scan `SPECTRA_INSPECTOR_DATA_ROOT` at

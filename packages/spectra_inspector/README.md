@@ -32,13 +32,16 @@ package reads is prefixed with `SPECTRA_INSPECTOR_`, matching the
 - `SPECTRA_INSPECTOR_DESKTOP_MODE`=false. Set to `true` to show the
   working-directory picker on the data selection and inspector pages: it browses
   the server's data root and loads the datasets of the directory you pick into
-  the sample dropdown. Requires `SPECTRA_INSPECTOR_DESKTOP_MODE=true` in the
+  the dataset table. Requires `SPECTRA_INSPECTOR_DESKTOP_MODE=true` in the
   `spectra_inspector_server` `.env` as well — the endpoints it calls return
   `403` otherwise.
 - `SPECTRA_INSPECTOR_INACTIVITY_TIMEOUT_SECONDS`=1800. Desktop mode only: after
   this long without mouse or keyboard input an overlay asks whether to continue
   or start a new session (which reloads the start page and drops the selected
   dataset, working directory and panels). `0` turns it off.
+- `SPECTRA_INSPECTOR_MAP_ZOOM_ON_SELECT_PERCENT`=10. Clicking a sample on the
+  data selection map zooms to a view spanning this percentage of the extent of
+  all the samples, around the one clicked. `0` leaves the zoom alone.
 - `SPECTRA_INSPECTOR_N_FRONTEND_WORKERS`=2 gunicorn worker processes started by
   the docker image (`gunicorn spectra_inspector.main:server`). Not read by
   `serve.py`, which runs the flask development server.
