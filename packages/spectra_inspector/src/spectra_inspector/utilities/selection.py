@@ -219,6 +219,13 @@ def polygon_is_submittable(store: dict | None) -> bool:
     return len(points) >= MIN_POLYGON_POINTS and points != submitted_polygon(store)
 
 
+def polygon_is_dirty(store: dict | None) -> bool:
+    """Corners are placed that the spectrum does not reflect: they differ
+    from the ones last submitted, whether or not they can be submitted yet."""
+    points = polygon_points(store)
+    return bool(points) and points != submitted_polygon(store)
+
+
 def clip_index_range(index_range: IndexRange, size: int) -> IndexRange:
     """``index_range`` cut down to the ``size`` pixels of an axis, empty
     (``start == stop``) when it lies entirely outside them."""

@@ -117,6 +117,7 @@ from spectra_inspector.utilities.scalebar_style import (
 )
 from spectra_inspector.utilities.scaling import get_image_shape
 from spectra_inspector.utilities.selection import (
+    MIN_POLYGON_POINTS,
     Selection,
     active_shapes,
     add_point,
@@ -127,6 +128,7 @@ from spectra_inspector.utilities.selection import (
     outlineStyle,
     overlay_shapes,
     pick_tolerance,
+    polygon_is_dirty,
     polygon_is_submittable,
     polygon_points,
     polygon_store,
@@ -274,6 +276,8 @@ class inspectorIDs(BaseModel):
     spectrum_load_error: str = "spectrum-load-error"
     spectrum_load_error_message: str = "spectrum-load-error-message"
     spectrum_retry: str = "spectrum-retry"
+    # the note laid over the spectrum while a shape awaits Submit shape
+    spectrum_stale_overlay: str = "spectrum-stale-overlay"
     image_load_error: str = "image-load-error"
     image_load_error_message: str = "image-load-error-message"
     image_retry: str = "image-retry"
@@ -573,6 +577,17 @@ def layout(
         overlay_style={"visibility": "visible", "filter": "blur(2px)"},
         type="circle",
     )
+    spectrum_area = html.Div(
+        [
+            spectrum_graph,
+            html.Div(
+                id=_IDS.spectrum_stale_overlay,
+                hidden=True,
+                className="si-spectrum-stale",
+            ),
+        ],
+        className="position-relative",
+    )
 
     # the display switches fill the toolbox's second row
     spectrum_controls = [
@@ -599,7 +614,7 @@ def layout(
     spectrum_div = dbc.Card(
         dbc.CardBody(
             [
-                dbc.Row(dbc.Col(spectrum_graph, width=12), className="gx-1 gy-1"),
+                dbc.Row(dbc.Col(spectrum_area, width=12), className="gx-1 gy-1"),
                 html.Div(tools_toggle, className="d-flex justify-content-end mb-2"),
                 tools_collapse,
             ]
@@ -2451,6 +2466,37 @@ def toggle_polygon_controls(view_store: dict | None, shapes_store: dict | None):
     been submitted yet."""
     hidden = IMAGE_TOOLBOX.active_tool(view_store) != DRAW_POLYGON.id
     return hidden, hidden, not polygon_is_submittable(shapes_store)
+
+
+SPECTRUM_STALE_NOTE = (
+    "The spectrum does not include the shape you are drawing yet: press "
+    "Submit shape to update it."
+)
+SPECTRUM_STALE_NOTE_TOO_FEW = (
+    "The spectrum does not include the shape you are drawing yet: place at "
+    f"least {MIN_POLYGON_POINTS} corners, then press Submit shape."
+)
+
+
+@callback(
+    Output(_IDS.spectrum_stale_overlay, "hidden"),
+    Output(_IDS.spectrum_stale_overlay, "children"),
+    Input(_IDS.view_store, "data"),
+    Input(_IDS.shapes_store, "data"),
+)
+def toggle_spectrum_stale_overlay(view_store: dict | None, shapes_store: dict | None):
+    """A note over the spectrum while the polygon tool is pressed and corners
+    are placed that have not been submitted: unlike a box, a shape leaves the
+    spectrum as it was until Submit shape."""
+    drawing = IMAGE_TOOLBOX.active_tool(view_store) == DRAW_POLYGON.id
+    if not drawing or not polygon_is_dirty(shapes_store):
+        return True, no_update
+    note = (
+        SPECTRUM_STALE_NOTE
+        if polygon_is_submittable(shapes_store)
+        else SPECTRUM_STALE_NOTE_TOO_FEW
+    )
+    return False, html.Div(note, className="si-spectrum-stale-note")
 
 
 @callback(
