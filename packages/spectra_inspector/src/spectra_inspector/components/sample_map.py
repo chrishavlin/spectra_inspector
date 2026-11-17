@@ -411,6 +411,9 @@ def get_layout(
                         figure=fig,
                         id=IDS.get_id_with_index("samplemap"),
                         config={"displaylogo": False},
+                        # assets/dataset_table.js watches it for clicks that
+                        # hit no sample
+                        className="si-sample-map",
                         # a fixed height, so the map takes whatever width
                         # its column has without growing taller with it
                         style={"height": MAP_HEIGHT, "width": "100%"},

@@ -254,6 +254,7 @@
 }
 
 .si-dataset-toolbar,
+.si-dataset-toolbar-end,
 .si-dataset-footer,
 .si-active-dataset {
   display: flex;

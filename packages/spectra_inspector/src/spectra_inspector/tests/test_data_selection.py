@@ -159,7 +159,7 @@ def test_the_grid_follows_the_dropdown(page):
 
 def test_table_rows_follow_the_mode_and_filters(page):
     _trigger((page._LISTSTORE_ID, "data"))
-    rows, selected, groups, types, hidden, _ = page.update_table_rows(
+    rows, selected, groups, types = page.update_table_rows(
         LISTING, False, None, None, False, [], "C-12"
     )
     assert _names(rows) == ["C-12", "C-29 Map 1", "C-29 Map 2"]
@@ -167,7 +167,6 @@ def test_table_rows_follow_the_mode_and_filters(page):
     assert selected is no_update
     assert groups == ["Transect"]
     assert types == ["Diorite", "Gabbro"]
-    assert hidden is True
 
     rows, *_ = page.update_table_rows(LISTING, True, None, None, False, [], None)
     assert _names(rows) == ["C-12", "S-1"]
@@ -187,14 +186,17 @@ def test_a_filter_change_reselects_the_dataset_when_its_row_is_back(page):
     assert selected == {"ids": ["C-29 Map 1"]}
 
 
-def test_the_map_selection_filters_the_rows_and_shows_its_badge(page):
+def test_the_map_selection_filters_the_rows(page):
     _trigger((page._SAMPLEFILTER_ID, "data"))
-    rows, _, _, _, hidden, badge = page.update_table_rows(
-        LISTING, False, None, None, False, ["C-29"], None
-    )
+    rows, *_ = page.update_table_rows(LISTING, False, None, None, False, ["C-29"], None)
     assert _names(rows) == ["C-29 Map 1", "C-29 Map 2"]
-    assert hidden is False
-    assert badge == "Map selection: C-29"
+
+
+def test_clear_shows_for_a_map_filter_or_an_active_dataset(page):
+    assert page.update_clear_display([], None) == (True, "")
+    assert page.update_clear_display([], "none") == (True, "")
+    assert page.update_clear_display(["C-29"], None) == (False, "Map selection: C-29")
+    assert page.update_clear_display([], "C-12") == (False, "")
 
 
 def test_table_count(page):
@@ -291,6 +293,19 @@ def test_map_click_on_a_sample_with_several_datasets_only_filters(page):
     )
 
 
+@pytest.mark.parametrize(
+    ("current", "expected"),
+    [("C-12", None), ("C-29 Map 1", no_update)],
+)
+def test_map_click_on_a_sample_with_several_datasets_clears_another_selection(
+    page, current, expected
+):
+    _trigger((page._MAP_ID, "clickData"))
+    click = {"points": [{"curveNumber": 1, "customdata": ["x", "C-29"]}]}
+    result = page.filter_table_from_map(None, click, 0, LISTING, [], False, current)
+    assert result == (["C-29"], expected)
+
+
 def test_map_click_on_an_unknown_point_is_ignored(page):
     _trigger((page._MAP_ID, "clickData"))
     click = {"points": [{"curveNumber": 1, "customdata": ["x", "0"]}]}
@@ -322,18 +337,47 @@ def test_map_box_selection_filters_and_emptying_it_lifts_the_filter(page):
     )
 
 
-@pytest.mark.parametrize("trigger", ["clearsamples", "liststore"])
-def test_clear_button_and_a_new_listing_lift_the_map_filter(page, trigger):
-    if trigger == "clearsamples":
-        _trigger((page.tableIDs.get_id_with_index("clearsamples"), "n_clicks"))
-    else:
-        _trigger((page._LISTSTORE_ID, "data"))
-    assert page.filter_table_from_map(
-        None, None, 1, LISTING, ["C-29"], False, None
-    ) == (
+@pytest.mark.parametrize(
+    ("current", "expected"),
+    [("C-12", None), ("C-29 Map 1", no_update)],
+)
+def test_map_box_selection_clears_a_selection_outside_it(page, current, expected):
+    _trigger((page._MAP_ID, "selectedData"))
+    selected = {"points": [{"curveNumber": 1, "customdata": ["x", "C-29"]}]}
+    result = page.filter_table_from_map(selected, None, 0, LISTING, [], False, current)
+    assert result == (["C-29"], expected)
+
+
+def test_emptying_the_map_selection_keeps_the_active_dataset(page):
+    _trigger((page._MAP_ID, "selectedData"))
+    result = page.filter_table_from_map(None, None, 0, LISTING, ["C-29"], False, "C-12")
+    assert result == ([], no_update)
+
+
+def test_clear_button_lifts_the_map_filter_and_deselects(page):
+    _trigger((page.tableIDs.get_id_with_index("clearsamples"), "n_clicks"))
+    args = (None, None, 1, LISTING)
+    assert page.filter_table_from_map(*args, ["C-29"], False, "C-29 Map 1") == (
         [],
+        None,
+    )
+    assert page.filter_table_from_map(*args, [], False, "C-12") == (no_update, None)
+    assert page.filter_table_from_map(*args, [], False, None) == (
+        no_update,
         no_update,
     )
+    # not a press: the button arriving with the page
+    assert page.filter_table_from_map(None, None, 0, LISTING, [], False, "C-12") == (
+        no_update,
+        no_update,
+    )
+
+
+def test_a_new_listing_lifts_the_map_filter(page):
+    _trigger((page._LISTSTORE_ID, "data"))
+    assert page.filter_table_from_map(
+        None, None, 0, LISTING, ["C-29"], False, "C-12"
+    ) == ([], no_update)
 
 
 def test_map_figure_dims_filtered_samples_and_rings_the_active_one(page):

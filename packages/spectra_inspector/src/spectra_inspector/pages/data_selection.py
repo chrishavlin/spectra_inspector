@@ -342,8 +342,6 @@ def hydrate_selection(_store_id: dict, listing: dict | None, user_data: dict | N
     Output(_GRID_ID, "selectedRows", allow_duplicate=True),
     Output(tableIDs.get_id_with_index("groups"), "options"),
     Output(tableIDs.get_id_with_index("types"), "options"),
-    Output(tableIDs.get_id_with_index("sampledisplay"), "hidden"),
-    Output(tableIDs.get_id_with_index("samplebadge"), "children"),
     Input(_LISTSTORE_ID, "data"),
     Input(_MODE_ID, "value"),
     Input(tableIDs.get_id_with_index("groups"), "value"),
@@ -392,8 +390,23 @@ def update_table_rows(
         selected_rows,
         facet_values(rows, "group_name"),
         facet_values(rows, "sample_type"),
-        not samples,
-        sample_filter_label(samples),
+    )
+
+
+@callback(
+    Output(tableIDs.get_id_with_index("sampledisplay"), "hidden"),
+    Output(tableIDs.get_id_with_index("samplebadge"), "children"),
+    Input(_SAMPLEFILTER_ID, "data"),
+    Input(_DROPDOWN_ID, "value"),
+)
+def update_clear_display(samples: list[str] | None, selected: str | None):
+    """Show "Clear" while there is something for it to clear: a map filter,
+    which the badge beside it names, or an active dataset. Bootstrap hides the
+    badge while it is empty."""
+    has_selection = bool(selected) and selected != "none"
+    return (
+        not (samples or has_selection),
+        sample_filter_label(samples) if samples else "",
     )
 
 
@@ -563,8 +576,12 @@ def filter_table_from_map(
 
     A box or lasso selection filters to the samples inside it, a click to the
     one sample clicked; emptying the selection on the map, the "Clear" button
-    and a new listing all lift the filter. A click on a sample with exactly one
+    and a new listing all lift the filter. "Clear" deselects the active dataset
+    as well, and a click on the map that hits no sample presses it
+    (assets/dataset_table.js). A click on a sample with exactly one
     dataset also selects that dataset, since there is nothing left to choose.
+    Otherwise picking samples clears a selection that is not a dataset of one
+    of them: the map named samples, and the active dataset is of another.
 
     Dash only fires on a changed prop and clicking the same point twice yields
     the same `clickData`, so it is cleared once read (a side update, which does
@@ -576,7 +593,8 @@ def filter_table_from_map(
     trigger_props = {t["prop_id"].rpartition(".")[2] for t in ctx.triggered}
 
     samples: list[str] = []
-    select: str | None = None
+    new_value = no_update
+    clicked = False
     if "clickData" in trigger_props and click_data:
         set_props(_MAP_ID, {"clickData": None})
         samples = [
@@ -584,15 +602,24 @@ def filter_table_from_map(
         ]
         if not samples:
             return no_update, no_update
-        rows = filter_rows(table_rows(listing, bool(spectrum_only)), samples=samples)
-        if len(rows) == 1:
-            select = rows[0]["name"]
+        clicked = True
     elif "selectedData" in trigger_props:
         picked = sample_map.sample_ids_from_points(selected_data)
         samples = [s for s in picked if s in known]
-    elif not ({"n_clicks", "data"} & trigger_props):
+    elif "n_clicks" in trigger_props and _n_clear:
+        if current_value and current_value != "none":
+            new_value = None
+    elif "data" not in trigger_props:
         return no_update, no_update
 
+    if samples:
+        rows = filter_rows(table_rows(listing, bool(spectrum_only)), samples=samples)
+        names = [row["name"] for row in rows]
+        if clicked and len(names) == 1:
+            if names[0] != current_value:
+                new_value = names[0]
+        elif current_value and current_value not in names:
+            new_value = None
+
     new_filter = no_update if samples == current else samples
-    new_value = no_update if select in (None, current_value) else select
     return new_filter, new_value

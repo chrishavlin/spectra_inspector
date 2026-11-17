@@ -367,12 +367,35 @@ def dataset_table(
                 persistence_type="memory",
                 className="mb-0",
             ),
-            dbc.Button(
-                html.I(className="fa fa-refresh"),
-                id=selector_ids.get_id_with_index("refresh"),
-                color="secondary",
-                title="Refresh datasets",
-                className="ms-auto",
+            html.Div(
+                [
+                    html.Span(
+                        [
+                            dbc.Badge(
+                                "", id=IDS.get_id_with_index("samplebadge"), pill=True
+                            ),
+                            dbc.Button(
+                                "Clear",
+                                id=IDS.get_id_with_index("clearsamples"),
+                                color="link",
+                                size="sm",
+                                n_clicks=0,
+                                # assets/dataset_table.js presses it for a
+                                # click on the map that hits no sample
+                                className="si-map-clear",
+                            ),
+                        ],
+                        id=IDS.get_id_with_index("sampledisplay"),
+                        hidden=True,
+                    ),
+                    dbc.Button(
+                        html.I(className="fa fa-refresh"),
+                        id=selector_ids.get_id_with_index("refresh"),
+                        color="secondary",
+                        title="Refresh datasets",
+                    ),
+                ],
+                className="si-dataset-toolbar-end ms-auto",
             ),
         ],
         className="si-dataset-toolbar",
@@ -407,21 +430,6 @@ def dataset_table(
                 count_label(len(rows), len(rows), truncated=listing["truncated"]),
                 id=IDS.get_id_with_index("count"),
                 className="text-muted small",
-            ),
-            html.Span(
-                [
-                    dbc.Badge("", id=IDS.get_id_with_index("samplebadge"), pill=True),
-                    dbc.Button(
-                        "Clear",
-                        id=IDS.get_id_with_index("clearsamples"),
-                        color="link",
-                        size="sm",
-                        n_clicks=0,
-                    ),
-                ],
-                id=IDS.get_id_with_index("sampledisplay"),
-                hidden=True,
-                className="ms-auto",
             ),
         ],
         className="si-dataset-footer",
