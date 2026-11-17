@@ -391,6 +391,8 @@ def dataset_table(
                 "enableClickSelection": True,
             },
             "animateRows": False,
+            "enableCellTextSelection": True,
+            "ensureDomOrder": True,
             "tooltipShowDelay": 500,
             "localeText": {"noRowsToShow": "No datasets to show."},
         },

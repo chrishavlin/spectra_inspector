@@ -5,9 +5,10 @@
    costs no round trip. The grid's other options are kept: the callback writes
    the whole dashGridOptions prop.
 
-   Enter on a focused row does what a double click does. The grid reports
-   double clicks to Dash (cellDoubleClicked) but not key presses, so the key is
-   turned into the double click the page already handles. */
+   Enter on a focused row of the working-directory dialog does what a double
+   click does. The grid reports double clicks to Dash (cellDoubleClicked) but
+   not key presses, so the key is turned into the double click the dialog
+   already handles. */
 window.dash_clientside = window.dash_clientside || {};
 
 window.dash_clientside.dataset_table = {
@@ -27,7 +28,7 @@ document.addEventListener("keydown", (event) => {
   if (!cell || !cell.classList.contains("ag-cell")) {
     return;
   }
-  if (!cell.closest(".si-grid")) {
+  if (!cell.closest(".si-directory-grid")) {
     return;
   }
   cell.dispatchEvent(

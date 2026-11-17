@@ -19,7 +19,6 @@ from dash import (
     callback,
     clientside_callback,
     ctx,
-    dcc,
     html,
     no_update,
     set_props,
@@ -70,8 +69,6 @@ _basemapIDs = sample_map.sampleMapLayoutIDs()
 selectorIDs = datasetSelectorLayoutIDs(index=0)
 tableIDs = datasetTableLayoutIDs(index=0)
 dirSelectorIDs = directorySelectorLayoutIDs(index=0)
-
-OPEN_LOCATION_ID = "dataset-open-location"
 
 _MAP_ID = {"type": _basemapIDs.samplemap, "index": 0}
 _MAP_STYLE_ID = {"type": _basemapIDs.dropdown, "index": 0}
@@ -186,7 +183,6 @@ def layout(**kwargs) -> html.Div:  # noqa: ARG001
 
     _layout = html.Div(
         [
-            dcc.Location(id=OPEN_LOCATION_ID, refresh="callback-nav"),
             header,
             directory_selector(component_index=0),
             dbc.Row(
@@ -445,23 +441,6 @@ def sync_table_selection(selected_rows: list[dict] | dict | None, value: str | N
     if grid_name is None:
         return no_update, no_update
     return no_update, []
-
-
-@callback(
-    Output(OPEN_LOCATION_ID, "href"),
-    Input(_GRID_ID, "cellDoubleClicked"),
-    State(_MODE_ID, "value"),
-    State(USER_STORE_DIV_ID, "data"),
-    prevent_initial_call=True,
-)
-def open_double_clicked_dataset(
-    cell: dict | None, mode: bool | None, user_data: dict | None
-):
-    """A double click on a row opens it in the inspector."""
-    name = (cell or {}).get("rowId")
-    if not name:
-        return no_update
-    return inspector_href(name, resolve_spectrum_only(user_data, mode))
 
 
 clientside_callback(

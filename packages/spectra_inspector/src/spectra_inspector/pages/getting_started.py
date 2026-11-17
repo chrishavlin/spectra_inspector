@@ -15,8 +15,8 @@ DATA_SELECTION_MARKERS = [
         badge=(1400, 2260),
         description=(
             "Every dataset is a row of the table, with what the sample sheet "
-            "says about its sample. Click a row to select it; double click "
-            "it, or press Enter, to open it in the inspector."
+            "says about its sample. Click a row to select it; the "
+            "button at the top of the page then opens it in the inspector."
         ),
     ),
     screenshotMarker(

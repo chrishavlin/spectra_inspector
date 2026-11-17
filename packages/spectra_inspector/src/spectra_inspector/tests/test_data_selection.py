@@ -228,16 +228,6 @@ def test_hydrate_selection_without_a_listed_selection(page, store):
     assert page.hydrate_selection({}, LISTING, store) == (no_update, no_update)
 
 
-def test_open_double_clicked_dataset(page):
-    assert page.open_double_clicked_dataset({"rowId": "C-12"}, False, {}) == (
-        "/inspector/C-12"
-    )
-    assert page.open_double_clicked_dataset({"rowId": "S-1"}, True, {}) == (
-        "/inspector/S-1?spectrum_only=true"
-    )
-    assert page.open_double_clicked_dataset(None, False, {}) is no_update
-
-
 def _mock_interface(mocker, page, **attrs):
     sisi = mocker.MagicMock()
     for key, value in attrs.items():
