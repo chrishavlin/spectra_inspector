@@ -291,7 +291,7 @@ def test_map_click_on_a_sample_with_one_dataset_selects_it(page):
     assert page.filter_table_from_map(None, click, 0, LISTING, [], False, None) == (
         ["C-12"],
         "C-12",
-        {"sample": "C-12", "n": 1},
+        {"sample": "C-12", "at": "C-12", "n": 1},
     )
 
 
@@ -301,7 +301,7 @@ def test_map_click_on_a_sample_with_several_datasets_only_filters(page):
     assert page.filter_table_from_map(None, click, 0, LISTING, [], False, None) == (
         ["C-29"],
         no_update,
-        {"sample": "C-29", "n": 1},
+        {"sample": "C-29", "at": None, "n": 1},
     )
 
 
@@ -334,7 +334,7 @@ def test_map_click_on_stacked_samples_filters_to_all_of_them(page):
     # one dataset each, but which was meant is not known: nothing is selected
     assert page.filter_table_from_map(
         None, click, 0, list_store_data(stacked), [], False, "C-12"
-    ) == (["C-13", "C-12"], no_update, {"sample": "C-13", "n": 1})
+    ) == (["C-13", "C-12"], no_update, {"sample": "C-13", "at": "C-12", "n": 1})
 
 
 def test_map_click_on_an_unknown_point_is_ignored(page):
@@ -345,19 +345,57 @@ def test_map_click_on_an_unknown_point_is_ignored(page):
     )
 
 
-def test_map_click_counts_up_the_focus_and_the_setting_turns_it_off(page, monkeypatch):
+def test_map_click_counts_up_the_focus(page):
     _trigger((page._MAP_ID, "clickData"))
     click = {"points": [{"curveNumber": 1, "customdata": ["x", "C-12"]}]}
     args = (None, click, 0, LISTING, ["C-12"], False, "C-12")
-    # the same sample again: nothing to filter or select, but zoomed to anew
+    # the same sample again: nothing to filter or select, but gone to anew
     assert page.filter_table_from_map(*args, {"sample": "C-12", "n": 4}) == (
         no_update,
         no_update,
-        {"sample": "C-12", "n": 5},
+        {"sample": "C-12", "at": "C-12", "n": 5},
     )
 
-    monkeypatch.setenv(f"{ENV_PREFIX}MAP_ZOOM_ON_SELECT_PERCENT", "0")
-    assert page.filter_table_from_map(*args, None) == (no_update,) * 3
+
+def test_a_dataset_selected_off_the_map_moves_the_map(page):
+    # a row of the table: the map goes to its sample, as for a click on it
+    focus = page.focus_map_on_selection("C-29 Map 1", LISTING, {"extent": True, "n": 2})
+    assert focus == {"sample": "C-29", "at": "C-29 Map 1", "n": 3}
+    assert page.focus_map_on_selection("C-12", LISTING, None) == {
+        "sample": "C-12",
+        "at": "C-12",
+        "n": 1,
+    }
+    # the selection a click on the map made: the click has moved the map
+    assert page.focus_map_on_selection("C-29 Map 1", LISTING, focus) is no_update
+    # no sample to go to
+    assert page.focus_map_on_selection("S-1", LISTING, focus) is no_update
+
+
+@pytest.mark.parametrize("selected", [None, "none"])
+def test_deselecting_keeps_the_focus(page, selected):
+    focus = {"sample": "C-29", "at": "C-29 Map 1", "n": 3}
+    # only the dataset is forgotten, so that selecting it again moves the map
+    assert page.focus_map_on_selection(selected, LISTING, focus) == {
+        "sample": "C-29",
+        "at": None,
+        "n": 3,
+    }
+    assert page.focus_map_on_selection(selected, LISTING, None) is no_update
+    assert (
+        page.focus_map_on_selection(selected, LISTING, {"sample": "C-29", "n": 3})
+        is no_update
+    )
+
+
+def test_map_figure_stays_put_when_the_dataset_is_deselected(page):
+    focus = {"sample": "C-29", "at": "C-29 Map 1", "n": 3}
+    active = page.update_map_figure(LISTING, "Satellite", None, "C-29 Map 1", [], focus)
+    for after in (focus, {**focus, "at": None}):
+        fig = page.update_map_figure(LISTING, "Satellite", None, None, [], after)
+        assert fig.layout.map.center == active.layout.map.center
+        assert fig.layout.map.zoom == active.layout.map.zoom
+        assert list(fig.data[0].lat) == []
 
 
 def test_map_box_selection_filters_and_emptying_it_lifts_the_filter(page):
@@ -405,11 +443,11 @@ def test_clear_button_lifts_the_map_filter_and_deselects(page):
     _trigger((page.tableIDs.get_id_with_index("clearsamples"), "n_clicks"))
     args = (None, None, 1, LISTING)
     focus = {"sample": "C-29", "n": 1}
-    # the map goes back to its overview with it
+    # the focus is left alone: the map stays where it is
     assert page.filter_table_from_map(*args, ["C-29"], False, "C-29 Map 1", focus) == (
         [],
         None,
-        None,
+        no_update,
     )
     assert page.filter_table_from_map(*args, [], False, "C-12") == (
         no_update,
@@ -478,6 +516,10 @@ def test_map_figure_zooms_to_the_clicked_sample(page, monkeypatch):
     # plotly applies a figure's zoom over the user's only when it changed
     assert again.layout.map.zoom != first.layout.map.zoom
     assert again.layout.map.zoom == pytest.approx(first.layout.map.zoom, abs=1e-3)
+    # and so for each coordinate of the center, after a pan
+    assert again.layout.map.center.lat != first.layout.map.center.lat
+    assert again.layout.map.center.lon != first.layout.map.center.lon
+    assert again.layout.map.center.lon == pytest.approx(-73.0)
 
     # an active dataset is what the map centers on, at the same zoom
     active = page.update_map_figure(
@@ -487,9 +529,10 @@ def test_map_figure_zooms_to_the_clicked_sample(page, monkeypatch):
     assert active.layout.map.zoom == first.layout.map.zoom
 
     monkeypatch.setenv(f"{ENV_PREFIX}MAP_ZOOM_ON_SELECT_PERCENT", "0")
+    # the setting leaves the zoom alone: the map only centers on the sample
     off = page.update_map_figure(*args, {"sample": "C-29", "n": 1})
     assert off.layout.map.zoom == overview.layout.map.zoom
-    assert off.layout.map.center.lat == overview.layout.map.center.lat
+    assert off.layout.map.center.lat == pytest.approx(-51.0)
 
 
 def test_zoom_to_extent_shows_every_sample(page):
