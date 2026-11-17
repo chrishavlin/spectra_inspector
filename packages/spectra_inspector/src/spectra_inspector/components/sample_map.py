@@ -66,7 +66,10 @@ _EXTENT_MARGIN = 0.4
 
 _SAMPLE_COLOR = "blue"
 _RING_COLOR = "orange"
-_DIMMED_OPACITY = 0.25
+# a sample the table has filtered out: the sample color mixed with white.
+# Opaque, because points stacked on one spot add their opacities up and a
+# faded stack looks like a full one.
+_DIMMED_COLOR = "#a6a6ff"
 
 # samples closer than this in both latitude and longitude (degrees, about a
 # metre) are drawn on top of each other and cannot be told apart by a click
@@ -299,11 +302,11 @@ def get_map(
     )
     # `selectedpoints` is what dims the samples the table has filtered out
     # (`point_styling`), and what plotly's own box and lasso tools set, so a
-    # selected point looks like an ordinary one and an unselected one fades.
+    # selected point looks like an ordinary one and an unselected one pales.
     fig.update_traces(
         marker_color=_SAMPLE_COLOR,
         selected={"marker": {"color": _SAMPLE_COLOR, "opacity": 1.0}},
-        unselected={"marker": {"color": _SAMPLE_COLOR, "opacity": _DIMMED_OPACITY}},
+        unselected={"marker": {"color": _DIMMED_COLOR, "opacity": 1.0}},
     )
 
     # too low res, but shows how to use the map_layers arg
@@ -366,8 +369,9 @@ def get_map(
     # The revision keeps the zoom and pan the user has set when the page swaps
     # in a restyled figure, which would otherwise snap the view back to the
     # figure's own. A center that differs from the previous figure's still
-    # applies, which is how selecting a dataset moves the map. It is derived from the samples, so a figure for another
-    # listing starts from its own view.
+    # applies, which is how selecting a dataset moves the map. It is derived
+    # from the samples, so a figure for another listing starts from its own
+    # view.
     revision = zlib.crc32("\n".join(map(str, sample_ids)).encode())
     fig.update_layout(showlegend=False, uirevision=f"samples-{revision}")
 
@@ -502,6 +506,21 @@ def extent_view(records: list[dict] | None) -> tuple[dict[str, float], float] | 
     return center, max(zoom - _EXTENT_MARGIN, 0.0)
 
 
+def _shares_a_spot(records: list[dict], of: np.ndarray) -> np.ndarray:
+    """Which records lie within `COLOCATED_DELTA` of a record flagged in
+    ``of``. A record without a location shares no spot."""
+    lat, lon = (
+        pd.to_numeric(
+            pd.Series([r.get(key) for r in records], dtype=object), errors="coerce"
+        ).to_numpy(dtype=float)
+        for key in ("lat", "lon")
+    )
+    near = (np.abs(lat[:, np.newaxis] - lat[of]) <= COLOCATED_DELTA) & (
+        np.abs(lon[:, np.newaxis] - lon[of]) <= COLOCATED_DELTA
+    )
+    return near.any(axis=1)
+
+
 def point_styling(
     records: list[dict] | None,
     visible_samples: set[str] | None = None,
@@ -517,17 +536,20 @@ def point_styling(
     Returns ``selectedpoints`` for the sample trace (None while every sample is
     visible, so nothing is dimmed), the coordinates of the active sample's
     disc (empty lists without one) and, when the active sample has a location,
-    where to center the map.
+    where to center the map. A sample stacked on a visible one counts as
+    visible: the points cover each other, and a dimmed one on top would hide
+    that the spot still has rows in the table.
     """
     records = records or []
 
     selectedpoints: list[int] | None = None
     if visible_samples is not None:
-        shown = [
-            i for i, r in enumerate(records) if str(r["sample_id"]) in visible_samples
-        ]
-        if len(shown) < len(records):
-            selectedpoints = shown
+        visible = np.array(
+            [str(r["sample_id"]) in visible_samples for r in records], dtype=bool
+        )
+        if not visible.all():
+            shown = visible | _shares_a_spot(records, visible)
+            selectedpoints = np.flatnonzero(shown).tolist()
 
     ring: dict[str, list[float]] = {"lat": [], "lon": []}
     center: dict[str, float] | None = None

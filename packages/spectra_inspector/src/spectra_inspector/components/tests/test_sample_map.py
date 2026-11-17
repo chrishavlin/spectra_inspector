@@ -83,6 +83,26 @@ def test_point_styling_selects_the_visible_samples():
     assert sample_map.point_styling(RECORDS, set())["selectedpoints"] == []
 
 
+def test_point_styling_keeps_a_stack_with_a_visible_sample():
+    records = [
+        {"sample_id": "A", "lat": -50.9, "lon": -73.0},
+        {"sample_id": "B", "lat": -50.9000001, "lon": -73.0},
+        {"sample_id": "C", "lat": -50.9, "lon": -73.1},
+        {"sample_id": "D", "lat": None, "lon": None},
+        {"sample_id": "E", "lat": None, "lon": None},
+    ]
+    assert sample_map.point_styling(records, {"A"})["selectedpoints"] == [0, 1]
+    assert sample_map.point_styling(records, {"C"})["selectedpoints"] == [2]
+    # samples without a location are not on one spot
+    assert sample_map.point_styling(records, {"D"})["selectedpoints"] == [3]
+
+
+def test_get_map_dims_by_color_so_that_a_dimmed_stack_stays_dim():
+    trace = sample_map.get_map("satellite", _available(RECORDS[:2])).data[SAMPLE_TRACE]
+    assert trace.unselected.marker.opacity == 1.0
+    assert trace.unselected.marker.color != trace.selected.marker.color
+
+
 def test_point_styling_marks_and_centers_the_active_sample():
     styling = sample_map.point_styling(RECORDS, None, "C-29")
     assert styling["ring"] == {"lat": [-51.0], "lon": [-73.0]}

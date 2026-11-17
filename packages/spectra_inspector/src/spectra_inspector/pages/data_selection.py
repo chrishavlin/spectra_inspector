@@ -553,13 +553,15 @@ def update_map_figure(
     kilobytes, and its ``uirevision`` keeps the user's zoom and pan.
 
     ``focus`` is what the map was last told to show and the number of that
-    request: a sample clicked on the map (`filter_table_from_map`), which the
-    figure zooms to and centers on while no dataset is active, or the extent
-    of all the samples (`zoom_to_extent`), which holds until another dataset
-    becomes active. Plotly lets a figure's zoom or center override the user's
-    only when it differs from the previous figure's, so the request number is
-    folded into both as an offset too small to see: every request moves the
-    map, and the figures in between leave the user's view alone.
+    request: a sample clicked on the map (`filter_table_from_map`) or of a
+    dataset made active elsewhere (`focus_map_on_selection`), which the figure
+    zooms to and centers on while no dataset is active, or the extent of all
+    the samples (`zoom_to_extent`), which holds until another dataset becomes
+    active. It outlives the selection, so deselecting leaves the map where it
+    is. Plotly lets a figure's zoom or center override the user's only when it
+    differs from the previous figure's, so the request number is folded into
+    both as an offset too small to see: every request moves the map, and the
+    figures in between leave the user's view alone.
     """
     meta = _listing_metadata(listing)
     records = meta.get("records") or []
@@ -593,18 +595,24 @@ def update_map_figure(
     elif (
         focus_center := sample_map.sample_location(records, focus.get("sample"))
     ) is not None:
-        # at the clicked sample whatever the map centers on, so that the zoom
-        # stays the same figure to figure until the next click
+        # at the focused sample whatever the map centers on, so that the zoom
+        # stays the same figure to figure until the next request. None when
+        # the setting leaves the zoom alone.
         zoom = sample_map.select_zoom(
             records, Settings().map_zoom_on_select_percent, focus_center
         )
         center = styling["center"] or focus_center
-    if center is not None and zoom is not None:
+    if center is not None:
+        # plotly compares latitude and longitude separately
         offset = focus["n"] % 1000
         fig.update_layout(
-            map_center={"lat": center["lat"] + offset * 1e-9, "lon": center["lon"]},
-            map_zoom=zoom + offset * 1e-6,
+            map_center={
+                "lat": center["lat"] + offset * 1e-9,
+                "lon": center["lon"] + offset * 1e-9,
+            }
         )
+        if zoom is not None:
+            fig.update_layout(map_zoom=zoom + offset * 1e-6)
     # a box or lasso outline is the user's, so plotly keeps it across figures
     # until this changes: once the selection has become (or stopped being) the
     # table's filter, the dimmed points are what shows it
@@ -624,6 +632,37 @@ def zoom_to_extent(n_clicks: int | None, focus: dict | None, selected: str | Non
     if not n_clicks:
         return no_update
     return {"extent": True, "at": selected, "n": (focus or {}).get("n", 0) + 1}
+
+
+@callback(
+    Output(_MAP_FOCUS_ID, "data", allow_duplicate=True),
+    Input(_DROPDOWN_ID, "value"),
+    State(_LISTSTORE_ID, "data"),
+    State(_MAP_FOCUS_ID, "data"),
+    prevent_initial_call=True,
+)
+def focus_map_on_selection(
+    selected: str | None, listing: dict | None, focus: dict | None
+):
+    """A dataset made active by anything but a click on the map (a row of the
+    table, the session's dataset on coming back to the page) moves the map as
+    that click would.
+
+    The focus names the dataset it was made for in ``at``, which is how the
+    click's own selection is told apart here. Deselecting forgets the name and
+    nothing else, so the map stays put and selecting the dataset again moves
+    it again.
+    """
+    focus = focus or {}
+    if not selected or selected == "none":
+        return {**focus, "at": None} if focus.get("at") else no_update
+    if focus.get("at") == selected:
+        return no_update
+    meta = _listing_metadata(listing)
+    sample = (meta.get("map_samples") or {}).get(selected)
+    if sample_map.sample_location(meta.get("records"), sample) is None:
+        return no_update
+    return {"sample": sample, "at": selected, "n": focus.get("n", 0) + 1}
 
 
 @callback(
@@ -657,15 +696,15 @@ def filter_table_from_map(
     only the topmost; emptying the selection on the map, the "Clear" button
     and a new listing all lift the filter. "Clear" deselects the active dataset
     as well, and a click on the map that hits no sample presses it
-    (assets/dataset_table.js). A click on a sample with exactly one
-    dataset also selects that dataset, since there is nothing left to choose.
+    (assets/dataset_table.js); neither moves the map. A click on a sample with
+    exactly one dataset also selects that dataset, since there is nothing left
+    to choose.
     Otherwise picking samples clears a selection that is not a dataset of one
     of them: the map named samples, and the active dataset is of another.
 
-    A click on a sample is also what the map zooms to (`update_map_figure`),
-    unless the setting turns that off: the sample and a running count of the
-    clicks go to the focus store. "Clear" and a new listing empty it, which
-    takes the map back to its overview.
+    A click on a sample is also what the map goes to (`update_map_figure`):
+    the sample, the dataset the click leaves active and a running count of the
+    requests go to the focus store. A new listing empties it.
 
     Dash only fires on a changed prop and clicking the same point twice yields
     the same `clickData`, so it is cleared once read (a side update, which does
@@ -679,7 +718,6 @@ def filter_table_from_map(
     samples: list[str] = []
     new_value = no_update
     new_focus = no_update
-    no_focus = None if focus else no_update
     clicked = False
     if "clickData" in trigger_props and click_data:
         set_props(_MAP_ID, {"clickData": None})
@@ -688,21 +726,19 @@ def filter_table_from_map(
         ]
         if not samples:
             return no_update, no_update, no_update
-        if Settings().map_zoom_on_select_percent > 0:
-            new_focus = {"sample": samples[0], "n": (focus or {}).get("n", 0) + 1}
+        focus_sample = samples[0]
         samples = sample_map.colocated_sample_ids(records, samples)
         clicked = True
     elif "selectedData" in trigger_props:
         picked = sample_map.sample_ids_from_points(selected_data)
         samples = [s for s in picked if s in known]
     elif "n_clicks" in trigger_props and _n_clear:
-        new_focus = no_focus
         if current_value and current_value != "none":
             new_value = None
     elif "data" not in trigger_props:
         return no_update, no_update, no_update
-    else:
-        new_focus = no_focus
+    elif focus:
+        new_focus = None
 
     if samples:
         rows = filter_rows(table_rows(listing, bool(spectrum_only)), samples=samples)
@@ -712,6 +748,12 @@ def filter_table_from_map(
                 new_value = names[0]
         elif current_value and current_value not in names:
             new_value = None
+    if clicked:
+        new_focus = {
+            "sample": focus_sample,
+            "at": current_value if new_value is no_update else new_value,
+            "n": (focus or {}).get("n", 0) + 1,
+        }
 
     new_filter = no_update if samples == current else samples
     return new_filter, new_value, new_focus
