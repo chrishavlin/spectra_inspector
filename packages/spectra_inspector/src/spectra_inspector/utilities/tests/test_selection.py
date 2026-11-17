@@ -11,6 +11,7 @@ from spectra_inspector.utilities.selection import (
     add_point,
     box_from_shape,
     boxSelection,
+    format_area,
     insert_point_on_nearest_segment,
     move_point,
     nearest_point,
@@ -24,8 +25,11 @@ from spectra_inspector.utilities.selection import (
     polygon_store,
     polygonSelection,
     remove_nearest_point,
+    scaled_area,
+    selection_area,
     selection_from_store,
     selection_key,
+    selection_label,
     submitted_polygon,
     vertex_radius,
     vertex_radius_for,
@@ -42,6 +46,48 @@ def test_box_from_shape_floors_and_sorts():
     assert box.bounding_box((100, 100)) == ((1, 5), (0, 3))
     with pytest.raises(TypeError, match="Unsupported"):
         box_from_shape({"type": "circle"})
+
+
+def test_selection_label_names_the_kind_and_area():
+    assert selection_label(None, (0.5, 0.5), "um") == "Selection: full sample"
+    box = boxSelection((1, 5), (2, 12))
+    assert box.pixel_area == 40.0
+    assert selection_label(box, (0.5, 0.5), "um") == "Selection: box (area 10 μm²)"
+    # base 6, height 5
+    polygon = polygonSelection(tuple(tuple(p) for p in TRIANGLE))
+    assert polygon.pixel_area == 15.0
+    assert (
+        selection_label(polygon, (2.0, 1.0), "nm") == "Selection: polygon (area 30 nm²)"
+    )
+    assert selection_label(polygon) == "Selection: polygon"
+    # no pixel units, or ones unyt does not know
+    assert selection_label(box, (10.0, 12.5), "") == "Selection: box (area 5000)"
+    assert selection_label(box, (1.0, 1.0), "not-a-unit") == "Selection: box"
+    assert boxSelection((3, 3), (0, 4)).pixel_area == 0.0
+    empty = boxSelection((3, 3), (0, 4))
+    assert selection_label(empty, (0.5, 0.5), "um") == "Selection: box (area 0 μm²)"
+
+
+@pytest.mark.parametrize(
+    ("pixel_size", "units", "expected"),
+    [
+        # 40 pixels of each size
+        ((0.5, 0.5), "um", "10 μm²"),
+        ((4.99, 5.0), "um", "998 μm²"),
+        ((5.0, 5.0), "um", "1000 μm²"),
+        ((15.8, 15.8), "um", "9990 μm²"),
+        ((16.0, 15.625), "um", "0.01 mm²"),
+        ((500.0, 500.0), "um", "10 mm²"),
+        ((5000.0, 5000.0), "um", "1000 mm²"),
+        ((50000.0, 50000.0), "um", "0.1 m²"),
+        ((0.001, 0.001), "um", "40 nm²"),
+        ((0.5, 0.5), "mm", "10 mm²"),
+        ((0.5, 0.5), "cm", "1000 mm²"),
+    ],
+)
+def test_area_units_step_up_at_a_hundredth(pixel_size, units, expected):
+    box = boxSelection((1, 5), (2, 12))
+    assert format_area(scaled_area(selection_area(box, pixel_size, units))) == expected
 
 
 def test_polygon_vertices_are_row_column_for_the_server():

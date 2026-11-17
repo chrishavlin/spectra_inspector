@@ -242,6 +242,26 @@ def test_controls_show_with_the_tool_and_enable_with_three_points(inspector):
     assert toggle(view, polygon_store(TRIANGLE, TRIANGLE)) == (False, False, True)
 
 
+def test_stale_overlay_shows_for_unsubmitted_corners(inspector):
+    toggle = inspector.toggle_spectrum_stale_overlay
+
+    def shown(view, store):
+        hidden, note = toggle(view, store)
+        return None if hidden else note.children
+
+    view = _polygon_view()
+    assert shown(view, {}) is None
+    assert shown(view, {"active_shapes": []}) is None
+    assert shown(view, polygon_store(TRIANGLE, TRIANGLE)) is None
+    # dirty, but the polygon tool is not the pressed one
+    assert shown(empty_view(), polygon_store(TRIANGLE, None)) is None
+    assert shown(view, polygon_store(TRIANGLE, None)) == inspector.SPECTRUM_STALE_NOTE
+    edited = polygon_store([*TRIANGLE, [4.0, 4.0]], TRIANGLE)
+    assert shown(view, edited) == inspector.SPECTRUM_STALE_NOTE
+    too_few = polygon_store(TRIANGLE[:2], TRIANGLE)
+    assert shown(view, too_few) == inspector.SPECTRUM_STALE_NOTE_TOO_FEW
+
+
 def test_erase_drops_the_polygon_too(inspector):
     md = combined_metadata()
     store = polygon_store(TRIANGLE, TRIANGLE)

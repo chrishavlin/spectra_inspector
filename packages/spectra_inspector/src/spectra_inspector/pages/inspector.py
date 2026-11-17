@@ -115,8 +115,9 @@ from spectra_inspector.utilities.scalebar_style import (
     scalebar_styled,
     scalebarStyle,
 )
-from spectra_inspector.utilities.scaling import get_image_shape
+from spectra_inspector.utilities.scaling import get_axis, get_image_shape
 from spectra_inspector.utilities.selection import (
+    MIN_POLYGON_POINTS,
     Selection,
     active_shapes,
     add_point,
@@ -127,6 +128,7 @@ from spectra_inspector.utilities.selection import (
     outlineStyle,
     overlay_shapes,
     pick_tolerance,
+    polygon_is_dirty,
     polygon_is_submittable,
     polygon_points,
     polygon_store,
@@ -134,6 +136,7 @@ from spectra_inspector.utilities.selection import (
     remove_nearest_point,
     selection_from_store,
     selection_key,
+    selection_label,
     submitted_polygon,
     vertex_radius,
     vertex_radius_for,
@@ -274,6 +277,10 @@ class inspectorIDs(BaseModel):
     spectrum_load_error: str = "spectrum-load-error"
     spectrum_load_error_message: str = "spectrum-load-error-message"
     spectrum_retry: str = "spectrum-retry"
+    # the note laid over the spectrum while a shape awaits Submit shape
+    spectrum_stale_overlay: str = "spectrum-stale-overlay"
+    # the line above the spectrum saying what it is summed over
+    spectrum_selection_note: str = "spectrum-selection-note"
     image_load_error: str = "image-load-error"
     image_load_error_message: str = "image-load-error-message"
     image_retry: str = "image-retry"
@@ -573,6 +580,17 @@ def layout(
         overlay_style={"visibility": "visible", "filter": "blur(2px)"},
         type="circle",
     )
+    spectrum_area = html.Div(
+        [
+            spectrum_graph,
+            html.Div(
+                id=_IDS.spectrum_stale_overlay,
+                hidden=True,
+                className="si-spectrum-stale",
+            ),
+        ],
+        className="position-relative",
+    )
 
     # the display switches fill the toolbox's second row
     spectrum_controls = [
@@ -599,7 +617,14 @@ def layout(
     spectrum_div = dbc.Card(
         dbc.CardBody(
             [
-                dbc.Row(dbc.Col(spectrum_graph, width=12), className="gx-1 gy-1"),
+                # no d-* class: those are !important and would override hidden
+                html.Div(
+                    id=_IDS.spectrum_selection_note,
+                    hidden=spectrum_only_mode,
+                    className="small text-body-secondary mb-1",
+                    style={"minHeight": "1.5em"},
+                ),
+                dbc.Row(dbc.Col(spectrum_area, width=12), className="gx-1 gy-1"),
                 html.Div(tools_toggle, className="d-flex justify-content-end mb-2"),
                 tools_collapse,
             ]
@@ -733,6 +758,7 @@ def update_zeroed_elements(_zero_clicks, _reset_clicks, zeroed_elements):
     Output(_IDS.spectrum_load_error, "is_open", allow_duplicate=True),
     Output(_IDS.spectrum_load_error_message, "children", allow_duplicate=True),
     Output(_IDS.spectrum_retry, "hidden", allow_duplicate=True),
+    Output(_IDS.spectrum_selection_note, "children"),
     Input(_IDS.shapes_store, "data"),
     Input(_IDS.full_spectrum_store, "data"),
     State(_IDS.sample_name, "children"),
@@ -766,7 +792,7 @@ def update_spectrum(
 
     if full_spectrum_store is None or "intensity" not in full_spectrum_store:
         # full spectrum data not fetched yet, return
-        return no_update, no_update, *_NO_LOAD_CHANGE
+        return no_update, no_update, *_NO_LOAD_CHANGE, ""
 
     if current_figure is None:
         # now we have data but no figure, create it
@@ -782,14 +808,19 @@ def update_spectrum(
             uirevision=_spectrum_revision(sample_name, shapes_store),
         )
 
-        return current_figure, active_spectrum_metadata, *_NO_LOAD_CHANGE
+        return (
+            current_figure,
+            active_spectrum_metadata,
+            *_NO_LOAD_CHANGE,
+            selection_label(None),
+        )
 
     # finally, we have a figure, but only update if the selection has changed:
     # the shapes store also moves while a polygon is being placed, which does
     # not change what the spectrum sums over until the shape is submitted
     revision = _spectrum_revision(sample_name, shapes_store)
     if (current_figure.get("layout") or {}).get("uirevision") == revision:
-        return no_update, no_update, *_NO_LOAD_CHANGE
+        return no_update, no_update, *_NO_LOAD_CHANGE, no_update
 
     if shapes_store is not None:
         selection = _selection_for_request(shapes_store, user_store_dict, sample_name)
@@ -813,7 +844,12 @@ def update_spectrum(
             except LOAD_ERRORS as err:
                 # the figure keeps showing the previous selection; the next
                 # box or polygon asks again, so no Retry
-                return no_update, no_update, *_load_failed(err, retryable=False)
+                return (
+                    no_update,
+                    no_update,
+                    *_load_failed(err, retryable=False),
+                    no_update,
+                )
             name = "spatial subset"
             active_spectrum_metadata["intensity"] = df.intensity.tolist()
             active_spectrum_metadata["energy"] = df.energy.tolist()
@@ -845,9 +881,39 @@ def update_spectrum(
             _with_spectrum_dragmode(current_figure, spectrum_view),
             active_spectrum_metadata,
             *_LOAD_OK,
+            _selection_note(selection, user_store_dict, sample_name),
         )
 
-    return no_update, no_update, *_NO_LOAD_CHANGE
+    return no_update, no_update, *_NO_LOAD_CHANGE, no_update
+
+
+def _selection_note(
+    selection: Selection | None, user_store_dict: dict | None, sample_name: str | None
+) -> str:
+    """The line above the spectrum: the selection's kind, and its area when
+    the map's pixel size can be had (the metadata is normally in the user
+    store already)."""
+    if selection is None:
+        return selection_label(None)
+    try:
+        user_store_dict = _ensure_dataset(dict(user_store_dict or {}), sample_name)
+        md = UserStore(**user_store_dict).conditionally_fetch_metadata()
+    except LOAD_ERRORS:
+        md = None
+    if md is None:
+        return selection_label(selection)
+    ax0, ax1 = get_axis(md, 0), get_axis(md, 1)
+    return selection_label(selection, (ax0.scale, ax1.scale), ax0.units)
+
+
+@callback(
+    Output(_IDS.spectrum_selection_note, "hidden"),
+    Input(_IDS.image_section, "hidden"),
+)
+def toggle_selection_note(image_section_hidden: bool | None) -> bool:
+    """A lone spectrum has no map to select from, so the line goes with the
+    image section in spectrum-only mode."""
+    return bool(image_section_hidden)
 
 
 @callback(
@@ -2451,6 +2517,37 @@ def toggle_polygon_controls(view_store: dict | None, shapes_store: dict | None):
     been submitted yet."""
     hidden = IMAGE_TOOLBOX.active_tool(view_store) != DRAW_POLYGON.id
     return hidden, hidden, not polygon_is_submittable(shapes_store)
+
+
+SPECTRUM_STALE_NOTE = (
+    "The spectrum does not include the shape you are drawing yet: press "
+    "Submit shape to update it."
+)
+SPECTRUM_STALE_NOTE_TOO_FEW = (
+    "The spectrum does not include the shape you are drawing yet: place at "
+    f"least {MIN_POLYGON_POINTS} corners, then press Submit shape."
+)
+
+
+@callback(
+    Output(_IDS.spectrum_stale_overlay, "hidden"),
+    Output(_IDS.spectrum_stale_overlay, "children"),
+    Input(_IDS.view_store, "data"),
+    Input(_IDS.shapes_store, "data"),
+)
+def toggle_spectrum_stale_overlay(view_store: dict | None, shapes_store: dict | None):
+    """A note over the spectrum while the polygon tool is pressed and corners
+    are placed that have not been submitted: unlike a box, a shape leaves the
+    spectrum as it was until Submit shape."""
+    drawing = IMAGE_TOOLBOX.active_tool(view_store) == DRAW_POLYGON.id
+    if not drawing or not polygon_is_dirty(shapes_store):
+        return True, no_update
+    note = (
+        SPECTRUM_STALE_NOTE
+        if polygon_is_submittable(shapes_store)
+        else SPECTRUM_STALE_NOTE_TOO_FEW
+    )
+    return False, html.Div(note, className="si-spectrum-stale-note")
 
 
 @callback(
