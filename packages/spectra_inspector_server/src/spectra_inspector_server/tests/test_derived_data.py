@@ -619,13 +619,13 @@ def test_script_computes_only_what_is_missing(
     assert len(cube_reads) == 4
 
 
-def test_script_skips_a_fileset_whose_axis_is_too_short_for_a_window(
+def test_script_leaves_out_a_window_the_axis_is_too_short_for(
     precompute_script: ModuleType, data_root: Path, store: DerivedDataStore
 ) -> None:
     report = precompute_script.precompute(
-        data_root, store.derived_dir, elements=("Fe",)
+        data_root, store.derived_dir, elements=("Fe", "Si")
     )
-    assert (report.hits, report.writes, report.skipped_filesets) == (0, 0, 1)
+    assert (report.hits, report.writes, report.skipped_filesets) == (0, 2, 0)
 
 
 def test_script_elements_and_stamps(
@@ -785,6 +785,22 @@ def test_script_main(
         == 0
     )
     assert "0 entries already up to date, 2 written" in capsys.readouterr().out
+    shutil.rmtree(store.derived_dir)
+
+
+def test_script_main_all_elements(
+    precompute_script: ModuleType,
+    data_root: Path,
+    store: DerivedDataStore,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    args = [str(data_root), str(store.derived_dir), "--all-elements"]
+    assert precompute_script.main([*args, "--elements", "Mg"]) == 0
+    # the spectrum and Na, Mg, Al, Si: the mock's axis ends at 2 keV
+    written = 5
+    assert f"{written} written" in capsys.readouterr().out
+    assert precompute_script.main(args) == 0
+    assert f"{written} entries already up to date, 0 written" in capsys.readouterr().out
     shutil.rmtree(store.derived_dir)
 
 
