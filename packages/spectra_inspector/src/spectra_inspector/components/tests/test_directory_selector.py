@@ -12,6 +12,7 @@ from dash._utils import AttributeDict
 from spectra_inspector.components.directory_selector import (
     MAX_RECENT_DIRECTORIES,
     NO_DIRECTORY_LABEL,
+    RECENT_STORE_ID,
     USE_CURRENT_LABEL,
     breadcrumb,
     browse_status,
@@ -78,7 +79,8 @@ def test_directory_selector_layout_ids():
 def test_directory_selector_hidden_outside_desktop_mode():
     div = directory_selector(component_index=0, enabled=False)
     assert isinstance(div, html.Div)
-    assert not div.children
+    # the plain-id store has to exist for dash to accept its callbacks
+    assert [c.id for c in div._traverse()] == [RECENT_STORE_ID]
 
 
 def _by_type(component) -> dict:

@@ -220,8 +220,10 @@ def directory_selector(
 ) -> html.Div:
     """The working-directory line and the dialog it opens.
 
-    Returns an empty div outside of desktop mode, which leaves every callback
-    below inert: none of their inputs exist on the page.
+    Outside of desktop mode the div holds nothing but the recent store, which
+    leaves every callback below inert: none of their pattern inputs exist on
+    the page. The store has a plain id, and dash refuses a callback whose
+    plain id is in no layout, so it is there either way.
     """
 
     IDS = directorySelectorLayoutIDs(index=component_index)
@@ -229,8 +231,10 @@ def directory_selector(
     if enabled is None:
         enabled = desktop_mode_enabled()
 
+    recent_store = dcc.Store(id=RECENT_STORE_ID, storage_type="local", data=[])
+
     if not enabled:
-        return html.Div(id=IDS.full_id(f"-disabled-{component_index}"))
+        return html.Div(recent_store, id=IDS.full_id(f"-disabled-{component_index}"))
 
     root = data_root_label()
 
@@ -255,7 +259,7 @@ def directory_selector(
             storage_type="memory",
             data=root,
         ),
-        dcc.Store(id=RECENT_STORE_ID, storage_type="local", data=[]),
+        recent_store,
     ]
 
     summary = html.Div(
