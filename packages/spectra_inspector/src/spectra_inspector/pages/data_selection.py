@@ -516,7 +516,9 @@ def update_map_figure(
     styling = sample_map.point_styling(
         records, _visible_samples(virtual_rows), active_sample
     )
-    style = sample_map._map_styles.get(map_style or "Satellite", "satellite")
+    style = sample_map._map_styles.get(
+        map_style or "Satellite", sample_map._map_styles["Satellite"]
+    )
 
     available = AvailableDatasets(
         available_files=(listing or {}).get("available_files") or [],

@@ -12,9 +12,34 @@ from spectra_inspector.components.layout_ids import indexedLayoutIDMapper
 from spectra_inspector.utilities.degrees import Latitude, Longitude
 from spectra_inspector.utilities.model import AvailableDatasets
 
+# plotly's built-in "satellite" style hides its ESRI layer from zoom 16 on
+# (the style was written for Catalonia, where another source takes over), so
+# the imagery is declared here instead. The source's `maxzoom` is the deepest
+# tile level requested: ESRI answers deeper requests over remote terrain with
+# a "map data not yet available" tile, and stopping short of that makes
+# maplibre stretch the last real tiles instead.
+_SATELLITE_STYLE = {
+    "version": 8,
+    "id": "esri-world-imagery",
+    "sources": {
+        "esri-world-imagery": {
+            "type": "raster",
+            "tiles": [
+                "https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}"
+            ],
+            "tileSize": 256,
+            "maxzoom": 17,
+            "attribution": "ESRI &copy; <a href='http://www.esri.com'>ESRI</a>",
+        }
+    },
+    "layers": [
+        {"id": "esri-world-imagery", "type": "raster", "source": "esri-world-imagery"}
+    ],
+}
+
 _map_styles = {
     "OpenStreetMap": "open-street-map",
-    "Satellite": "satellite",
+    "Satellite": _SATELLITE_STYLE,
     "Satellite-Composite": "satellite-streets",
     "None": "white-bg",
 }
@@ -118,7 +143,7 @@ def _default_center(df: pd.DataFrame | None) -> dict[str, float]:
 
 
 def get_map(
-    map_style: str, available_data: AvailableDatasets | None = None
+    map_style: str | dict, available_data: AvailableDatasets | None = None
 ) -> go.Figure:
 
     ms = mapSettings()
@@ -385,6 +410,7 @@ def get_layout(
                     dcc.Graph(
                         figure=fig,
                         id=IDS.get_id_with_index("samplemap"),
+                        config={"displaylogo": False},
                         # a fixed height, so the map takes whatever width
                         # its column has without growing taller with it
                         style={"height": MAP_HEIGHT, "width": "100%"},

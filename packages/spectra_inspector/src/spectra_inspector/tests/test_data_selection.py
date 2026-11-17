@@ -344,7 +344,7 @@ def test_map_figure_dims_filtered_samples_and_rings_the_active_one(page):
     assert fig.data[1].selectedpoints == (0,)
     assert list(fig.data[0].lat) == [-50.9]
     assert fig.layout.map.center.lat == -50.9
-    assert fig.layout.map.style == "satellite"
+    assert fig.layout.map.style["sources"]["esri-world-imagery"]["maxzoom"] == 17
 
 
 def test_map_figure_follows_the_style_and_the_selection(page):
