@@ -94,7 +94,10 @@ TOOLBOX_MARKERS = [
     screenshotMarker(
         target=(1917, 380),
         badge=(1814, 380),
-        description=[html.B("Add Image"), " opens another image panel."],
+        description=[
+            html.B("Add Image"),
+            " opens another image panel (single channel mode only).",
+        ],
     ),
     screenshotMarker(
         target=(1212, 458),

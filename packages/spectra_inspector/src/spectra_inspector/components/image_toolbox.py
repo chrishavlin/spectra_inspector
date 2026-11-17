@@ -5,7 +5,10 @@ stores, the same route a zoom dragged out on one panel takes to reach the
 others; the pressed tool is whatever the shared view's ``dragmode`` holds. The
 two plain buttons, reset and add, are answered by the inspector's
 figure-building and panel-adding callbacks, and the Panel Mode row holds the
-page's single / multi-channel switch, passed in ready-made. The polygon tool
+page's single / multi-channel switch, passed in ready-made. Add Image is
+hidden in multi-channel mode, which has one composite panel only; it stays in
+the layout because the page opens its first panels through the button's
+``n_clicks``. The polygon tool
 brings its own controls: the Submit shape button that sends the finished
 polygon to the server joins the first row, and a note on how to place points
 wraps onto a line of its own below it. See ``components/toolbox.py`` for the
@@ -191,17 +194,34 @@ def polygon_note() -> html.Div:
     )
 
 
+# Add Image's wrapper: hidden while the page is in multi-channel mode
+ADD_IMAGE_CONTROLS_ID = IMAGE_TOOLBOX.ids.full_id("-add-controls")
+
+
+def add_image_controls(*, hidden: bool = False) -> html.Div:
+    """Add Image, pushed to the right end of its row and hidden with the
+    wrapper (``toggle_add_image`` on the inspector page). No ``d-*`` class on
+    the wrapper, see ``polygon_note``."""
+    add_button = icon_button(IMAGE_TOOLBOX, ADD_IMAGE.id, size="sm")
+    return html.Div(
+        add_button, id=ADD_IMAGE_CONTROLS_ID, hidden=hidden, className="ms-auto"
+    )
+
+
 def image_toolbox_layout(
     mode_controls: list[Any] | None = None,
+    *,
+    add_image_hidden: bool = False,
 ) -> tuple[dbc.Card, toolboxLayoutIDs]:
     """The card, with Submit shape and then Add Image alone at the right end
     of the first row, the polygon note on its own line under them, and
     ``mode_controls`` filling the Panel Mode row."""
-    add_button = icon_button(
-        IMAGE_TOOLBOX, ADD_IMAGE.id, size="sm", class_name="ms-auto"
-    )
     extras = {
-        0: [polygon_controls(), add_button, polygon_note()],
+        0: [
+            polygon_controls(),
+            add_image_controls(hidden=add_image_hidden),
+            polygon_note(),
+        ],
         SCALEBAR_ROW: scalebar_controls(),
         PANEL_MODE_ROW: mode_controls or [],
     }
