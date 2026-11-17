@@ -28,7 +28,7 @@ Clientside callbacks and DOM listeners live in `assets/*.js`.
   element. `ids.get_id_with_index(prop)` emits the pattern-matching id the
   inspector's `ALL`/`MATCH` callbacks rely on for an arbitrary number of panels.
   Component tests round-trip `prop_names`, so add new props there. Composite
-  panels reuse the single panel's `bitmap-image` ids for card, graph, delete and
+  panels reuse the single panel's `bitmap-image` ids for card, graph and
   loading, which is what lets the shared callbacks handle both kinds.
 - **Backend access** goes only through
   `utilities/interface.py::SpectraInspectorServerInterface`; layouts check
