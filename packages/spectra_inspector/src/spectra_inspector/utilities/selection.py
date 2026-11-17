@@ -20,6 +20,9 @@ from dataclasses import asdict, dataclass
 from typing import Any
 
 import numpy as np
+from unyt import dimensions as unyt_dimensions
+from unyt import unyt_quantity
+from unyt.exceptions import UnitParseError
 
 SHAPES_KEY = "active_shapes"
 POLYGON_KEY = "polygon"
@@ -72,6 +75,12 @@ class boxSelection:
     ) -> tuple[IndexRange, IndexRange]:
         return self.index0_range, self.index1_range
 
+    @property
+    def pixel_area(self) -> float:
+        """The number of pixels inside."""
+        n0, n1 = (max(hi - lo, 0) for lo, hi in self.bounding_box())
+        return float(n0 * n1)
+
 
 @dataclass(frozen=True)
 class polygonSelection:
@@ -86,6 +95,14 @@ class polygonSelection:
 
     def request_kwargs(self) -> dict[str, Any]:
         return {"polygon": self.vertices}
+
+    @property
+    def pixel_area(self) -> float:
+        """The geometric area of the outline in pixels (the shoelace formula),
+        not the count of pixels the server sums, whose centres must fall
+        inside."""
+        x, y = np.asarray(self.points, dtype=float).T
+        return float(abs(np.dot(x, np.roll(y, -1)) - np.dot(y, np.roll(x, -1))) / 2)
 
     def bounding_box(
         self, image_shape: tuple[int, int] | None = None
@@ -116,6 +133,63 @@ class polygonSelection:
 
 
 Selection = boxSelection | polygonSelection
+
+FULL_SELECTION_LABEL = "Selection: full sample"
+# the units an area is shown in, smallest first, and the smallest value shown
+# in one before falling back to the unit below
+AREA_UNITS = ("nm**2", "um**2", "mm**2", "m**2")
+MIN_AREA_VALUE = 0.01
+
+
+def selection_area(
+    selection: Selection, pixel_size: tuple[float, float], units: str
+) -> unyt_quantity:
+    """The selection's area, from the pixel size along each image axis."""
+    size0 = unyt_quantity(abs(pixel_size[0]), units)
+    size1 = unyt_quantity(abs(pixel_size[1]), units)
+    return selection.pixel_area * size0 * size1
+
+
+def scaled_area(area: unyt_quantity) -> unyt_quantity:
+    """``area`` in the largest of ``AREA_UNITS`` that keeps it at or above
+    ``MIN_AREA_VALUE``: 9990 μm² stays as it is and 10000 μm² becomes
+    0.01 mm². Left alone when it is zero or not an area at all."""
+    if area.units.dimensions != unyt_dimensions.area:
+        return area
+    best = area
+    for unit in AREA_UNITS:
+        candidate = area.to(unit)
+        if float(candidate.value) >= MIN_AREA_VALUE * (1 - 1e-9):
+            best = candidate
+    return best
+
+
+def format_area(area: unyt_quantity) -> str:
+    """An area to three significant figures with its units, ``12.3 μm²``."""
+    number = f"{float(f'{float(area.value):.3g}'):g}"
+    if area.units.is_dimensionless:
+        return number
+    return f"{number} {str(area.units).replace('**2', '²')}"
+
+
+def selection_label(
+    selection: Selection | None,
+    pixel_size: tuple[float, float] | None = None,
+    units: str = "",
+) -> str:
+    """What the spectrum is summed over, in words, with the selection's area
+    when the pixel size along each image axis (in ``units``) is known."""
+    if selection is None:
+        return FULL_SELECTION_LABEL
+    kind = "box" if isinstance(selection, boxSelection) else "polygon"
+    if pixel_size is None:
+        return f"Selection: {kind}"
+    try:
+        area = scaled_area(selection_area(selection, pixel_size, units))
+    except UnitParseError:
+        return f"Selection: {kind}"
+    return f"Selection: {kind} (area {format_area(area)})"
+
 
 DEFAULT_OUTLINE_COLOR = "#ffffff"
 
