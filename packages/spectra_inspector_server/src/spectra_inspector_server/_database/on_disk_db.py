@@ -2,6 +2,10 @@ from dataclasses import dataclass
 from pathlib import Path, PurePath
 from typing import TYPE_CHECKING
 
+from spectra_inspector_server._database.sample_assignments import (
+    assignment_key,
+    load_sample_assignments,
+)
 from spectra_inspector_server._database.sample_metadata import SampleMetadataMapper
 from spectra_inspector_server._logging import spectraLogger
 from spectra_inspector_server.model import EDAX_file_set
@@ -34,8 +38,11 @@ class OnDiskDatabase:
     # every .spc found, including the ones that belong to a set in
     # available_maps: the frontend's "spectrum only" mode lists them all.
     available_spectra: dict[str, Path]
+    data_root: Path
     sample_metadata_csv: str
     sample_metadata_fullpath: Path | None = None
+    sample_assignments_yaml: str
+    sample_assignments_fullpath: Path | None = None
     allow_mixed_basenames: bool
     # cap on the number of datasets a scan will register. None means no limit.
     max_datasets: int | None
@@ -53,8 +60,12 @@ class OnDiskDatabase:
         sample_metadata_csv: str = "sample_metadata.csv",
         allow_mixed_basenames: bool = False,
         max_datasets: int | None = None,
+        sample_assignments_yaml: str = "sample_assignments.yaml",
     ):
+        self.data_root = ph.data_root
         self.sample_metadata_csv = sample_metadata_csv
+        self.sample_assignments_yaml = sample_assignments_yaml
+        self._sample_assignments: dict[str, str] = {}
         self.available_maps = {}
         self.available_spectra = {}
         self.allow_mixed_basenames = allow_mixed_basenames
@@ -86,6 +97,7 @@ class OnDiskDatabase:
         )
         self.scan_truncated = progress.limit_reached()
         self._locate_sample_metadata(ph.data_root)
+        self._locate_sample_assignments(ph.data_root)
 
     def set_working_directory(
         self,
@@ -118,6 +130,7 @@ class OnDiskDatabase:
             sample_metadata_csv=self.sample_metadata_csv,
             allow_mixed_basenames=self.allow_mixed_basenames,
             max_datasets=self.max_datasets,
+            sample_assignments_yaml=self.sample_assignments_yaml,
         )
         progress = _recursive_inspection(
             target,
@@ -129,14 +142,17 @@ class OnDiskDatabase:
         )
         scratch.scan_truncated = progress.limit_reached()
         # prefer a metadata csv alongside the data, fall back to the one at the
-        # data root.
+        # data root. Likewise for the assignments file.
         scratch._locate_sample_metadata(target, ph.data_root)
+        scratch._locate_sample_assignments(target, ph.data_root)
         scratch.available_samples  # noqa: B018  (populate before publishing)
 
         self.available_maps = scratch.available_maps
         self.available_spectra = scratch.available_spectra
         self._available_samples = scratch._available_samples
         self.sample_metadata_fullpath = scratch.sample_metadata_fullpath
+        self.sample_assignments_fullpath = scratch.sample_assignments_fullpath
+        self._sample_assignments = scratch._sample_assignments
         self.scan_truncated = scratch.scan_truncated
         self.working_directory = target
         return target
@@ -152,6 +168,56 @@ class OnDiskDatabase:
                 return
         msg = f"Could not find {self.sample_metadata_csv} in {directories}"
         spectraLogger.debug(msg)
+
+    def _locate_sample_assignments(self, *directories: Path) -> None:
+        self.sample_assignments_fullpath = None
+        self._sample_assignments = {}
+        self._available_samples = None
+        for directory in directories:
+            candidate = directory / self.sample_assignments_yaml
+            if candidate.is_file():
+                self.sample_assignments_fullpath = candidate
+                self._sample_assignments = load_sample_assignments(candidate)
+                return
+
+    def _assigned_sample(self, name: str) -> str | None:
+        """The sample ``sample_assignments.yaml`` gives the entry ``name``.
+
+        The lookup is by the file's path under the data root rather than by
+        ``name``, so it does not depend on how the database keys its entries. A
+        spectrum takes the assignment of the map it sits beside unless its own
+        ``.spc`` is listed.
+        """
+        paths: list[Path] = []
+        if (fileset := self.available_maps.get(name)) is not None:
+            paths.append(fileset.spd)
+        if (spc := self.available_spectra.get(name)) is not None:
+            paths += [spc, spc.with_suffix(".spd")]
+
+        for path in paths:
+            key = assignment_key(path, self.data_root)
+            if key is not None and key in self._sample_assignments:
+                return self._sample_assignments[key]
+        return None
+
+    def _warn_unknown_samples(self, assigned: set[str]) -> None:
+        mapper = self.sample_metadata_mapper
+        if not assigned or mapper is None:
+            return
+        try:
+            df = mapper.df
+        except (OSError, ValueError):
+            return
+        if "sample_id" not in df.columns:
+            return
+        known = set(df["sample_id"].astype(str))
+        for sample in sorted(assigned - known):
+            spectraLogger.warning(
+                "%s assigns the sample %s, which is not in %s",
+                self.sample_assignments_fullpath,
+                sample,
+                self.sample_metadata_fullpath,
+            )
 
     def add_fileset(
         self, basename: str, files: dict[str, Path] | EDAX_file_set
@@ -219,12 +285,20 @@ class OnDiskDatabase:
             # in mixed-basename mode the key is a path, so the sample name
             # comes from its stem. Only then: a stem with a dot in it would
             # otherwise lose its "suffix".
-            samples = {
-                name: _map_to_sample_name(
-                    Path(name).stem if self.allow_mixed_basenames else name
+            samples: dict[str, str] = {}
+            assigned: set[str] = set()
+            for name in sorted(names):
+                sample = (
+                    self._assigned_sample(name) if self._sample_assignments else None
                 )
-                for name in sorted(names)
-            }
+                if sample is None:
+                    sample = _map_to_sample_name(
+                        Path(name).stem if self.allow_mixed_basenames else name
+                    )
+                else:
+                    assigned.add(sample)
+                samples[name] = sample
+            self._warn_unknown_samples(assigned)
             self._available_samples = samples
         return self._available_samples
 
