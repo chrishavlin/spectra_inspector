@@ -67,8 +67,9 @@ def test_layout_shares_the_panel_ids_and_owns_the_channel_ids():
     # the pieces the inspector's shared callbacks key on
     assert card.id == {"type": "bitmap-image-div", "index": 7}
     assert {"type": "bitmap-image-graph", "index": 7} in ids
-    assert {"type": "bitmap-image-delete", "index": 7} in ids
     assert {"type": "composite-image-apply", "index": 7} in ids
+    # the one composite cannot be deleted
+    assert {"type": "bitmap-image-delete", "index": 7} not in ids
     # and none of a single panel's controls
     assert not any(id_["type"].startswith("element-dropdown-slider") for id_ in ids)
     assert not any(id_["type"] == "bitmap-image-colorscale" for id_ in ids)

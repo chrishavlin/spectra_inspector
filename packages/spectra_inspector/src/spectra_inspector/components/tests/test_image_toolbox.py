@@ -4,6 +4,7 @@ from dash import html
 
 from spectra_inspector.components.image_toolbox import (
     ADD_IMAGE,
+    ADD_IMAGE_CONTROLS_ID,
     DRAW_BOX,
     DRAW_POLYGON,
     ERASE_SHAPE,
@@ -81,14 +82,25 @@ def test_layout_puts_add_at_the_right_of_the_first_row():
     assert ids.div == IMAGE_TOOLBOX.ids.div
     rows = rows_of(card)
     assert len(rows) == 4
-    add_button = rows[0].children[-2]
-    assert add_button.id == ids.button_id(ADD_IMAGE.id)
-    assert "ms-auto" in add_button.className
+    add_controls = rows[0].children[-2]
+    assert add_controls.id == ADD_IMAGE_CONTROLS_ID
+    assert add_controls.hidden is False
+    assert "ms-auto" in add_controls.className
+    assert "d-" not in add_controls.className
+    assert add_controls.children.id == ids.button_id(ADD_IMAGE.id)
     assert isinstance(rows[1].children[-1], dbc.ButtonGroup)
     buttons = find(card, lambda c: isinstance(c, dbc.Button))
     assert len(buttons) == 10
     pressed = [b.id for b in buttons if b.active]
     assert pressed == [ids.tool_id(DRAW_BOX.id)]
+
+
+def test_add_can_start_hidden_but_stays_in_the_layout():
+    card, ids = image_toolbox_layout(add_image_hidden=True)
+    add_controls = rows_of(card)[0].children[-2]
+    assert add_controls.hidden is True
+    # the page opens its first panels through the button's n_clicks
+    assert add_controls.children.id == ids.button_id(ADD_IMAGE.id)
 
 
 def test_polygon_controls_sit_hidden_before_add_and_the_note_below():

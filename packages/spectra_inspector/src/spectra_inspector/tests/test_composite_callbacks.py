@@ -106,11 +106,11 @@ def test_mode_switch_replaces_the_panels_without_reading_them(callbacks):
     switches = [
         cb
         for cb in callbacks
-        if any(
+        if CONTAINER in cb["output"]
+        and any(
             dep.get("id") == MODE and dep["property"] == "value" for dep in cb["inputs"]
         )
     ]
-    assert len(switches) == 1
     (switch,) = switches
     for output in (CONTAINER, "graph-id-store", "processed-graph-ids"):
         assert output in switch["output"]
@@ -185,6 +185,11 @@ class TestSwitchImageMode:
             )
             == nothing
         )
+
+
+def test_add_image_is_hidden_in_multi_channel_mode(inspector):
+    assert inspector.toggle_add_image(inspector.IMAGE_MODE_MULTI) is True
+    assert inspector.toggle_add_image(inspector.IMAGE_MODE_SINGLE) is False
 
 
 class TestAddOrDeleteImage:

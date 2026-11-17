@@ -59,6 +59,7 @@ from spectra_inspector.components.energy_range_slider import (
 )
 from spectra_inspector.components.image_toolbox import (
     ADD_IMAGE,
+    ADD_IMAGE_CONTROLS_ID,
     DRAW_POLYGON,
     IMAGE_TOOLBOX,
     POLYGON_CONTROLS_ID,
@@ -545,7 +546,9 @@ def layout(
         labelClassName="btn btn-outline-secondary text-nowrap",
         labelCheckedClassName="active",
     )
-    toolbox_card, _ = image_toolbox_layout([mode_switch])
+    toolbox_card, _ = image_toolbox_layout(
+        [mode_switch], add_image_hidden=mode_switch.value == IMAGE_MODE_MULTI
+    )
     _layout_rows.append(
         html.Div(
             [toolbox_card, im_container],
@@ -1126,6 +1129,16 @@ def switch_image_mode(
         "next_index": n_new,
     }
     return children, graph_id_store, {"initialized": False}
+
+
+@callback(
+    Output(ADD_IMAGE_CONTROLS_ID, "hidden"),
+    Input(_IDS.image_mode, "value"),
+)
+def toggle_add_image(image_mode: str | None) -> bool:
+    """Multi-channel mode has its one composite panel and no way to add
+    another."""
+    return image_mode == IMAGE_MODE_MULTI
 
 
 @callback(

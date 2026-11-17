@@ -1,9 +1,10 @@
 """The multi-channel image panel: up to three element maps blended into one
 RGB image.
 
-The card, graph, delete button and loading overlay carry the same
-``bitmap-image`` ids as a single-channel panel, so view syncing, the box tool,
-reset and deletion treat both kinds alike. Everything specific to the composite
+The card, graph and loading overlay carry the same ``bitmap-image`` ids as a
+single-channel panel, so view syncing, the box tool and reset treat both kinds
+alike. The page shows exactly one composite, so unlike a single-channel panel
+it has no delete button. Everything specific to the composite
 (its Apply button, the channel rows and their details) lives under the
 ``composite-*`` id types, and the figure-building callback that answers its
 Apply is keyed on those.
@@ -130,7 +131,6 @@ def _badge_props(color: str) -> tuple[str, dict[str, str]]:
 def composite_image_layout(
     index: int,
     id_type_base: str = "bitmap-image",
-    delete_button_label: str = "X",
     init_elements: tuple[str, ...] = _INITIAL_CHANNEL_ELEMENTS,
     init_colors: tuple[str, ...] = DEFAULT_CHANNEL_COLORS,
     slider_start: float = 0.0,
@@ -277,11 +277,6 @@ def composite_image_layout(
     apply_button = Button(
         "Apply", id=panelIDs.get_id_with_index("apply"), **APPLY_IDLE_PROPS
     )
-    delete_button = Button(
-        delete_button_label,
-        id=imIDs.get_id_with_index("delete"),
-        color="secondary",
-    )
     details_button = Button(
         "Channel details",
         id=panelIDs.get_id_with_index("detailsbutton"),
@@ -295,7 +290,6 @@ def composite_image_layout(
             [
                 dbc.Col(html.Span("Composite", className="fw-bold"), width="auto"),
                 dbc.Col(apply_button, width="auto", className="ms-auto"),
-                dbc.Col(delete_button, width="auto"),
             ],
             align="center",
             className="g-2",
@@ -314,10 +308,6 @@ def composite_image_layout(
 
     tooltips.extend(
         [
-            hover_tooltip(
-                "Delete composite image panel",
-                target=imIDs.get_id_with_index("delete"),
-            ),
             hover_tooltip(
                 "Blend the channels with their current elements, colours and ranges",
                 target=panelIDs.get_id_with_index("apply"),
