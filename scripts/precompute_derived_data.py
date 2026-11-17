@@ -20,8 +20,10 @@ from. The tree is walked with the same scan the server uses, so the scan has
 to agree with the deployment on ``SPECTRA_INSPECTOR_DB_ALLOW_MIXED_BASENAMES``:
 it decides which filesets exist. The setting carries over whenever the
 settings are read, and ``--allow-mixed-basenames`` turns it on regardless.
-``--elements`` overrides the element windows. Entries whose stamp
-already matches are skipped, so re-running after adding data is cheap, and the
+``--elements`` overrides the element windows, and ``--all-elements`` images
+every window in ``ElementEnergyRanges``, whatever ``--elements`` says. A window
+that falls off a map's energy axis is left out for that map. Entries whose
+stamp already matches are skipped, so re-running after adding data is cheap, and the
 script only ever adds entries, so it is safe against a live server.
 ``--overwrite`` instead empties the derived data directory first, so every
 entry is recomputed; that is not safe against a live server, and the script
@@ -224,7 +226,15 @@ def _precompute_fileset(
         channel_range = channel_range_for_window(
             channel_axis, element_energy_ranges_keV[element]
         )
-        if store.has_entry(fileset, OP_IMAGE, {"channel_range": list(channel_range)}):
+        if not 0 <= channel_range[0] <= channel_range[1] <= channel_axis.size:
+            spectraLogger.info(
+                "%s: %s window %s is off the %d channel axis, not imaged",
+                fileset.spd,
+                element,
+                channel_range,
+                channel_axis.size,
+            )
+        elif store.has_entry(fileset, OP_IMAGE, {"channel_range": list(channel_range)}):
             report.hits += 1
         else:
             missing[channel_range] = element
@@ -260,6 +270,11 @@ def main(argv: list[str] | None = None) -> int:
         default=list(DEFAULT_PRECOMPUTE_ELEMENTS),
         metavar="EL",
         help=f"element windows to image (default: {' '.join(DEFAULT_PRECOMPUTE_ELEMENTS)})",
+    )
+    parser.add_argument(
+        "--all-elements",
+        action="store_true",
+        help="image every known element window, overriding --elements",
     )
     parser.add_argument(
         "--allow-mixed-basenames",
@@ -306,10 +321,13 @@ def main(argv: list[str] | None = None) -> int:
     if args.workers < 1:
         parser.error(f"--workers must be at least 1, got {args.workers}")
 
+    elements = (
+        tuple(element_energy_ranges_keV) if args.all_elements else tuple(args.elements)
+    )
     report = precompute(
         data_root,
         derived_dir,
-        elements=tuple(args.elements),
+        elements=elements,
         allow_mixed_basenames=allow_mixed_basenames,
         workers=args.workers,
         overwrite=args.overwrite,
