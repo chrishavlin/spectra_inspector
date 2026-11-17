@@ -306,6 +306,25 @@ def test_map_click_on_a_sample_with_several_datasets_clears_another_selection(
     assert result == (["C-29"], expected)
 
 
+def test_map_click_on_stacked_samples_filters_to_all_of_them(page):
+    stacked = AvailableDatasets(
+        available_files=["C-12", "C-13"],
+        sample_metadata=sampleMetadata(
+            records=[
+                _record("C-12", -50.9, -72.9, "Gabbro"),
+                _record("C-13", -50.9, -72.9, "Gabbro"),
+            ],
+            map_samples={"C-12": "C-12", "C-13": "C-13"},
+        ),
+    )
+    _trigger((page._MAP_ID, "clickData"))
+    click = {"points": [{"curveNumber": 1, "customdata": ["x", "C-13"]}]}
+    # one dataset each, but which was meant is not known: nothing is selected
+    assert page.filter_table_from_map(
+        None, click, 0, list_store_data(stacked), [], False, "C-12"
+    ) == (["C-13", "C-12"], no_update)
+
+
 def test_map_click_on_an_unknown_point_is_ignored(page):
     _trigger((page._MAP_ID, "clickData"))
     click = {"points": [{"curveNumber": 1, "customdata": ["x", "0"]}]}

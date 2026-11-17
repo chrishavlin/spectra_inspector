@@ -575,7 +575,8 @@ def filter_table_from_map(
     """Samples picked on the map filter the table.
 
     A box or lasso selection filters to the samples inside it, a click to the
-    one sample clicked; emptying the selection on the map, the "Clear" button
+    sample clicked and any drawn on the same spot, of which plotly reports
+    only the topmost; emptying the selection on the map, the "Clear" button
     and a new listing all lift the filter. "Clear" deselects the active dataset
     as well, and a click on the map that hits no sample presses it
     (assets/dataset_table.js). A click on a sample with exactly one
@@ -602,6 +603,7 @@ def filter_table_from_map(
         ]
         if not samples:
             return no_update, no_update
+        samples = sample_map.colocated_sample_ids(records, samples)
         clicked = True
     elif "selectedData" in trigger_props:
         picked = sample_map.sample_ids_from_points(selected_data)

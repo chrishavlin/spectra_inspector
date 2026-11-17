@@ -55,6 +55,13 @@ _SAMPLE_COLOR = "blue"
 _RING_COLOR = "orange"
 _DIMMED_OPACITY = 0.25
 
+# samples closer than this in both latitude and longitude (degrees, about a
+# metre) are drawn on top of each other and cannot be told apart by a click
+COLOCATED_DELTA = 1e-5
+
+# marker diameter in pixels by the number of maps at a point: (at least, size)
+_SIZE_STEPS = ((4, 32), (2, 26), (0, 20))
+
 
 @dataclass
 class mapSettings:
@@ -142,6 +149,44 @@ def _default_center(df: pd.DataFrame | None) -> dict[str, float]:
     return center
 
 
+def _marker_size(n_maps: int) -> int:
+    return next(size for at_least, size in _SIZE_STEPS if n_maps >= at_least)
+
+
+def _plural(n: int, noun: str) -> str:
+    return f"{n} {noun}" if n == 1 else f"{n} {noun}s"
+
+
+def _spot_summary(
+    df: pd.DataFrame, map_samples: dict[str, str] | None
+) -> tuple[list[str], list[int]]:
+    """For each sample, what shares its point on the map: a hover line naming
+    the samples stacked there and counting their maps, and that count. The
+    stacking is `colocated_sample_ids`'s: a sample without a location stands
+    alone."""
+    ids = df["sample_id"].astype(str).to_numpy()
+    lat = pd.to_numeric(df["lat"], errors="coerce").to_numpy(dtype=float)
+    lon = pd.to_numeric(df["lon"], errors="coerce").to_numpy(dtype=float)
+    maps_of: dict[str, int] = {}
+    for sample_id in (map_samples or {}).values():
+        maps_of[str(sample_id)] = maps_of.get(str(sample_id), 0) + 1
+
+    lines, counts = [], []
+    for i, sample_id in enumerate(ids):
+        near = (np.abs(lat - lat[i]) <= COLOCATED_DELTA) & (
+            np.abs(lon - lon[i]) <= COLOCATED_DELTA
+        )
+        near[i] = True
+        here = list(dict.fromkeys([sample_id, *ids[near]]))
+        n_maps = sum(maps_of.get(s, 0) for s in here)
+        line = _plural(n_maps, "map")
+        if len(here) > 1:
+            line = f"{len(here)} samples ({', '.join(here)}), {line}"
+        lines.append(line)
+        counts.append(n_maps)
+    return lines, counts
+
+
 def get_map(
     map_style: str | dict, available_data: AvailableDatasets | None = None
 ) -> go.Figure:
@@ -149,8 +194,10 @@ def get_map(
     ms = mapSettings()
 
     records = []
+    map_samples = None
     if available_data is not None and available_data.sample_metadata is not None:
         records = available_data.sample_metadata.records or []
+        map_samples = available_data.sample_metadata.map_samples
 
     if not records:
         recs = [
@@ -167,6 +214,7 @@ def get_map(
         df = pd.DataFrame(recs)
         center = _default_center(None)
         hd_cols = ["group_name", "lat", "lon", "elevation"]
+        sizes = None
 
     else:
         df = pd.DataFrame([record.model_dump() for record in records])
@@ -188,8 +236,11 @@ def get_map(
         df["longitude"] = ""
 
         df = df.apply(_attach_better_latlon, axis=1)
+        df["here"], n_maps = _spot_summary(df, map_samples)
+        sizes = [_marker_size(n) for n in n_maps]
 
         hd_cols = {
+            "here": True,
             "group_name": True,
             "sample_type": True,
             "description": True,
@@ -213,7 +264,12 @@ def get_map(
         map_style=map_style,
         size="marker_size",
         opacity=1.0,
+        labels={"here": "at this point"},
     )
+    if sizes is not None:
+        # a point grows with the number of maps on it, so a stack of samples
+        # or a sample mapped several times stands out
+        fig.update_traces(marker={"size": sizes, "sizemode": "diameter", "sizeref": 1})
     fig.update_layout(
         autosize=True,
         margin={"l": 0, "r": 0, "t": 0, "b": 0},
@@ -316,6 +372,43 @@ def sample_ids_from_points(event_data: dict | None) -> list[str]:
             continue
         sample_id = _sample_id_from_customdata(custom)
         if sample_id is not None and sample_id not in ids:
+            ids.append(sample_id)
+    return ids
+
+
+def _location(record: dict) -> tuple[float, float] | None:
+    lat = pd.to_numeric(record.get("lat"), errors="coerce")
+    lon = pd.to_numeric(record.get("lon"), errors="coerce")
+    if pd.isna(lat) or pd.isna(lon):
+        return None
+    return float(lat), float(lon)
+
+
+def colocated_sample_ids(
+    records: list[dict] | None,
+    sample_ids: list[str],
+    delta: float = COLOCATED_DELTA,
+) -> list[str]:
+    """The given samples followed by the ones sharing a location with any of
+    them. A click reports only the topmost of a stack of points, so this is
+    what the click could have meant."""
+    records = records or []
+    wanted = set(sample_ids)
+    spots = [
+        spot
+        for r in records
+        if str(r["sample_id"]) in wanted and (spot := _location(r)) is not None
+    ]
+    ids = list(sample_ids)
+    for record in records:
+        sample_id = str(record["sample_id"])
+        spot = _location(record)
+        if sample_id in ids or spot is None:
+            continue
+        if any(
+            abs(spot[0] - lat) <= delta and abs(spot[1] - lon) <= delta
+            for lat, lon in spots
+        ):
             ids.append(sample_id)
     return ids
 

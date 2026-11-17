@@ -1,3 +1,4 @@
+import pandas as pd
 import pytest
 
 from spectra_inspector.components import sample_map
@@ -132,3 +133,43 @@ def test_apply_point_styling_without_an_active_sample_keeps_the_center():
     sample_map.apply_point_styling(fig, sample_map.point_styling(RECORDS[:2]))
     assert fig.layout.map.center.lat == center
     assert fig.data[SAMPLE_TRACE].selectedpoints is None
+
+
+def test_colocated_sample_ids():
+    records = [
+        {"sample_id": "A", "lat": -50.9, "lon": -73.0},
+        {"sample_id": "B", "lat": -50.9000001, "lon": -73.0},
+        {"sample_id": "C", "lat": -50.9, "lon": -73.1},
+        {"sample_id": "D", "lat": None, "lon": None},
+    ]
+    assert sample_map.colocated_sample_ids(records, ["B"]) == ["B", "A"]
+    assert sample_map.colocated_sample_ids(records, ["C"]) == ["C"]
+    assert sample_map.colocated_sample_ids(records, ["D"]) == ["D"]
+
+
+def test_spot_summary_counts_the_maps_of_stacked_samples():
+    df = pd.DataFrame(
+        [
+            {"sample_id": "A", "lat": -50.9, "lon": -73.0},
+            {"sample_id": "B", "lat": -50.9, "lon": -73.0},
+            {"sample_id": "C", "lat": -51.0, "lon": -73.1},
+            {"sample_id": "D", "lat": None, "lon": None},
+        ]
+    )
+    map_samples = {"A 1": "A", "A 2": "A", "B 1": "B", "C 1": "C"}
+    lines, counts = sample_map._spot_summary(df, map_samples)
+    assert counts == [3, 3, 1, 0]
+    assert lines == [
+        "2 samples (A, B), 3 maps",
+        "2 samples (B, A), 3 maps",
+        "1 map",
+        "0 maps",
+    ]
+    assert [sample_map._marker_size(n) for n in (0, 1, 2, 3, 4, 9)] == [
+        20,
+        20,
+        26,
+        26,
+        32,
+        32,
+    ]
