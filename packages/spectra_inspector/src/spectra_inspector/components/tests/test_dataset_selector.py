@@ -249,3 +249,14 @@ def test_toggle_prefers_the_sessions_listing_over_an_unhydrated_store():
     user_data = {**SESSION, "spectrum_only": True}
     _, options, _ = toggle_spectrum_only([True], [empty], user_data)
     assert [o["value"] for o in options[0]] == ["none", "C-1", "S-1"]
+
+
+def test_dataset_names_are_in_natural_order():
+    listing = {"available_files": ["C-31", "c-4", "C-4b", "A-100", "C-12 Map 2"]}
+    assert dataset_names(listing, spectrum_only=False) == [
+        "A-100",
+        "c-4",
+        "C-4b",
+        "C-12 Map 2",
+        "C-31",
+    ]

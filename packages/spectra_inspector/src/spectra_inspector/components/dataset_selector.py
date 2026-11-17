@@ -18,6 +18,7 @@ is rendered empty and `hydrate_listing` fills it from the user store once
 mounted. A session that has not chosen a working directory lists nothing.
 """
 
+import re
 from typing import Any
 
 import dash_bootstrap_components as dbc
@@ -130,15 +131,26 @@ def session_listing(user_data: dict | None) -> dict[str, Any] | None:
     }
 
 
+def natural_key(name: str) -> list[tuple[int, int | str]]:
+    """Sort key ordering the digit runs of a name as numbers, so that C-4
+    comes before C-31. `dataset_table.js` has the grid's equivalent."""
+    return [
+        (0, int(part)) if part.isdigit() else (1, part.casefold())
+        for part in re.split(r"(\d+)", name)
+        if part
+    ]
+
+
 def dataset_names(
     available: AvailableDatasets | dict[str, Any] | None, spectrum_only: bool
 ) -> list[str]:
-    """The names the dropdown lists in a mode: spectra or maps, never both."""
+    """The names the dropdown lists in a mode, in natural order: spectra or
+    maps, never both."""
     listing = (
         list_store_data(available) if not isinstance(available, dict) else available
     )
     key = "available_spectra" if spectrum_only else "available_files"
-    return list(listing.get(key) or [])
+    return sorted(listing.get(key) or [], key=natural_key)
 
 
 def dropdown_options(names: list[str]) -> list[dict[str, Any]]:

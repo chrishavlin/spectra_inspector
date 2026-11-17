@@ -5,6 +5,10 @@
    costs no round trip. The grid's other options are kept: the callback writes
    the whole dashGridOptions prop.
 
+   Text columns sort with naturalCompare, which orders digit runs as numbers
+   (C-4 before C-31); the python side's natural_key gives the unsorted grid
+   the same order.
+
    Enter on a focused row of the working-directory dialog does what a double
    click does. The grid reports double clicks to Dash (cellDoubleClicked) but
    not key presses, so the key is turned into the double click the dialog
@@ -18,6 +22,17 @@ window.dash_clientside.dataset_table = {
   clear: function () {
     return "";
   },
+};
+
+window.dashAgGridFunctions = window.dashAgGridFunctions || {};
+
+const naturalCollator = new Intl.Collator(undefined, {
+  numeric: true,
+  sensitivity: "base",
+});
+
+window.dashAgGridFunctions.naturalCompare = function (valueA, valueB) {
+  return naturalCollator.compare(valueA ?? "", valueB ?? "");
 };
 
 document.addEventListener("keydown", (event) => {

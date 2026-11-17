@@ -73,6 +73,7 @@ COLUMN_DEFS: list[dict[str, Any]] = [
             "field": field,
             "headerName": header,
             "filter": "agTextColumnFilter",
+            "comparator": {"function": "naturalCompare"},
             "tooltipField": field,
             "minWidth": width,
             # the one column that says which row this is stays in view
