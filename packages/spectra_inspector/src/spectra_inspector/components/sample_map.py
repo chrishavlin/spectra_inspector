@@ -233,8 +233,8 @@ def _spot_summary(
 def _unified(values: list) -> object:
     """One hover value for a stack of samples: the value they share, or all
     of theirs in the order of the stack."""
-    shown = [_MISSING if pd.isna(v) else v for v in values]
-    if len(set(shown)) == 1:
+    shown = {_MISSING if pd.isna(v) else v for v in values}
+    if len(shown) == 1:
         return values[0]
     return ", ".join(map(str, shown))
 
