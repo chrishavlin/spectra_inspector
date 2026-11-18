@@ -3,9 +3,9 @@ name: server unit tests
 on:
   pull_request:
     paths:
-      - packages/spectra_inspector_server/src/**/*.py
-      - pyproject.toml
+      - packages/spectra_inspector_server/src/**
       - packages/spectra_inspector_server/pyproject.toml
+      - packages/spectra_inspector_server/uv.lock
       - .github/workflows/server-unit-tests.yml
   workflow_dispatch:
 
