@@ -13,6 +13,7 @@ from spectra_inspector_server._database.on_disk_db import (
     _inventory_directory,
     find_spc_files,
 )
+from spectra_inspector_server._database.scan_exclude import ScanExclusions
 from spectra_inspector_server.model import directoryEntry, directoryListing
 
 
@@ -59,8 +60,12 @@ def list_directory(
     data_root: str | Path,
     path: str | None = None,
     allow_mixed_basenames: bool = False,
+    exclusions: ScanExclusions | None = None,
 ) -> directoryListing:
     """List the subdirectories of one directory within the data root.
+
+    Directories and files that ``exclusions`` matches are left out of the
+    listing and of its counts, as a scan would leave them out.
 
     Raises
     ------
@@ -81,6 +86,12 @@ def list_directory(
         raise NotADirectoryError(msg)
 
     files, subdirs = _inventory_directory(target)
+    if exclusions:
+        if exclusions.excludes(target):
+            files, subdirs = {ext: [] for ext in files}, []
+        else:
+            files = exclusions.filter_inventory(files)
+            subdirs = [d for d in subdirs if not exclusions.excludes(d)]
 
     entries = [
         directoryEntry(name=d.name, path=relative_to_root(root, d))

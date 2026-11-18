@@ -333,6 +333,7 @@ async def browse_directory(
             ph.data_root,
             path,
             allow_mixed_basenames=settings.db_allow_mixed_basenames,
+            exclusions=ph.database.scan_exclusions,
         )
     except NotADirectoryError as err:
         raise HTTPException(404, detail=str(err)) from err

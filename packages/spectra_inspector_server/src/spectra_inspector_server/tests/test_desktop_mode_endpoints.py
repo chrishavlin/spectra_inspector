@@ -408,3 +408,22 @@ def test_selected_datasets_become_valid_sample_names(
     ph = desktop_client.app.state.ph  # type:ignore[attr-defined]
     assert _valid_sample_name("C-3", ph) is True
     assert _valid_sample_name("C-1", ph) is False
+
+
+@pytest.mark.usefixtures("_clear_dependency_caches")
+def test_scan_exclude_applies_to_browsing_and_scanning(
+    data_root: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    (data_root / "scan_exclude.yaml").write_text(
+        'exclude:\n  - "session-b"\n  - "session-a/nested"\n', encoding="utf-8"
+    )
+    with _client(data_root, monkeypatch, desktop_mode=True) as client:
+        listing = directoryListing(**client.get("/browse-directory").json())
+        assert [d.name for d in listing.directories] == ["session-a"]
+
+        response = client.get("/datasets-in-directory", params={"path": ""})
+        assert AvailableDatasets(**response.json()).available_files == ["C-1"]
+
+        response = client.get("/datasets-in-directory", params={"path": "session-b"})
+        assert AvailableDatasets(**response.json()).available_files == []

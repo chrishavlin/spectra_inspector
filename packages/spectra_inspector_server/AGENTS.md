@@ -32,6 +32,10 @@ Data source is a filesystem scan, not a real database:
   heuristic unless an optional `sample_assignments.yaml` lists it
   (`_database/sample_assignments.py`), keyed by root-relative path in both key
   modes.
+- An optional `scan_exclude.yaml` at the data root (`_database/scan_exclude.py`)
+  hides matching files and directories from every scan and from
+  `/browse-directory`; anything new that enumerates the tree must honour
+  `OnDiskDatabase.scan_exclusions` too.
 - `processor/file_loaders.py` loads metadata lazily through
   `rsciio.edax.file_reader`, then mmaps the `.spd` payload directly
   (`np.memmap`, deliberately bypassing rsciio's dask wrapper). Array axis order
