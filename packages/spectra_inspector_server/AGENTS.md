@@ -28,7 +28,10 @@ Data source is a filesystem scan, not a real database:
   path goes through `_file_browser.resolve_within_root`, which is the only thing
   confining browsing to the data root — new endpoints taking a path must use it.
 - An optional `sample_metadata.csv` at the data root supplies lat/lon/group
-  metadata for the frontend's sample map.
+  metadata for the frontend's sample map. A map's sample id is a filename
+  heuristic unless an optional `sample_assignments.yaml` lists it
+  (`_database/sample_assignments.py`), keyed by root-relative path in both key
+  modes.
 - `processor/file_loaders.py` loads metadata lazily through
   `rsciio.edax.file_reader`, then mmaps the `.spd` payload directly
   (`np.memmap`, deliberately bypassing rsciio's dask wrapper). Array axis order

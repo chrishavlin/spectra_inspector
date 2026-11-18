@@ -67,6 +67,48 @@ basename.xml
 With `SPECTRA_INSPECTOR_DESKTOP_MODE` enabled the traversal is deferred: the
 client picks one directory below the data root to scan instead (see below).
 
+### Matching maps to samples
+
+Two optional files tie the maps to rock samples. Both are looked for in the
+scanned working directory first and then in `SPECTRA_INSPECTOR_DATA_ROOT`, the
+first one found is used, and both are re-read whenever the database is
+refreshed.
+
+`sample_metadata.csv` is the table of samples (id, location, group) behind the
+frontend's sample map.
+
+A map is matched to a sample by its filename: everything from `Map` onward is
+dropped, so `C-12 Map1.spd` belongs to sample `C-12`. For a map whose name does
+not reduce to a sample id that way, `sample_assignments.yaml` states the sample
+outright:
+
+```yaml
+schema: 1
+maps:
+  "session-a/whatever-my-name-is.spd":
+    sample: C-16
+    note: "renamed in 2023, confirmed against notebook"
+  "siteA/run3/map20230114_0.spd":
+    sample: C-12
+  "loose/standard-check.spc":
+    sample: C-12
+```
+
+- a key is the file's path relative to `SPECTRA_INSPECTOR_DATA_ROOT`, including
+  the extension, whether or not `SPECTRA_INSPECTOR_DB_ALLOW_MIXED_BASENAMES` is
+  set, and also when the file sits in a working directory below the root.
+- write keys with `/`; a leading `/` and `\` separators are accepted too, so a
+  file moves between Windows, macOS and Linux unchanged. Letter case has to
+  match the name on disk. Save the file as UTF-8.
+- an entry for a `.spd` also applies to the `.spc` beside it in spectrum-only
+  mode. Only a spectrum with no map needs a `.spc` key of its own.
+- `sample` is required, `note` is free text, `schema` may be left out. Other
+  fields are ignored.
+- any map that is not listed is still matched by its filename.
+- a `sample` that is not in `sample_metadata.csv` logs a warning; the map keeps
+  that sample id but has no metadata.
+- a file that cannot be parsed is ignored with a warning in the server log.
+
 ### Configuration
 
 Copy `default.env` to `.env` and modify as needed. Every setting is read with a
