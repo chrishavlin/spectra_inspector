@@ -73,7 +73,7 @@ def test_directory_selector_layout_ids():
     ids = directorySelectorLayoutIDs(index=0)
     for prop in ids.prop_names:
         assert prop in getattr(ids, prop)
-        assert ids.get_id_with_index(prop)["index"] == 0
+        assert getattr(ids, prop).indexed["index"] == 0
 
 
 def test_directory_selector_hidden_outside_desktop_mode():

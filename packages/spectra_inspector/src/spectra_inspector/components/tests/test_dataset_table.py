@@ -69,7 +69,7 @@ def test_layout_ids():
     ids = datasetTableLayoutIDs(index=0)
     for prop in ids.prop_names:
         assert prop in getattr(ids, prop)
-        assert ids.get_id_with_index(prop)["index"] == 0
+        assert getattr(ids, prop).indexed["index"] == 0
 
 
 def test_rows_follow_the_listing_order_and_mode():

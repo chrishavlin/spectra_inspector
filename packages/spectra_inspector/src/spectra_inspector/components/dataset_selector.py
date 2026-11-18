@@ -27,7 +27,7 @@ from dash import ALL, MATCH, Input, Output, State, callback, dcc, html, no_updat
 from dash.dcc import Dropdown
 from dash_bootstrap_components import Button, Col, Row
 
-from spectra_inspector.components.layout_ids import indexedLayoutIDMapper
+from spectra_inspector.components.layout_ids import ID, indexedLayoutIDMapper
 from spectra_inspector.settings import Settings
 from spectra_inspector.user_store_model import (
     USER_STORE_DIV_ID,
@@ -41,29 +41,11 @@ from spectra_inspector.utilities.model import AvailableDatasets
 SPECTRUM_ONLY_LABEL = "Spectrum only"
 
 
-class datasetSelectorLayoutIDs(indexedLayoutIDMapper):
-    prop_names: tuple[str, ...] = ("dropdown", "refresh", "spectrumonly", "liststore")
-
-    def __init__(
-        self, id_type_base: str = "data-selector", index: int | None = None
-    ) -> None:
-        super().__init__(id_type_base, index)
-
-    @property
-    def dropdown(self) -> str:
-        return self.full_id("-dropdown")
-
-    @property
-    def refresh(self) -> str:
-        return self.full_id("-refresh")
-
-    @property
-    def spectrumonly(self) -> str:
-        return self.full_id("-spectrumonly")
-
-    @property
-    def liststore(self) -> str:
-        return self.full_id("-liststore")
+class datasetSelectorLayoutIDs(indexedLayoutIDMapper, base="data-selector"):
+    dropdown = ID()
+    refresh = ID()
+    spectrumonly = ID()
+    liststore = ID()
 
 
 def _format_selection(value: str) -> dict[str, Any]:
@@ -177,7 +159,7 @@ def refresh_button(ids: datasetSelectorLayoutIDs) -> Button:
     """
     return Button(
         html.I(className="fa fa-refresh"),
-        id=ids.get_id_with_index("refresh"),
+        id=ids.refresh.indexed,
         color="secondary",
         title="Refresh datasets",
         className="" if Settings().desktop_mode else "d-none",
@@ -206,7 +188,7 @@ def dataset_selector(
         _data_selector = html.Div(
             [
                 dcc.Store(
-                    id=dataset_selector_IDS.get_id_with_index("liststore"),
+                    id=dataset_selector_IDS.liststore.indexed,
                     storage_type="memory",
                     data=list_store_data(datasets),
                 ),
@@ -215,9 +197,7 @@ def dataset_selector(
                         Col(dropdown_label, width="auto"),
                         Col(
                             dbc.Switch(
-                                id=dataset_selector_IDS.get_id_with_index(
-                                    "spectrumonly"
-                                ),
+                                id=dataset_selector_IDS.spectrumonly.indexed,
                                 label=SPECTRUM_ONLY_LABEL,
                                 value=spectrum_only,
                                 style={"whiteSpace": "nowrap"},
@@ -234,7 +214,7 @@ def dataset_selector(
                         Col(
                             Dropdown(
                                 _menu_items,
-                                id=dataset_selector_IDS.get_id_with_index("dropdown"),
+                                id=dataset_selector_IDS.dropdown.indexed,
                                 placeholder=f"{placeholder} to load",
                                 value=sample_id,
                                 # the control is white in both themes while the
@@ -262,9 +242,9 @@ _IDS = datasetSelectorLayoutIDs()
 
 
 @callback(
-    Output({"type": _IDS.liststore, "index": MATCH}, "data", allow_duplicate=True),
-    Output({"type": _IDS.dropdown, "index": MATCH}, "options", allow_duplicate=True),
-    Input({"type": _IDS.liststore, "index": MATCH}, "id"),
+    Output(_IDS.liststore.at(MATCH), "data", allow_duplicate=True),
+    Output(_IDS.dropdown.at(MATCH), "options", allow_duplicate=True),
+    Input(_IDS.liststore.at(MATCH), "id"),
     State(USER_STORE_DIV_ID, "data"),
     prevent_initial_call="initial_duplicate",
 )
@@ -283,8 +263,8 @@ def hydrate_listing(_store_id: dict, user_data: dict | None):
 
 
 @callback(
-    Output({"type": _IDS.spectrumonly, "index": MATCH}, "value"),
-    Input({"type": _IDS.liststore, "index": MATCH}, "id"),
+    Output(_IDS.spectrumonly.at(MATCH), "value"),
+    Input(_IDS.liststore.at(MATCH), "id"),
     State(USER_STORE_DIV_ID, "data"),
 )
 def hydrate_spectrum_only(_store_id: dict, user_data: dict | None):
@@ -303,10 +283,10 @@ def hydrate_spectrum_only(_store_id: dict, user_data: dict | None):
 
 @callback(
     Output(USER_STORE_DIV_ID, "data", allow_duplicate=True),
-    Output({"type": _IDS.dropdown, "index": ALL}, "options", allow_duplicate=True),
-    Output({"type": _IDS.dropdown, "index": ALL}, "value", allow_duplicate=True),
-    Input({"type": _IDS.spectrumonly, "index": ALL}, "value"),
-    State({"type": _IDS.liststore, "index": ALL}, "data"),
+    Output(_IDS.dropdown.at(ALL), "options", allow_duplicate=True),
+    Output(_IDS.dropdown.at(ALL), "value", allow_duplicate=True),
+    Input(_IDS.spectrumonly.at(ALL), "value"),
+    State(_IDS.liststore.at(ALL), "data"),
     State(USER_STORE_DIV_ID, "data"),
     prevent_initial_call=True,
 )

@@ -4,7 +4,7 @@ from collections.abc import Iterable
 import dash_bootstrap_components as dbc
 from dash import Input, Output, State, callback, dcc, html
 
-from spectra_inspector.components.layout_ids import indexedLayoutIDMapper
+from spectra_inspector.components.layout_ids import ID, indexedLayoutIDMapper
 from spectra_inspector.components.toolbox import color_input
 from spectra_inspector.utilities.image_export import (
     MIN_IMAGE_SIDE,
@@ -55,102 +55,28 @@ def outline_style(
     )
 
 
-class dataExportPanelIDS(indexedLayoutIDMapper):
-    prop_names: tuple[str, ...] = (
-        "div",
-        "formatdropdown",
-        "exportsummary",
-        "exportmsa",
-        "downloadsummary",
-        "downloadmsa",
-        "msafileformat",
-        "elementweightsdiv",
-        "resetweights",
-        "zeroelement",
-        "figuresettings",
-        "includeoutline",
-        "outlinelinecolor",
-        "outlinedotcolor",
-        "exportscale",
-        "exportscalecontainer",
-    )
-
-    def __init__(
-        self, id_type_base: str = "data-export-panel", index: int | None = None
-    ):
-        super().__init__(id_type_base, index)
-
-    @property
-    def formatdropdown(self) -> str:
-        return self.full_id("-formatdropdown")
-
-    @property
-    def exportsummary(self) -> str:
-        return self.full_id("-exportsummarybutton")
-
-    @property
-    def exportmsa(self) -> str:
-        return self.full_id("-exportmsa")
-
-    @property
-    def downloadsummary(self) -> str:
-        return self.full_id("-downloadsummary")
-
-    @property
-    def downloadmsa(self) -> str:
-        return self.full_id("-downloadmsa")
-
-    @property
-    def msafileformat(self) -> str:
-        return self.full_id("-msafileformat")
-
-    @property
-    def msafiletype(self) -> str:
-        return self.full_id("-msafiletype")
-
-    @property
-    def msafileformatcontainer(self) -> str:
-        return self.full_id("-msafileformatcontainer")
-
-    @property
-    def elementweightsdiv(self) -> str:
-        return self.full_id("-elementweightsdiv")
-
-    @property
-    def resetweights(self) -> str:
-        return self.full_id("-resetweights")
-
-    @property
-    def zeroelement(self) -> str:
-        return self.full_id("-zeroelement")
+class dataExportPanelIDS(indexedLayoutIDMapper, base="data-export-panel"):
+    formatdropdown = ID()
+    exportsummary = ID("-exportsummarybutton")
+    exportmsa = ID()
+    downloadsummary = ID()
+    downloadmsa = ID()
+    msafileformat = ID()
+    msafiletype = ID()
+    msafileformatcontainer = ID()
+    elementweightsdiv = ID()
+    resetweights = ID()
+    zeroelement = ID()
+    figuresettings = ID()
+    includeoutline = ID()
+    outlinelinecolor = ID()
+    outlinedotcolor = ID()
+    exportscale = ID()
+    exportscalecontainer = ID()
 
     def zero_element_id(self, element: str) -> dict[str, str]:
         """The pattern-matching id of the button that zeroes one element."""
-        return {"type": self.zeroelement, "index": element}
-
-    @property
-    def figuresettings(self) -> str:
-        return self.full_id("-figuresettings")
-
-    @property
-    def includeoutline(self) -> str:
-        return self.full_id("-includeoutline")
-
-    @property
-    def outlinelinecolor(self) -> str:
-        return self.full_id("-outlinelinecolor")
-
-    @property
-    def outlinedotcolor(self) -> str:
-        return self.full_id("-outlinedotcolor")
-
-    @property
-    def exportscale(self) -> str:
-        return self.full_id("-exportscale")
-
-    @property
-    def exportscalecontainer(self) -> str:
-        return self.full_id("-exportscalecontainer")
+        return self.zeroelement.at(element)
 
 
 def scale_options(

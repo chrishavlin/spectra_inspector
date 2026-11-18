@@ -17,47 +17,19 @@ from dash import (
 )
 from dash.development.base_component import Component
 
-from spectra_inspector.components.layout_ids import indexedLayoutIDMapper
+from spectra_inspector.components.layout_ids import ID, indexedLayoutIDMapper
 from spectra_inspector.components.tooltip import hover_tooltip
 from spectra_inspector.utilities.element_energy_ranges import (
     get_element_energy_ranges,
 )
 
 
-class elementDropdownSliderIDS(indexedLayoutIDMapper):
-    prop_names: tuple[str, ...] = (
-        "div",
-        "dropdown",
-        "slider",
-        "collapse",
-        "collapsebutton",
-        "refreshbutton",
-    )
-
-    def __init__(
-        self, id_type_base: str = "element-dropdown-slider", index: int | None = None
-    ):
-        super().__init__(id_type_base, index)
-
-    @property
-    def dropdown(self) -> str:
-        return self.full_id("-dropdown")
-
-    @property
-    def slider(self) -> str:
-        return self.full_id("-slider")
-
-    @property
-    def collapse(self) -> str:
-        return self.full_id("-collapse")
-
-    @property
-    def collapsebutton(self) -> str:
-        return self.full_id("-collapsebutton")
-
-    @property
-    def refreshbutton(self) -> str:
-        return self.full_id("-refreshbutton")
+class elementDropdownSliderIDS(indexedLayoutIDMapper, base="element-dropdown-slider"):
+    dropdown = ID()
+    slider = ID()
+    collapse = ID()
+    collapsebutton = ID()
+    refreshbutton = ID()
 
 
 @dataclass
@@ -118,7 +90,7 @@ def build_element_dropdown_and_slider(
     element_selector = dcc.Dropdown(
         [custom_label, *elements, *extra_options],
         value=init_element,
-        id=layoutIDs.get_id_with_index("dropdown"),
+        id=layoutIDs.dropdown.indexed,
         className="text-info",
         searchable=False,
         clearable=False,
@@ -134,7 +106,7 @@ def build_element_dropdown_and_slider(
         slider_stop,
         step=slider_step,
         value=slider_init_range,
-        id=layoutIDs.get_id_with_index("slider"),
+        id=layoutIDs.slider.indexed,
         className="text-info",
         marks=energy_marks,
     )
@@ -146,13 +118,13 @@ def build_element_dropdown_and_slider(
 
     apply_button = dbc.Button(
         "Apply",
-        id=layoutIDs.get_id_with_index("refreshbutton"),
+        id=layoutIDs.refreshbutton.indexed,
         **APPLY_IDLE_PROPS,
     )
 
     collapse_button = dbc.Button(
         "Adjust energy bounds",
-        id=layoutIDs.get_id_with_index("collapsebutton"),
+        id=layoutIDs.collapsebutton.indexed,
         color="secondary",
         n_clicks=0,
         className="text-nowrap",
@@ -160,26 +132,26 @@ def build_element_dropdown_and_slider(
 
     slider_collapse = dbc.Collapse(
         energy_range,
-        id=layoutIDs.get_id_with_index("collapse"),
+        id=layoutIDs.collapse.indexed,
         is_open=False,
     )
 
     tooltips: list[Component] = [
         hover_tooltip(
             "Adjust endpoints to set energy bounds (keV)",
-            target=layoutIDs.get_id_with_index("slider"),
+            target=layoutIDs.slider.indexed,
         ),
         hover_tooltip(
             "Click to show or hide the manual energy range adjustment panel",
-            target=layoutIDs.get_id_with_index("collapsebutton"),
+            target=layoutIDs.collapsebutton.indexed,
         ),
         hover_tooltip(
             "Click to apply any changes in element or energy bounds range",
-            target=layoutIDs.get_id_with_index("refreshbutton"),
+            target=layoutIDs.refreshbutton.indexed,
         ),
         hover_tooltip(
             "Select an element map",
-            target=layoutIDs.get_id_with_index("dropdown"),
+            target=layoutIDs.dropdown.indexed,
         ),
     ]
 
@@ -247,10 +219,10 @@ def register_element_selector_callbacks(
     ids = elementDropdownSliderIDS(id_type_base)
 
     @callback(
-        Output({"type": ids.slider, "index": MATCH}, "value"),
-        Output({"type": ids.dropdown, "index": MATCH}, "value"),
-        Input({"type": ids.dropdown, "index": MATCH}, "value"),
-        Input({"type": ids.slider, "index": MATCH}, "value"),
+        Output(ids.slider.at(MATCH), "value"),
+        Output(ids.dropdown.at(MATCH), "value"),
+        Input(ids.dropdown.at(MATCH), "value"),
+        Input(ids.slider.at(MATCH), "value"),
     )
     def sync_element_selector_dropdown(
         element_name: str, slider_range: tuple[float, float]
@@ -271,9 +243,9 @@ def register_element_selector_callbacks(
         raise RuntimeError(msg)
 
     @callback(
-        Output({"type": ids.collapse, "index": MATCH}, "is_open"),
-        [Input({"type": ids.collapsebutton, "index": MATCH}, "n_clicks")],
-        [State({"type": ids.collapse, "index": MATCH}, "is_open")],
+        Output(ids.collapse.at(MATCH), "is_open"),
+        [Input(ids.collapsebutton.at(MATCH), "n_clicks")],
+        [State(ids.collapse.at(MATCH), "is_open")],
     )
     def toggle_energy_slider_collapse(n, is_open):
         if n:
@@ -292,10 +264,10 @@ def register_apply_pending_callback(
     ids = elementDropdownSliderIDS(id_type_base)
     clientside_callback(
         ClientsideFunction("applyButton", "markPending"),
-        Output({"type": ids.refreshbutton, "index": MATCH}, "color"),
-        Output({"type": ids.refreshbutton, "index": MATCH}, "className"),
-        Input({"type": ids.dropdown, "index": MATCH}, "value"),
-        Input({"type": ids.slider, "index": MATCH}, "value"),
+        Output(ids.refreshbutton.at(MATCH), "color"),
+        Output(ids.refreshbutton.at(MATCH), "className"),
+        Input(ids.dropdown.at(MATCH), "value"),
+        Input(ids.slider.at(MATCH), "value"),
         prevent_initial_call=True,
     )
 

@@ -40,7 +40,7 @@ def test_deep_link_layout_decodes_the_sample_name(inspector):
 
     layout = inspector.layout(sample_name=url_segment)
 
-    dropdown_id = datasetSelectorLayoutIDs(index=1).get_id_with_index("dropdown")
+    dropdown_id = datasetSelectorLayoutIDs(index=1).dropdown.indexed
     dropdown = _find(
         layout,
         lambda c: isinstance(c, Dropdown) and getattr(c, "id", None) == dropdown_id,

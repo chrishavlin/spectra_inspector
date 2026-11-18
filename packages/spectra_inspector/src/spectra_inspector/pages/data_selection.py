@@ -71,15 +71,15 @@ selectorIDs = datasetSelectorLayoutIDs(index=0)
 tableIDs = datasetTableLayoutIDs(index=0)
 dirSelectorIDs = directorySelectorLayoutIDs(index=0)
 
-_MAP_ID = {"type": _basemapIDs.samplemap, "index": 0}
-_MAP_STYLE_ID = {"type": _basemapIDs.dropdown, "index": 0}
-_MAP_FOCUS_ID = {"type": _basemapIDs.focus, "index": 0}
-_MAP_EXTENT_ID = {"type": _basemapIDs.extent, "index": 0}
-_DROPDOWN_ID = selectorIDs.get_id_with_index("dropdown")
-_LISTSTORE_ID = selectorIDs.get_id_with_index("liststore")
-_MODE_ID = selectorIDs.get_id_with_index("spectrumonly")
-_GRID_ID = tableIDs.get_id_with_index("grid")
-_SAMPLEFILTER_ID = tableIDs.get_id_with_index("samplefilter")
+_MAP_ID = _basemapIDs.samplemap.at(0)
+_MAP_STYLE_ID = _basemapIDs.dropdown.at(0)
+_MAP_FOCUS_ID = _basemapIDs.focus.at(0)
+_MAP_EXTENT_ID = _basemapIDs.extent.at(0)
+_DROPDOWN_ID = selectorIDs.dropdown.indexed
+_LISTSTORE_ID = selectorIDs.liststore.indexed
+_MODE_ID = selectorIDs.spectrumonly.indexed
+_GRID_ID = tableIDs.grid.indexed
+_SAMPLEFILTER_ID = tableIDs.samplefilter.indexed
 
 # the id types of the controls that filter the table's rows
 _FILTER_TYPES = frozenset(
@@ -300,7 +300,7 @@ def update_selected_dataset(
     Output(_DROPDOWN_ID, "options"),
     Output(_DROPDOWN_ID, "value"),
     Output(USER_STORE_DIV_ID, "data", allow_duplicate=True),
-    Input(selectorIDs.get_id_with_index("refresh"), "n_clicks"),
+    Input(selectorIDs.refresh.indexed, "n_clicks"),
     State(USER_STORE_DIV_ID, "data"),
     State(_MODE_ID, "value"),
     prevent_initial_call=True,
@@ -367,13 +367,13 @@ def hydrate_selection(_store_id: dict, listing: dict | None, user_data: dict | N
 @callback(
     Output(_GRID_ID, "rowData"),
     Output(_GRID_ID, "selectedRows", allow_duplicate=True),
-    Output(tableIDs.get_id_with_index("groups"), "options"),
-    Output(tableIDs.get_id_with_index("types"), "options"),
+    Output(tableIDs.groups.indexed, "options"),
+    Output(tableIDs.types.indexed, "options"),
     Input(_LISTSTORE_ID, "data"),
     Input(_MODE_ID, "value"),
-    Input(tableIDs.get_id_with_index("groups"), "value"),
-    Input(tableIDs.get_id_with_index("types"), "value"),
-    Input(tableIDs.get_id_with_index("located"), "value"),
+    Input(tableIDs.groups.indexed, "value"),
+    Input(tableIDs.types.indexed, "value"),
+    Input(tableIDs.located.indexed, "value"),
     Input(_SAMPLEFILTER_ID, "data"),
     State(_DROPDOWN_ID, "value"),
     prevent_initial_call="initial_duplicate",
@@ -421,8 +421,8 @@ def update_table_rows(
 
 
 @callback(
-    Output(tableIDs.get_id_with_index("sampledisplay"), "hidden"),
-    Output(tableIDs.get_id_with_index("samplebadge"), "children"),
+    Output(tableIDs.sampledisplay.indexed, "hidden"),
+    Output(tableIDs.samplebadge.indexed, "children"),
     Input(_SAMPLEFILTER_ID, "data"),
     Input(_DROPDOWN_ID, "value"),
 )
@@ -486,13 +486,13 @@ def sync_table_selection(selected_rows: list[dict] | dict | None, value: str | N
 clientside_callback(
     ClientsideFunction(namespace="dataset_table", function_name="quick_filter"),
     Output(_GRID_ID, "dashGridOptions"),
-    Input(tableIDs.get_id_with_index("search"), "value"),
+    Input(tableIDs.search.indexed, "value"),
     State(_GRID_ID, "dashGridOptions"),
 )
 
 
 @callback(
-    Output(tableIDs.get_id_with_index("count"), "children"),
+    Output(tableIDs.count.indexed, "children"),
     Input(_GRID_ID, "virtualRowData"),
     Input(_LISTSTORE_ID, "data"),
     Input(_MODE_ID, "value"),
@@ -671,7 +671,7 @@ def focus_map_on_selection(
     Output(_MAP_FOCUS_ID, "data"),
     Input(_MAP_ID, "selectedData"),
     Input(_MAP_ID, "clickData"),
-    Input(tableIDs.get_id_with_index("clearsamples"), "n_clicks"),
+    Input(tableIDs.clearsamples.indexed, "n_clicks"),
     Input(_LISTSTORE_ID, "data"),
     State(_SAMPLEFILTER_ID, "data"),
     State(_MODE_ID, "value"),

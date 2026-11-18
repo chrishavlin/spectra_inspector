@@ -12,7 +12,7 @@ from plotly.colors import get_colorscale
 from spectra_inspector.components.energy_range_slider import (
     build_element_dropdown_and_slider,
 )
-from spectra_inspector.components.layout_ids import indexedLayoutIDMapper
+from spectra_inspector.components.layout_ids import ID, indexedLayoutIDMapper
 from spectra_inspector.components.scalebar import scalebarHandler
 from spectra_inspector.components.tooltip import hover_tooltip
 from spectra_inspector.logging import spectraLogger
@@ -27,40 +27,12 @@ from spectra_inspector.utilities.view_sync import apply_view_to_figure
 _colorscales = get_sequential_colorscales()
 
 
-class bitmapImageLayoutIDs(indexedLayoutIDMapper):
-    prop_names: tuple[str, ...] = (
-        "div",
-        "graph",
-        "refresh",
-        "delete",
-        "colorscale",
-        "loadingoverlay",
-    )
-
-    def __init__(
-        self, id_type_base: str = "bitmap-image", index: int | None = None
-    ) -> None:
-        super().__init__(id_type_base, index)
-
-    @property
-    def graph(self) -> str:
-        return self.full_id("-graph")
-
-    @property
-    def refresh(self) -> str:
-        return self.full_id("-refresh")
-
-    @property
-    def delete(self) -> str:
-        return self.full_id("-delete")
-
-    @property
-    def colorscale(self) -> str:
-        return self.full_id("-colorscale")
-
-    @property
-    def loadingoverlay(self) -> str:
-        return self.full_id("-loadingoverlay")
+class bitmapImageLayoutIDs(indexedLayoutIDMapper, base="bitmap-image"):
+    graph = ID()
+    refresh = ID()
+    delete = ID()
+    colorscale = ID()
+    loadingoverlay = ID()
 
 
 def graph_style(im_shape: tuple[int, ...] | None = None) -> dict[str, str]:
@@ -86,7 +58,7 @@ def bitmap_image_layout(
 
     fig_image = dcc.Loading(
         dcc.Graph(
-            id=imIDs.get_id_with_index("graph"),
+            id=imIDs.graph.indexed,
             # the tools live in the shared image toolbox above the panels
             config={"displayModeBar": False, "displaylogo": False},
             responsive=True,
@@ -112,7 +84,7 @@ def bitmap_image_layout(
 
     delete_button = Button(
         delete_button_label,
-        id=imIDs.get_id_with_index("delete"),
+        id=imIDs.delete.indexed,
         color="secondary",
     )
 
@@ -132,7 +104,7 @@ def bitmap_image_layout(
     )
 
     colormap_dropdown = dcc.Dropdown(
-        id=imIDs.get_id_with_index("colorscale"),
+        id=imIDs.colorscale.indexed,
         options=_colorscales,
         value=colorscale,
         searchable=False,
@@ -161,13 +133,13 @@ def bitmap_image_layout(
                     *energy_parts.tooltips,
                     hover_tooltip(
                         "Delete bitmap image panel",
-                        target=imIDs.get_id_with_index("delete"),
+                        target=imIDs.delete.indexed,
                     ),
                 ],
                 className="p-2",
             ),
         ],
-        id=imIDs.get_id_with_index("div"),
+        id=imIDs.div.indexed,
     )
 
     return _primary_graph_div, imIDs
