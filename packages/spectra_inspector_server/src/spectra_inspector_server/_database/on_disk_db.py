@@ -7,6 +7,10 @@ from spectra_inspector_server._database.sample_assignments import (
     load_sample_assignments,
 )
 from spectra_inspector_server._database.sample_metadata import SampleMetadataMapper
+from spectra_inspector_server._database.scan_exclude import (
+    ScanExclusions,
+    load_scan_exclusions,
+)
 from spectra_inspector_server._logging import spectraLogger
 from spectra_inspector_server.model import EDAX_file_set
 from spectra_inspector_server.processor.utilities import _map_to_sample_name
@@ -44,6 +48,8 @@ class OnDiskDatabase:
     sample_assignments_yaml: str
     sample_assignments_fullpath: Path | None = None
     allow_mixed_basenames: bool
+    # the data root's scan_exclude.yaml, as of the most recent scan.
+    scan_exclusions: ScanExclusions
     # cap on the number of datasets a scan will register. None means no limit.
     max_datasets: int | None
     # whether the most recent scan stopped early on max_datasets, i.e. whether
@@ -70,6 +76,7 @@ class OnDiskDatabase:
         self.available_spectra = {}
         self.allow_mixed_basenames = allow_mixed_basenames
         self.max_datasets = max_datasets
+        self.scan_exclusions = load_scan_exclusions(ph.data_root)
         if init_db:
             self.inspect(ph)
 
@@ -88,12 +95,14 @@ class OnDiskDatabase:
 
     def inspect(self, ph: "EDAXPathHandler") -> None:
         spectraLogger.info(f"Inspecting {ph.data_root}")
+        self.scan_exclusions = load_scan_exclusions(ph.data_root)
         progress = _recursive_inspection(
             ph.data_root,
             self,
             allow_mixed_basenames=self.allow_mixed_basenames,
             max_datasets=self.max_datasets,
             key_root=ph.data_root,
+            exclusions=self.scan_exclusions,
         )
         self.scan_truncated = progress.limit_reached()
         self._locate_sample_metadata(ph.data_root)
@@ -139,6 +148,7 @@ class OnDiskDatabase:
             recursive=recursive,
             max_datasets=self.max_datasets,
             key_root=ph.data_root,
+            exclusions=scratch.scan_exclusions,
         )
         scratch.scan_truncated = progress.limit_reached()
         # prefer a metadata csv alongside the data, fall back to the one at the
@@ -153,6 +163,7 @@ class OnDiskDatabase:
         self.sample_metadata_fullpath = scratch.sample_metadata_fullpath
         self.sample_assignments_fullpath = scratch.sample_assignments_fullpath
         self._sample_assignments = scratch._sample_assignments
+        self.scan_exclusions = scratch.scan_exclusions
         self.scan_truncated = scratch.scan_truncated
         self.working_directory = target
         return target
@@ -359,17 +370,22 @@ def _recursive_inspection(
     recursive: bool = True,
     max_datasets: int | None = None,
     key_root: Path | None = None,
+    exclusions: ScanExclusions | None = None,
 ) -> InspectionProgress:
     """Walk ``dirname``, registering every EDAX file set found into ``db``.
 
     In mixed-basename mode the sets are keyed by path relative to ``key_root``
-    (absolute path when it is None). Returns the progress of the walk, whose
+    (absolute path when it is None). Anything ``exclusions`` matches is passed
+    over, ``dirname`` itself included. Returns the progress of the walk, whose
     ``limit_reached()`` reports whether ``max_datasets`` cut it short.
     """
     if progress is None:
         progress = InspectionProgress(max_datasets=max_datasets)
 
     if progress.limit_reached():
+        return progress
+
+    if exclusions and exclusions.excludes(dirname):
         return progress
 
     if dirname.is_dir():
@@ -388,6 +404,9 @@ def _recursive_inspection(
             # whole scan.
             spectraLogger.warning("Could not read directory %s, skipping", dirname)
             return progress
+
+        if exclusions:
+            files = exclusions.filter_inventory(files)
 
         # every .spc is a dataset of its own in spectrum-only mode, whether or
         # not it also belongs to a file set registered below.
@@ -435,6 +454,7 @@ def _recursive_inspection(
                     progress=progress,
                     recursive=recursive,
                     key_root=key_root,
+                    exclusions=exclusions,
                 )
 
     return progress

@@ -109,6 +109,36 @@ maps:
   that sample id but has no metadata.
 - a file that cannot be parsed is ignored with a warning in the server log.
 
+### Excluding data from the scan
+
+Data that should stay on disk without being served can be listed in an optional
+`scan_exclude.yaml` in `SPECTRA_INSPECTOR_DATA_ROOT`:
+
+```yaml
+schema: 1
+exclude:
+  - "session-a" # a directory and everything under it
+  - "session-b/map123.*" # one file set
+  - "**/scratch" # a directory name at any depth
+```
+
+- a pattern is a path relative to `SPECTRA_INSPECTOR_DATA_ROOT`, written with
+  `/` (a leading `/` and `\` separators are accepted). Letter case has to match
+  the name on disk.
+- `*` and `?` match within one directory or file name, a `**` segment matches
+  any number of directories, and every other character is literal.
+- a pattern that matches a directory excludes everything beneath it.
+- excluding a `.spd` also excludes the `.spc` beside it. Use `name.*` to be
+  explicit about the whole file set.
+- only the file at the data root is read. It applies to working-directory scans
+  and to `/browse-directory` in desktop mode as well, and to the precompute
+  scripts, which skip excluded maps.
+- the file is re-read on every scan, so an edit takes effect on a restart or a
+  database refresh, like any other change to the data on disk.
+- nothing on disk is touched: a map's derived data stays valid while it is
+  excluded and is used again once the pattern is removed.
+- a file that cannot be parsed is ignored with a warning in the server log.
+
 ### Configuration
 
 Copy `default.env` to `.env` and modify as needed. Every setting is read with a
