@@ -179,7 +179,10 @@ class summaryWriter:
             msg = "there are no element weights to write"
             raise RuntimeError(msg)
         fi = self.full_file(self.element_weights_name)
-        fi.write_text(element_weights_text(self.element_weights), encoding="utf-8")
+        # the same bytes as the PDF's attachment, whatever the server's platform
+        fi.write_text(
+            element_weights_text(self.element_weights), encoding="utf-8", newline="\n"
+        )
         return fi
 
     def _weights_rows(self) -> list[tuple[str, str]]:
