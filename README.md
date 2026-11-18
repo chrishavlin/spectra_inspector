@@ -73,8 +73,6 @@ setting is read with a `SPECTRA_INSPECTOR_` prefix:
 - `SPECTRA_INSPECTOR_HOST_DATA_ROOT`: host-machine directory to bind-mount into
   the Docker container when using Docker Compose. Defaults to `./`. Only used by
   docker compose.
-- `SPECTRA_INSPECTOR_ALLOW_DB_REFRESH`: set to `true` to allow the local
-  database to refresh from disk when the service starts. Defaults to `false`.
 - `SPECTRA_INSPECTOR_DB_ALLOW_MIXED_BASENAMES`: set to `true` to additionally
   detect datasets whose files do **not** all share a basename, pairing
   `map*_0.spd`/`.spc`/`.xml` with the first `fov*.ipr`/`.bmp` in the same
@@ -114,10 +112,6 @@ setting is read with a `SPECTRA_INSPECTOR_` prefix:
 
 When serving as a desktop app:
 
-- set `SPECTRA_INSPECTOR_ALLOW_DB_REFRESH=true` in
-  `packages/spectra_inspector_server/.env` to refresh the available files from
-  the frontend. Set to false for production deployments (this can be an
-  expensive step).
 - set `SPECTRA_INSPECTOR_DESKTOP_MODE=true` in **both** `.env` files when the
   data root holds more datasets than are usable in one dataset list, or when
   scanning all of it at startup is too slow.

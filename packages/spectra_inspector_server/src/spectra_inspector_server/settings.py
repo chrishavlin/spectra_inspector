@@ -17,7 +17,6 @@ class Settings(BaseSettings):
     data_root: str = "./"
     host_data_root: str = "./"
 
-    allow_db_refresh: bool = False
     db_allow_mixed_basenames: bool = False
 
     # directory of the on-disk store of data derived from the raw cubes, the

@@ -283,16 +283,18 @@ async def available_datasets(
 ) -> AvailableDatasets:
 
     if refresh_db:
-        if settings.desktop_mode and ph.database.working_directory is None:
+        if not settings.desktop_mode:
+            # a hosted server scans its whole data root once, at startup; a
+            # rescan there takes a restart, not a request from any client.
+            spectraLogger.info("Refresh attempt denied.")
+        elif ph.database.working_directory is None:
             # refreshing before a working directory is picked would mean the
             # full scan of the data root that desktop mode exists to avoid.
             spectraLogger.info("Refresh skipped, no working directory selected.")
-        elif settings.allow_db_refresh or settings.desktop_mode:
-            # in desktop mode a refresh only re-scans the working directory, so
-            # it costs no more than the scan the client already asked for.
-            ph.refresh()
         else:
-            spectraLogger.info("Refresh attempt denied.")
+            # only the working directory is re-scanned, so it costs no more
+            # than the scan the client already asked for.
+            ph.refresh()
 
     return _available_datasets_response(ph)
 

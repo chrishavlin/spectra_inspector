@@ -21,8 +21,8 @@ Data source is a filesystem scan, not a real database:
   with a warning, first one wins. It also registers **every** `.spc` in
   `available_spectra`, so a name can be both a map and a spectrum; the
   per-sample endpoints take `spectrum_only: bool` to say which is meant.
-  Rescanning only happens via `/available-datasets?refresh_db=true` and only
-  when `SPECTRA_INSPECTOR_ALLOW_DB_REFRESH=true`.
+  Rescanning only happens via `/available-datasets?refresh_db=true` and only in
+  desktop mode, where it covers the working directory.
 - `SPECTRA_INSPECTOR_DESKTOP_MODE=true` skips the startup walk and enables
   `/browse-directory` + `/datasets-in-directory` (403 otherwise). Every client
   path goes through `_file_browser.resolve_within_root`, which is the only thing
