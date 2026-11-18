@@ -105,6 +105,28 @@ def test_server_mode_scans_at_startup(server_client: TestClient) -> None:
     assert set(datasets.available_files) == {"C-1", "C-2", "C-3"}
 
 
+def test_refresh_is_denied_outside_desktop_mode(
+    server_client: TestClient, data_root: Path
+) -> None:
+    _write_edax_set(data_root / "session-c", "C-4")
+
+    response = server_client.get("/available-datasets", params={"refresh_db": True})
+    assert response.status_code == 200
+    datasets = AvailableDatasets(**response.json())
+    assert set(datasets.available_files) == {"C-1", "C-2", "C-3"}
+
+
+def test_refresh_rescans_the_working_directory(
+    desktop_client: TestClient, data_root: Path
+) -> None:
+    desktop_client.get("/datasets-in-directory", params={"path": "session-b"})
+    _write_edax_set(data_root / "session-b", "C-4")
+
+    response = desktop_client.get("/available-datasets", params={"refresh_db": True})
+    datasets = AvailableDatasets(**response.json())
+    assert set(datasets.available_files) == {"C-3", "C-4"}
+
+
 def test_info_reports_desktop_mode(desktop_client: TestClient) -> None:
     assert desktop_client.get("/info").json()["desktop_mode"] is True
 

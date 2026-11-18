@@ -71,8 +71,8 @@ client picks one directory below the data root to scan instead (see below).
 
 Two optional files tie the maps to rock samples. Both are looked for in the
 scanned working directory first and then in `SPECTRA_INSPECTOR_DATA_ROOT`, the
-first one found is used, and both are re-read whenever the database is
-refreshed.
+first one found is used, and both are re-read whenever the datasets are scanned:
+at startup, or on a refresh in desktop mode.
 
 `sample_metadata.csv` is the table of samples (id, location, group) behind the
 frontend's sample map.
@@ -144,7 +144,6 @@ exclude:
 Copy `default.env` to `.env` and modify as needed. Every setting is read with a
 `SPECTRA_INSPECTOR_` prefix (`SPECTRA_INSPECTOR_APP_NAME`,
 `SPECTRA_INSPECTOR_DATA_ROOT`, `SPECTRA_INSPECTOR_HOST_DATA_ROOT`,
-`SPECTRA_INSPECTOR_ALLOW_DB_REFRESH`,
 `SPECTRA_INSPECTOR_DB_ALLOW_MIXED_BASENAMES`, `SPECTRA_INSPECTOR_DESKTOP_MODE`,
 `SPECTRA_INSPECTOR_MAX_DATASETS`, `SPECTRA_INSPECTOR_N_FASTAPI_WORKERS`,
 `SPECTRA_INSPECTOR_LOG_LEVEL`), matching the `spectra_inspector` frontend

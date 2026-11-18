@@ -35,6 +35,7 @@ from spectra_inspector.components.dataset_selector import (
     dropdown_options,
     initial_listing,
     list_store_data,
+    refresh_button,
 )
 from spectra_inspector.components.layout_ids import indexedLayoutIDMapper
 from spectra_inspector.utilities.interface import SpectraInspectorServerInterface
@@ -388,12 +389,7 @@ def dataset_table(
                         id=IDS.get_id_with_index("sampledisplay"),
                         hidden=True,
                     ),
-                    dbc.Button(
-                        html.I(className="fa fa-refresh"),
-                        id=selector_ids.get_id_with_index("refresh"),
-                        color="secondary",
-                        title="Refresh datasets",
-                    ),
+                    refresh_button(selector_ids),
                 ],
                 className="si-dataset-toolbar-end ms-auto",
             ),

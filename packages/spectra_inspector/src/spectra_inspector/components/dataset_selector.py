@@ -167,6 +167,23 @@ def resolve_spectrum_only(user_data: dict | None, switch_value: Any) -> bool:
     return bool(switch_value)
 
 
+def refresh_button(ids: datasetSelectorLayoutIDs) -> Button:
+    """The button that has the server rescan its datasets.
+
+    Shown in desktop mode only: a hosted server scans its data root once, and
+    a rescan there is the operator's call, not a visitor's. The button is
+    hidden rather than left out because the pages' callbacks take it as an
+    input.
+    """
+    return Button(
+        html.I(className="fa fa-refresh"),
+        id=ids.get_id_with_index("refresh"),
+        color="secondary",
+        title="Refresh datasets",
+        className="" if Settings().desktop_mode else "d-none",
+    )
+
+
 def dataset_selector(
     sisi: SpectraInspectorServerInterface,
     component_index: int = 0,
@@ -226,15 +243,7 @@ def dataset_selector(
                                 style={"width": "100%", "color": "#212529"},
                             ),
                         ),
-                        Col(
-                            Button(
-                                html.I(className="fa fa-refresh"),
-                                id=dataset_selector_IDS.get_id_with_index("refresh"),
-                                color="secondary",
-                                title="Refresh datasets",
-                            ),
-                            width="auto",
-                        ),
+                        Col(refresh_button(dataset_selector_IDS), width="auto"),
                     ],
                     align="center",
                     className="g-0",

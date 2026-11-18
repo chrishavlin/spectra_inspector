@@ -162,8 +162,6 @@ docker run --rm -v ./proxy/Caddyfile:/etc/caddy/Caddyfile:ro caddy:2-alpine \
 
 **More data.** Copy into the data root on the host, `chmod -R a+rX` it, then
 restart the backend so it rescans: `./compose.sh prod restart fastapi`.
-Alternatively set `SPECTRA_INSPECTOR_ALLOW_DB_REFRESH=true` and use the refresh
-button, at the cost of letting any logged-in user trigger a full rescan.
 
 **Stopping.** `./stop_docker.sh prod` removes the containers and keeps the
 images, the data directory, the derived data and the caddy volumes. The host
