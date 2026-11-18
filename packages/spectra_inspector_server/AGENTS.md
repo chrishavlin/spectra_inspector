@@ -1,118 +1,40 @@
 # AGENTS.md — spectra_inspector_server
 
-Backend-specific guidance for coding agents. The root `AGENTS.md` covers the
-repository layout, commands, configuration, conventions, and commit rules; this
-file is loaded only when working on files under this package.
+Backend-specific guidance; the root `AGENTS.md` covers the rest. Designs are
+documented in docstrings next to the code — read them before changing a module.
+This file keeps the cross-module rules.
 
-Each module's docstring explains its own design (`processor/_polygon.py`,
-`processor/_reductions.py`, `calibration.py`, `processor/file_loaders.py`, ...);
-read it before changing the module. This file keeps the cross-module picture.
+## Rules
 
-## Backend architecture
+- **Paths from a client** go through `_file_browser.resolve_within_root`, the
+  only thing confining browsing to the data root.
+- **Anything that enumerates the tree** must honour
+  `OnDiskDatabase.scan_exclusions` (`_database/scan_exclude.py`).
+- **Per-sample endpoints** take `spectrum_only: bool`, because one name can be
+  both a map and a spectrum (see `OnDiskDatabase`), and must check the name
+  through `main._valid_sample_name` /
+  `OperationEDAXStateHandler._require_sample` or they will be untestable without
+  EDAX data (`_testing.py`).
+- **The server never clips a selection**: validation that needs no data load
+  answers 422 in `main.py` before anything is queued. The frontend clips boxes;
+  polygons are intersected with the map by `processor/_polygon.py`.
+- **Rescanning** happens only via `/available-datasets?refresh_db=true` and only
+  in desktop mode.
+- `precompute_derived_data.py --overwrite` empties the whole derived-data
+  directory, spectral pyramids included.
 
-Data source is a filesystem scan, not a real database:
+## Adding a heavy endpoint
 
-- `settings.py` → `dependencies.py` (`get_settings`, `get_database_session`,
-  both `@lru_cache`) → `EDAXPathHandler` (`_file_tree_handling.py`) →
-  `OnDiskDatabase` (`_database/on_disk_db.py`).
-- `OnDiskDatabase` recursively walks `SPECTRA_INSPECTOR_DATA_ROOT` for `.spd`
-  files with sibling `.spc`/`.ipr` (required) plus optional `.bmp`/`.xml`, keyed
-  by **file basename**; a duplicate basename anywhere in the tree is skipped
-  with a warning, first one wins. It also registers **every** `.spc` in
-  `available_spectra`, so a name can be both a map and a spectrum; the
-  per-sample endpoints take `spectrum_only: bool` to say which is meant.
-  Rescanning only happens via `/available-datasets?refresh_db=true` and only in
-  desktop mode, where it covers the working directory.
-- `SPECTRA_INSPECTOR_DESKTOP_MODE=true` skips the startup walk and enables
-  `/browse-directory` + `/datasets-in-directory` (403 otherwise). Every client
-  path goes through `_file_browser.resolve_within_root`, which is the only thing
-  confining browsing to the data root — new endpoints taking a path must use it.
-- An optional `sample_metadata.csv` at the data root supplies lat/lon/group
-  metadata for the frontend's sample map. A map's sample id is a filename
-  heuristic unless an optional `sample_assignments.yaml` lists it
-  (`_database/sample_assignments.py`), keyed by root-relative path in both key
-  modes.
-- An optional `scan_exclude.yaml` at the data root (`_database/scan_exclude.py`)
-  hides matching files and directories from every scan and from
-  `/browse-directory`; anything new that enumerates the tree must honour
-  `OnDiskDatabase.scan_exclusions` too.
-- `processor/file_loaders.py` loads metadata lazily through
-  `rsciio.edax.file_reader`, then mmaps the `.spd` payload directly
-  (`np.memmap`, deliberately bypassing rsciio's dask wrapper). Array axis order
-  is `(index0, index1, channel)`; a spectrum-only dataset is 1D with the energy
-  axis as its only axis.
+Anything expensive runs through the queue in `main.py` (`submit_op` /
+`await_op_result`) into a single long-lived worker process; `/info`,
+`/available-datasets` and the metadata endpoints run inline.
 
-Request flow for anything expensive: the `lifespan` context creates an
-`asyncio.Queue` and a long-running `process_requests` consumer that dispatches
-each item into a `ProcessPoolExecutor`. Endpoints build a `queueOpsItem`
-(`ops_func` is the **string name of a method on `OperationEDAXStateHandler`**,
-dispatched via `getattr`), push it with `submit_op`, then wait in
-`await_op_result` on the `asyncio.Event` registered for that `ops_id` (2-minute
-timeout → HTTP 504). The queue is bounded by `SPECTRA_INSPECTOR_MAX_QUEUED_OPS`
-per uvicorn worker; `submit_op` answers a full queue with HTTP 503 plus a
-`Retry-After` header and registers nothing for it. `/info`,
-`/available-datasets`, and the metadata endpoints skip the queue and run inline.
+1. Add a method to `processor/operations.py::OperationEDAXStateHandler`.
+2. Add response models to `model.py`.
+3. Enqueue a `queueOpsItem` whose `ops_func` is that method's name.
+4. Regenerate the frontend models (root `AGENTS.md`).
+5. Mirror the client call in the frontend's `utilities/interface.py`.
 
-The pool holds a single worker and outlives the requests it serves, because
-`load_edax_spd` caches the filesets it has opened (bounded, invalidated on
-mtime/size) and re-mapping a cube costs tens of milliseconds of page faults even
-when the file is still in the page cache. Anything that makes the worker
-short-lived again gives that cost back.
-
-So adding a heavy endpoint means: add a method to
-`processor/operations.py::OperationEDAXStateHandler`, add response models to
-`model.py`, enqueue a `queueOpsItem` naming that method, regenerate the frontend
-models (see the root `AGENTS.md`), and mirror the client call in the frontend's
-`utilities/interface.py`. Large reductions chunk over axis 0
-(`_DEFAULT_CHUNKSIZE`) and pick their accumulator through
+Large reductions chunk over axis 0 and pick their accumulator through
 `processor/_reductions.py::accumulator_dtype`; they are deliberately
 single-threaded.
-
-Request validation that needs no data load (index ranges against the header's
-axis sizes, the `polygon` query parameter) happens in `main.py` and answers 422
-before anything is queued. The `polygon` parameter is parsed by hand there
-rather than through a pydantic model so the frontend's generated `model.py` is
-unaffected. The server never clips a selection: the frontend clips boxes to the
-image before asking, and a polygon is intersected with the map by
-`processor/_polygon.py`.
-
-Images cross the wire as `raveledImage` (flat list + shape), reshaped
-client-side.
-
-`processor/derived_data.py` is an optional on-disk store of the two whole-cube
-reductions (`SPECTRA_INSPECTOR_DERIVED_DATA_DIR`, off when unset; the server
-only writes to it with `SPECTRA_INSPECTOR_DERIVED_WRITE_ON_MISS=true`). It is
-deliberately not called a cache: the UI is only quick while it exists and it is
-meant to grow further derived products. Only full-extent, non-polygon requests
-touch it; the key is the fileset's path relative to the data root plus its
-`(mtime_ns, size)` stamp, so the synthetic test samples are never stored. Any
-failure in the store is a miss, never an error.
-`scripts/precompute_derived_data.py` fills it with the frontend's default view
-through `get_spectrum_and_images`, a single pass over the cube that no endpoint
-dispatches, and must convert keV windows to channels exactly as the frontend
-does (`channel_range_for_window`, pinned by a test).
-
-The store's other product is a fileset's spectral block pyramid
-(`processor/pyramid.py`, an OME-Zarr multiscales group at
-`<entry dir>/pyramid.zarr`): the cube summed over square blocks at a few block
-sizes, from which `get_spectrum` assembles any box or polygon spectrum exactly
-(block sums plus the raw pixels along the edge) when one is present and up to
-date and `SPECTRA_INSPECTOR_DERIVED_USE_PYRAMIDS` is not `false`. Only
-`scripts/build_spectral_pyramids.py` builds them; the server never writes one,
-and `use_pyramid=False` on a call forces the raw sum for comparison
-(`scripts/benchmark_spectral_pyramid.py`). Note that
-`precompute_derived_data.py --overwrite` empties the whole directory, pyramids
-included.
-
-### Testing without EDAX data
-
-`_testing.py` exposes `onDiscMock` with synthetic sample names
-(`faked-dataset-C12`, `faked-dataset-2`, and `faked-spectrum-only` for a
-spectrum with no map behind it) and `createEDAXMock()` /
-`createEDAXSpectrumMock()`, which build full `EDAX_raw_ds` objects with
-realistic headers. `pytest_running()` sniffs `PYTEST_VERSION`;
-`main._valid_sample_name` and `OperationEDAXStateHandler._require_sample` accept
-mock names only when it is true, so `TestClient` tests hit every endpoint
-without a data root. Keep new endpoints going through those two guards or they
-will be untestable. `write_mock_spc(path)` writes a genuine `.spc` so the real
-loader can be exercised on a `tmp_path`.

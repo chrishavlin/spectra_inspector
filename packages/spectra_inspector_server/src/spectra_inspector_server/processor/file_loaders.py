@@ -28,8 +28,11 @@ def load_edax_spd_metadata(edax_files: EDAX_file_set) -> dict[str, Any]:
 def load_spd_into_memmap(
     header: dict[str, Any], spd_path: str
 ) -> npt.NDArray[np.int64]:
-    # rsciio replaced plain np.memmap with a dask-wrapped memmap. for now,
-    # using a plain memmap to avoid dask dependency within fastapi.
+    """Map the ``.spd`` payload as an ``(index0, index1, channel)`` array.
+
+    A plain ``np.memmap``, deliberately bypassing rsciio's dask-wrapped one to
+    keep dask out of the server.
+    """
 
     nx = header["nPoints"]
     ny = header["nLines"]

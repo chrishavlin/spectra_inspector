@@ -179,8 +179,12 @@ def process_handler(ph: EDAXPathHandler, item: queueOpsItem) -> OptionalOpsRetur
 
 
 async def process_requests(q: asyncio.Queue, ph: EDAXPathHandler) -> None:  # type:ignore[type-arg]
-    # the worker is kept alive across requests: it caches the memmaps of the
-    # filesets it has already opened, and re-mapping a cube is expensive.
+    """Run queued operations one at a time in a single worker process.
+
+    The worker is kept alive across requests: it caches the memmaps of the
+    filesets it has already opened (``file_loaders.load_edax_spd``), and
+    re-mapping a cube is expensive. A short-lived worker gives that back.
+    """
     while True:
         with ProcessPoolExecutor(max_workers=1) as pool:
             pool_is_usable = True
@@ -478,7 +482,10 @@ def _index_ranges_or_422(
 
 def _parse_polygon(polygon: str) -> list[Vertex]:
     """The vertices of the ``polygon`` query parameter: a JSON list of at
-    least three ``[index0, index1]`` pairs of finite numbers."""
+    least three ``[index0, index1]`` pairs of finite numbers.
+
+    Parsed by hand rather than through a pydantic model so that the schema the
+    frontend's ``model.py`` is generated from does not change."""
     try:
         raw = json.loads(polygon)
     except json.JSONDecodeError as err:

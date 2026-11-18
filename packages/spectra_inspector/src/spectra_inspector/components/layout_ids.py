@@ -2,6 +2,14 @@ from abc import ABC
 
 
 class indexedLayoutIDMapper(ABC):
+    """The ids of one reusable component's elements.
+
+    A subclass lists its elements in ``prop_names`` and gives each a
+    ``@property`` returning its id string. ``get_id_with_index`` turns one
+    into the ``{"type": ..., "index": ...}`` id that the pages' ``ALL`` and
+    ``MATCH`` callbacks rely on to serve any number of instances.
+    """
+
     id_type_base: str
     index: int | None
     prop_names: tuple[str, ...] = ("div",)
