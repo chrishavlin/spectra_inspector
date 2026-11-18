@@ -137,7 +137,7 @@ frontend comes up behind it.
 ```sh
 git fetch --tags
 git checkout v0.1.0        # a release tag, or `main` and `git pull`
-python3 scripts/check_env.py
+python3 scripts/check_env.py --mode docker
 ./start_docker.sh prod
 ./compose.sh prod ps
 ```

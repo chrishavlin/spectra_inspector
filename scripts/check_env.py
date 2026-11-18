@@ -3,21 +3,29 @@
 Under docker the ``.env`` files reach the containers as environment variables,
 and pydantic-settings ignores an environment variable it has no field for. A
 stale or misspelled key therefore does nothing at all, and the setting it was
-meant for quietly runs on its default. This script reports those keys, the
-settings each ``.env`` leaves on their defaults, settings that have to agree
-between the two packages but do not, and host directories that do not exist.
+meant for quietly runs on its default. Run natively the same key stops the app
+at startup instead. This script reports those keys, the settings each ``.env``
+leaves on their defaults, settings that have to agree between the two packages
+but do not, and directories that do not exist.
 
 The known settings are read from each package's ``settings.py`` with ``ast``
 rather than by importing it, so the script needs nothing beyond a bare Python
 and always describes the checked-out code. It checks key names only: a value
-the settings model rejects already stops the container at startup.
+the settings model rejects already stops the app at startup.
 
 Run it from anywhere, after updating the code and before restarting::
 
     python3 scripts/check_env.py
 
-``--resolved`` also prints the value every setting ends up with in the
-containers. It never edits a file. The exit status is 1 when something has to be fixed.
+A setting can resolve differently under docker (compose and the image set
+some) and run natively with uv (exported variables win over the ``.env``),
+and a directory setting can mean a host path in one and not the other.
+``--mode docker`` or ``--mode native`` checks for one of them, and a missing
+directory is then an error. The default checks for both, where a missing
+directory is only a warning because no one ``.env`` has to suit both.
+``--resolved`` also prints the value every setting ends up with.
+
+It never edits a file. The exit status is 1 when something has to be fixed.
 """
 
 from __future__ import annotations
@@ -25,6 +33,7 @@ from __future__ import annotations
 import argparse
 import ast
 import difflib
+import os
 import re
 import sys
 from dataclasses import dataclass, field
@@ -41,10 +50,23 @@ INFO = "info"
 # settings both packages declare whose values have to agree for the app to work
 MUST_MATCH = ("desktop_mode",)
 
-# settings, by package label, that name a directory on the host when the app
-# runs under docker. The server's data_root is a path inside the container and
-# compose replaces the frontend's write_dir, so neither can be checked here.
-HOST_DIRECTORIES = {"server": ("host_data_root", "derived_data_dir")}
+DOCKER = "docker"
+NATIVE = "native"
+
+# directory settings by package label, with the modes in which the value is a
+# path on this machine. Under docker the server's data_root is a path inside
+# the container and compose replaces the frontend's write_dir; run natively
+# nothing reads host_data_root.
+DIRECTORY_SETTINGS: dict[str, dict[str, tuple[str, ...]]] = {
+    "server": {
+        "host_data_root": (DOCKER,),
+        "data_root": (NATIVE,),
+        "derived_data_dir": (DOCKER, NATIVE),
+    },
+    "frontend": {"write_dir": (NATIVE,)},
+}
+# made on first use with a plain mkdir, so only the parent has to exist
+CREATED_ON_USE = ("write_dir",)
 
 _TRUE = {"1", "true", "t", "yes", "y", "on"}
 _FALSE = {"0", "false", "f", "no", "n", "off"}
@@ -230,28 +252,30 @@ def dockerfile_env(dockerfile: Path) -> dict[str, str]:
 def resolve(
     env: EnvFile,
     known: KnownSettings,
-    overridden: dict[str, str],
-    image_env: dict[str, str],
+    above: tuple[str, dict[str, str]],
+    below: tuple[str, dict[str, str]] | None = None,
 ) -> list[tuple[str, str, str]]:
-    """Each setting's value in the container and where it comes from.
+    """Each setting's value and where it comes from, as (key, value, source).
 
-    The order of precedence is compose's ``environment``, the ``.env``, the
-    image's ``ENV`` and then the default in ``settings.py``. Values are the
-    text the settings model is given, not what it parses them into.
+    ``above`` is a named source that wins over the ``.env`` and ``below`` one
+    that only beats the default in ``settings.py``: compose's ``environment``
+    and the image's ``ENV`` under docker, the exported variables and nothing
+    when run natively. Values are the text the settings model is given, not
+    what it parses them into.
     """
     resolved = []
     for name, default in known.defaults.items():
         env_key = f"{known.prefix}{name.upper()}"
         in_env = env.value_of(env_key)
-        if env_key in overridden:
-            source = "compose.yaml"
+        if env_key in above[1]:
+            source = above[0]
             if in_env is not None:
-                source += f" (outside docker: {in_env})"
-            resolved.append((env_key, overridden[env_key], source))
+                source += f" (the {env.path.name} has {in_env})"
+            resolved.append((env_key, above[1][env_key], source))
         elif in_env is not None:
             resolved.append((env_key, in_env, env.path.name))
-        elif env_key in image_env:
-            resolved.append((env_key, image_env[env_key], "Dockerfile"))
+        elif below is not None and env_key in below[1]:
+            resolved.append((env_key, below[1][env_key], below[0]))
         else:
             resolved.append((env_key, str(default), "default"))
     return resolved
@@ -311,27 +335,42 @@ def check_env_file(
     return report
 
 
-def check_host_directories(
-    env: EnvFile, known: KnownSettings, names: tuple[str, ...], base: Path
+def check_directories(
+    resolved: list[tuple[str, str, str]],
+    known: KnownSettings,
+    names: list[str],
+    base: Path,
+    *,
+    mode: str,
+    level: str,
 ) -> list[Finding]:
-    """The settings in ``names`` that the file sets to a missing directory.
+    """The settings in ``names`` whose resolved value is not a directory.
 
-    A relative path is taken from ``base``, as compose takes it from the
-    directory of the compose file. A setting the file leaves out is skipped.
+    A relative path is taken from ``base``: the directory of the compose file
+    under docker, the package directory the app is started in natively. A
+    setting still on its default is skipped.
     """
+    values = {key: (value, source) for key, value, source in resolved}
     findings = []
     for name in names:
         env_key = f"{known.prefix}{name.upper()}"
-        value = env.value_of(env_key)
-        if not value:
+        value, source = values[env_key]
+        if source == "default" or not value:
             continue
         path = Path(value).expanduser()
         if not path.is_absolute():
             path = base / path
-        if not path.exists():
-            findings.append(Finding(ERROR, "NOT FOUND", env_key, f"no {value} here"))
-        elif not path.is_dir():
-            findings.append(Finding(ERROR, "NOT FOUND", env_key, f"{value} is a file"))
+        if path.is_dir():
+            continue
+        if path.exists():
+            detail = f"{value} is not a directory"
+        elif name in CREATED_ON_USE:
+            if path.parent.is_dir():
+                continue
+            detail = f"no {path.parent} to create it in"
+        else:
+            detail = f"no {value} here"
+        findings.append(Finding(level, "NOT FOUND", env_key, f"{mode}: {detail}"))
     return findings
 
 
@@ -394,8 +433,8 @@ def _print_report(report: Report, *, quiet: bool) -> None:
     print()
 
 
-def _print_resolved(label: str, resolved: list[tuple[str, str, str]]) -> None:
-    print(f"{label} settings in docker")
+def _print_resolved(title: str, resolved: list[tuple[str, str, str]]) -> None:
+    print(title)
     key_width = max(len(key) for key, _, _ in resolved)
     value_width = max(len(value) for _, value, _ in resolved)
     for key, value, source in resolved:
@@ -405,6 +444,13 @@ def _print_resolved(label: str, resolved: list[tuple[str, str, str]]) -> None:
 
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__.split("\n\n", maxsplit=1)[0])
+    parser.add_argument(
+        "--mode",
+        choices=(DOCKER, NATIVE, "both"),
+        default="both",
+        help="how the app is run: under docker, natively with uv, or check "
+        "for both (default), which only warns about a missing directory",
+    )
     parser.add_argument(
         "--env-name",
         default=".env",
@@ -419,15 +465,18 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument(
         "--resolved",
         action="store_true",
-        help="also print the value every setting ends up with in the "
-        "containers and where it comes from",
+        help="also print the value every setting ends up with and where it comes from",
     )
     args = parser.parse_args(argv)
+    modes = (DOCKER, NATIVE) if args.mode == "both" else (args.mode,)
+    directory_level = ERROR if len(modes) == 1 else WARNING
 
     settings = {
         package: read_known_settings(package.settings_path) for package in PACKAGES
     }
     overrides = compose_overrides(COMPOSE_FILE, args.env_name)
+    # pydantic-settings matches variable names without regard to case
+    exported = {key.upper(): value for key, value in os.environ.items()}
 
     n_problems = 0
     checked: list[tuple[Package, EnvFile, KnownSettings]] = []
@@ -439,35 +488,47 @@ def main(argv: list[str] | None = None) -> int:
             n_problems += 1
             continue
         other = next(p for p in PACKAGES if p is not package)
+        known = settings[package]
         env = parse_env_file(path)
+        overridden = overrides.get(path.resolve(), {})
         report = check_env_file(
             env,
-            settings[package],
+            known,
             settings[other],
             other.label,
-            overrides.get(path.resolve()),
+            overridden if DOCKER in modes else None,
         )
-        report.findings.extend(
-            check_host_directories(
-                env,
-                settings[package],
-                HOST_DIRECTORIES.get(package.label, ()),
-                REPO_ROOT,
+        resolved = {}
+        for mode in modes:
+            if mode == DOCKER:
+                image_env = dockerfile_env(package.directory / "Dockerfile")
+                resolved[mode] = resolve(
+                    env, known, ("compose.yaml", overridden), ("Dockerfile", image_env)
+                )
+            else:
+                resolved[mode] = resolve(env, known, ("exported", exported))
+            report.findings.extend(
+                check_directories(
+                    resolved[mode],
+                    known,
+                    [
+                        name
+                        for name, applies in DIRECTORY_SETTINGS.get(
+                            package.label, {}
+                        ).items()
+                        if mode in applies
+                    ],
+                    REPO_ROOT if mode == DOCKER else package.directory,
+                    mode=mode,
+                    level=directory_level,
+                )
             )
-        )
         _print_report(report, quiet=args.quiet or args.resolved)
         if args.resolved:
-            _print_resolved(
-                package.label,
-                resolve(
-                    env,
-                    settings[package],
-                    overrides.get(path.resolve(), {}),
-                    dockerfile_env(package.directory / "Dockerfile"),
-                ),
-            )
+            for mode in modes:
+                _print_resolved(f"{package.label} settings, {mode}", resolved[mode])
         n_problems += report.n_errors
-        checked.append((package, env, settings[package]))
+        checked.append((package, env, known))
 
     for problem in check_must_match(checked):
         print(f"MISMATCH  {problem}")

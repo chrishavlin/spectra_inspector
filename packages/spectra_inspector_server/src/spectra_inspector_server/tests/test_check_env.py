@@ -8,6 +8,7 @@ import importlib.util
 import sys
 from pathlib import Path
 from types import ModuleType
+from typing import Any
 
 import pytest
 
@@ -134,36 +135,50 @@ def test_compose_overrides_are_attributed_to_the_frontend(
     }
 
 
-def test_resolve_follows_container_precedence(
-    check_env: ModuleType, tmp_path: Path
-) -> None:
+def test_resolve_precedence(check_env: ModuleType, tmp_path: Path) -> None:
     frontend = check_env.PACKAGES[1]
+    known = check_env.read_known_settings(frontend.settings_path)
     path = tmp_path / ".env"
     path.write_text(
         "SPECTRA_INSPECTOR_SERVER_HOST=localhost\n"
         "SPECTRA_INSPECTOR_MAX_TMP_DIRS=7\n"
         "SPECTRA_INSPECTOR_N_FRONTEND_WORKERS=3\n"
     )
-    resolved = {
+    env = check_env.parse_env_file(path)
+
+    docker = {
         key: (value, source)
         for key, value, source in check_env.resolve(
-            check_env.parse_env_file(path),
-            check_env.read_known_settings(frontend.settings_path),
-            {"SPECTRA_INSPECTOR_SERVER_HOST": "fastapi"},
-            {
-                "SPECTRA_INSPECTOR_N_FRONTEND_WORKERS": "2",
-                "SPECTRA_INSPECTOR_SERVER_PORT": "9000",
-            },
+            env,
+            known,
+            ("compose.yaml", {"SPECTRA_INSPECTOR_SERVER_HOST": "fastapi"}),
+            (
+                "Dockerfile",
+                {
+                    "SPECTRA_INSPECTOR_N_FRONTEND_WORKERS": "2",
+                    "SPECTRA_INSPECTOR_SERVER_PORT": "9000",
+                },
+            ),
         )
     }
-    assert resolved["SPECTRA_INSPECTOR_SERVER_HOST"] == (
+    assert docker["SPECTRA_INSPECTOR_SERVER_HOST"] == (
         "fastapi",
-        "compose.yaml (outside docker: localhost)",
+        "compose.yaml (the .env has localhost)",
     )
-    assert resolved["SPECTRA_INSPECTOR_MAX_TMP_DIRS"] == ("7", ".env")
-    assert resolved["SPECTRA_INSPECTOR_N_FRONTEND_WORKERS"] == ("3", ".env")
-    assert resolved["SPECTRA_INSPECTOR_SERVER_PORT"] == ("9000", "Dockerfile")
-    assert resolved["SPECTRA_INSPECTOR_DESKTOP_MODE"] == ("False", "default")
+    assert docker["SPECTRA_INSPECTOR_MAX_TMP_DIRS"] == ("7", ".env")
+    assert docker["SPECTRA_INSPECTOR_N_FRONTEND_WORKERS"] == ("3", ".env")
+    assert docker["SPECTRA_INSPECTOR_SERVER_PORT"] == ("9000", "Dockerfile")
+    assert docker["SPECTRA_INSPECTOR_DESKTOP_MODE"] == ("False", "default")
+
+    native = {
+        key: (value, source)
+        for key, value, source in check_env.resolve(
+            env, known, ("exported", {"SPECTRA_INSPECTOR_SERVER_PORT": "8001"})
+        )
+    }
+    assert native["SPECTRA_INSPECTOR_SERVER_HOST"] == ("localhost", ".env")
+    assert native["SPECTRA_INSPECTOR_SERVER_PORT"] == ("8001", "exported")
+    assert native["SPECTRA_INSPECTOR_N_FRONTEND_WORKERS"] == ("3", ".env")
 
 
 def test_dockerfile_env_is_read(check_env: ModuleType) -> None:
@@ -193,56 +208,124 @@ def test_defaults_env_covers_every_setting(
     assert not undocumented
 
 
-def test_host_directories_must_exist(check_env: ModuleType, tmp_path: Path) -> None:
-    server = check_env.PACKAGES[0]
-    known = check_env.read_known_settings(server.settings_path)
-    names = check_env.HOST_DIRECTORIES[server.label]
-    assert set(names) <= set(known.defaults)
+def test_directory_settings_exist(check_env: ModuleType) -> None:
+    for package in check_env.PACKAGES:
+        known = check_env.read_known_settings(package.settings_path)
+        assert set(check_env.DIRECTORY_SETTINGS[package.label]) <= set(known.defaults)
 
+
+def test_directories_must_exist(check_env: ModuleType, tmp_path: Path) -> None:
+    known = check_env.read_known_settings(check_env.PACKAGES[0].settings_path)
     (tmp_path / "data").mkdir()
     (tmp_path / "a_file").write_text("")
     path = tmp_path / ".env"
 
-    def problems(text: str) -> dict[str, str]:
+    def problems(text: str, names: list[str]) -> dict[str, str]:
         path.write_text(text)
-        found = check_env.check_host_directories(
-            check_env.parse_env_file(path), known, names, tmp_path
+        resolved = check_env.resolve(
+            check_env.parse_env_file(path), known, ("exported", {})
         )
-        assert all(f.level == "error" for f in found)
+        found = check_env.check_directories(
+            resolved, known, names, tmp_path, mode="docker", level="error"
+        )
+        assert all((f.level, f.action) == ("error", "NOT FOUND") for f in found)
         return {f.key: f.detail for f in found}
 
+    names = ["host_data_root", "derived_data_dir"]
     assert not problems(
         f"SPECTRA_INSPECTOR_HOST_DATA_ROOT='{tmp_path / 'data'}'\n"
-        "SPECTRA_INSPECTOR_DATA_ROOT=/only/in/the/container\n"
+        "SPECTRA_INSPECTOR_DATA_ROOT=/only/in/the/container\n",
+        names,
     )
-    assert not problems("SPECTRA_INSPECTOR_HOST_DATA_ROOT=data\n")
-    assert set(
-        problems(
-            "SPECTRA_INSPECTOR_HOST_DATA_ROOT=/no/such/tree\n"
-            "SPECTRA_INSPECTOR_DERIVED_DATA_DIR=a_file\n"
-        )
+    assert not problems("SPECTRA_INSPECTOR_HOST_DATA_ROOT=data\n", names)
+    assert not problems("", names)
+    assert problems(
+        "SPECTRA_INSPECTOR_HOST_DATA_ROOT=/no/such/tree\n"
+        "SPECTRA_INSPECTOR_DERIVED_DATA_DIR=a_file\n",
+        names,
     ) == {
-        "SPECTRA_INSPECTOR_HOST_DATA_ROOT",
-        "SPECTRA_INSPECTOR_DERIVED_DATA_DIR",
+        "SPECTRA_INSPECTOR_HOST_DATA_ROOT": "docker: no /no/such/tree here",
+        "SPECTRA_INSPECTOR_DERIVED_DATA_DIR": "docker: a_file is not a directory",
     }
 
 
-def test_main_exit_status(
-    check_env: ModuleType,
-    tmp_path: Path,
-    monkeypatch: pytest.MonkeyPatch,
-    capsys: pytest.CaptureFixture[str],
+def test_created_on_use_directory_needs_its_parent(
+    check_env: ModuleType, tmp_path: Path
 ) -> None:
-    packages = []
+    known = check_env.read_known_settings(check_env.PACKAGES[1].settings_path)
+    path = tmp_path / ".env"
+
+    def problems(write_dir: str) -> list[str]:
+        path.write_text(f"SPECTRA_INSPECTOR_WRITE_DIR={write_dir}\n")
+        resolved = check_env.resolve(
+            check_env.parse_env_file(path), known, ("exported", {})
+        )
+        return [
+            f.key
+            for f in check_env.check_directories(
+                resolved, known, ["write_dir"], tmp_path, mode="native", level="error"
+            )
+        ]
+
+    assert not problems("not_made_yet")
+    assert problems("no_parent/not_made_yet") == ["SPECTRA_INSPECTOR_WRITE_DIR"]
+
+
+@pytest.fixture
+def packages(
+    check_env: ModuleType, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> list[Any]:
+    """Copies of both packages' settings under tmp_path, each with a ``.env``."""
+    copies = []
     for package in check_env.PACKAGES:
         directory = tmp_path / package.label
         settings_dir = directory / "src" / package.module
         settings_dir.mkdir(parents=True)
         (settings_dir / "settings.py").write_text(package.settings_path.read_text())
         (directory / ".env").write_text("SPECTRA_INSPECTOR_DESKTOP_MODE=false\n")
-        packages.append(check_env.Package(package.label, directory, package.module))
-    monkeypatch.setattr(check_env, "PACKAGES", tuple(packages))
+        copies.append(check_env.Package(package.label, directory, package.module))
+    monkeypatch.setattr(check_env, "PACKAGES", tuple(copies))
+    return copies
 
+
+def test_missing_directory_is_an_error_only_for_its_mode(
+    check_env: ModuleType,
+    packages: list[Any],
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    (packages[0].directory / ".env").write_text(
+        "SPECTRA_INSPECTOR_HOST_DATA_ROOT=/no/such/tree\n"
+    )
+    assert check_env.main([]) == 0
+    assert "NOT FOUND" in capsys.readouterr().out
+    assert check_env.main(["--mode", "native"]) == 0
+    assert "NOT FOUND" not in capsys.readouterr().out
+    assert check_env.main(["--mode", "docker"]) == 1
+    assert "docker: no /no/such/tree here" in capsys.readouterr().out
+
+
+def test_resolved_lists_each_mode(
+    check_env: ModuleType,
+    packages: list[Any],
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    monkeypatch.setenv("SPECTRA_INSPECTOR_LOG_LEVEL", "DEBUG")
+    assert check_env.main(["--resolved"]) == 0
+    out = capsys.readouterr().out
+    for package in packages:
+        assert f"{package.label} settings, docker" in out
+        assert f"{package.label} settings, native" in out
+    assert out.count("DEBUG") == 1
+    assert check_env.main(["--resolved", "--mode", "docker"]) == 0
+    assert "native" not in capsys.readouterr().out
+
+
+def test_main_exit_status(
+    check_env: ModuleType,
+    packages: list[Any],
+    capsys: pytest.CaptureFixture[str],
+) -> None:
     assert check_env.main([]) == 0
     assert "nothing to fix" in capsys.readouterr().out
 
