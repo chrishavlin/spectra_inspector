@@ -1,6 +1,7 @@
 import datetime
 import shutil
 import uuid
+from collections.abc import Iterable
 from pathlib import Path
 from typing import Any, Literal
 from zoneinfo import ZoneInfo
@@ -16,6 +17,13 @@ from pptx.util import Inches, Pt
 
 from spectra_inspector.logging import spectraLogger
 from spectra_inspector.settings import Settings
+from spectra_inspector.utilities.element_weights import (
+    WEIGHTS_UNAVAILABLE_MSG,
+    apply_zeroed_elements,
+    element_weights_text,
+    format_weight,
+    zeroed_note,
+)
 from spectra_inspector.utilities.export_metadata import (
     metadata_json,
     readme_text,
@@ -38,11 +46,13 @@ def _pdf_safe(text: str) -> str:
 
 
 _SUMMARY_HEADING = "Export summary"
+_WEIGHTS_HEADING = "Element weights"
 _ATTACHMENT_NOTE = (
-    "The full metadata record is attached to this PDF as {name}: open the "
-    "attachments panel of your PDF viewer (some viewers, browsers' built-in "
-    "ones among them, do not show attachments)."
+    "Attached to this PDF: {files}. Open the attachments panel of your PDF "
+    "viewer to get at them (some viewers, browsers' built-in ones among them, "
+    "do not show attachments)."
 )
+_PDF_WEIGHTS_TABLE_WIDTH = 90
 _NOTES_NOTE = "The full metadata record is in the speaker notes of this slide."
 
 # the deck is 16:9
@@ -52,6 +62,9 @@ _PPTX_MARGIN = Inches(0.5)
 _PPTX_TITLE_HEIGHT = Inches(0.8)
 _PPTX_BODY_PT = 14
 _PPTX_NOTES_PT = 10
+_PPTX_WEIGHTS_COLUMN_WIDTH = Inches(2.75)
+_PPTX_WEIGHTS_ROW_HEIGHT = Inches(0.4)
+_PPTX_WEIGHTS_NOTE_HEIGHT = Inches(0.5)
 
 
 class summaryWriter:
@@ -68,6 +81,11 @@ class summaryWriter:
     # has been called; the zip's json/README, the PDF's attachment and the
     # deck's speaker notes are rendered from it
     export_metadata: dict[str, Any] | None = None
+    # the weights as exported (zeroed-out elements as 0) and the elements that
+    # were zeroed, once `set_element_weights` has been called; None when the
+    # spectrum has no weights
+    element_weights: dict[str, Any] | None = None
+    zeroed_elements: tuple[str, ...] = ()
 
     def __init__(
         self,
@@ -145,11 +163,33 @@ class summaryWriter:
 
         spectraLogger.info(f"wrote image files to {self.write_dir}")
 
-    def write_element_weights(self, wts: dict) -> Path:
+    def set_element_weights(
+        self, wts: dict[str, Any] | None, zeroed_elements: Iterable[str] = ()
+    ) -> None:
+        """Take the computed weights of the exported spectrum (None when it has
+        none) and the elements the user zeroed out. Every output reports the
+        zeroed elements as 0."""
+        self.zeroed_elements = tuple(zeroed_elements)
+        self.element_weights = (
+            None if wts is None else apply_zeroed_elements(wts, self.zeroed_elements)
+        )
+
+    def write_element_weights(self) -> Path:
+        if self.element_weights is None:
+            msg = "there are no element weights to write"
+            raise RuntimeError(msg)
         fi = self.full_file(self.element_weights_name)
-        with open(fi, "w", encoding="utf-8") as f:
-            f.writelines(f"{element}\t{weight}\n" for element, weight in wts.items())
+        fi.write_text(element_weights_text(self.element_weights), encoding="utf-8")
         return fi
+
+    def _weights_rows(self) -> list[tuple[str, str]]:
+        return [
+            (key, format_weight(key, value))
+            for key, value in (self.element_weights or {}).items()
+        ]
+
+    def _weights_note(self) -> str | None:
+        return zeroed_note(self.element_weights or {}, self.zeroed_elements)
 
     def set_export_metadata(self, metadata: dict[str, Any]) -> None:
         self.export_metadata = metadata
@@ -198,6 +238,7 @@ class summaryWriter:
         """A page with the short summary; the full record goes in as an
         embedded file rather than as pages of text."""
         lines = summary_lines(self.export_metadata)
+        attached = []
         if self.export_metadata is not None:
             pdf.embed_file(
                 bytes=metadata_json(self.export_metadata).encode("utf-8"),
@@ -205,7 +246,17 @@ class summaryWriter:
                 mime_type="application/json",
                 desc="Spectra Inspector export metadata",
             )
-            lines += ["", _ATTACHMENT_NOTE.format(name=self.metadata_name.name)]
+            attached.append(f"the full metadata record as {self.metadata_name.name}")
+        if self.element_weights is not None:
+            pdf.embed_file(
+                bytes=element_weights_text(self.element_weights).encode("utf-8"),
+                basename=self.element_weights_name.name,
+                mime_type="text/plain",
+                desc="Element weights, tab separated",
+            )
+            attached.append(f"the element weights as {self.element_weights_name.name}")
+        if attached:
+            lines += ["", _ATTACHMENT_NOTE.format(files=" and ".join(attached))]
 
         pdf.add_page()
         pdf.set_font("Helvetica", size=14)
@@ -213,6 +264,32 @@ class summaryWriter:
         pdf.ln(2)
         pdf.set_font("Helvetica", size=10)
         pdf.multi_cell(w=0, text=_pdf_safe("\n".join(lines)))
+
+    def _pdf_weights_page(self, pdf: fpdf.FPDF) -> None:
+        """A page of its own for the weights table, so that it never has to
+        share the room on a page with an image."""
+        pdf.add_page()
+        pdf.set_font("Helvetica", size=14)
+        pdf.cell(text=_WEIGHTS_HEADING, new_x="LMARGIN", new_y="NEXT")
+        pdf.ln(2)
+        pdf.set_font("Helvetica", size=10)
+        if self.element_weights is None:
+            pdf.multi_cell(w=0, text=WEIGHTS_UNAVAILABLE_MSG)
+            return
+
+        with pdf.table(
+            width=_PDF_WEIGHTS_TABLE_WIDTH,
+            align="LEFT",
+            first_row_as_headings=False,
+            text_align=("LEFT", "RIGHT"),
+        ) as table:
+            for name, value in self._weights_rows():
+                table.row((_pdf_safe(name), value))
+
+        note = self._weights_note()
+        if note is not None:
+            pdf.ln(2)
+            pdf.multi_cell(w=0, text=_pdf_safe(note))
 
     def write_pdf(
         self,
@@ -240,6 +317,8 @@ class summaryWriter:
             room = pdf.h - pdf.b_margin - pdf.get_y()
             pdf.image(fname, w=min(pdf.epw, room * aspect))
 
+        self._pdf_weights_page(pdf)
+
         fout = self.full_file(self.pdf_name)
         pdf.output(fout)
 
@@ -262,8 +341,9 @@ class summaryWriter:
 
     def write_pptx(self) -> None:
         """Write the summary as a 16:9 deck with the PDF's content: a title
-        slide, the short summary, then one slide per rendered image. The full
-        metadata record is the summary slide's speaker notes.
+        slide, the short summary, one slide per rendered image, then the
+        element weights as a native table. The full metadata record is the
+        summary slide's speaker notes.
 
         The images are placed as pictures scaled to fit under the slide title,
         so their pixel size only sets how sharp they are, not how large they
@@ -317,7 +397,49 @@ class summaryWriter:
                 height=height,
             )
 
+        self._pptx_weights(new_slide(_WEIGHTS_HEADING), body_top, body_height)
+
         deck.save(str(self.full_file(self.pptx_name)))
+
+    def _pptx_weights(self, slide: Slide, top: int, height: int) -> None:
+        if self.element_weights is None:
+            self._pptx_text(
+                slide, [WEIGHTS_UNAVAILABLE_MSG], top, height, _PPTX_BODY_PT
+            )
+            return
+
+        rows = self._weights_rows()
+        row_height = min(
+            _PPTX_WEIGHTS_ROW_HEIGHT,
+            int((height - _PPTX_WEIGHTS_NOTE_HEIGHT) / max(len(rows), 1)),
+        )
+        table = slide.shapes.add_table(
+            len(rows),
+            2,
+            _PPTX_MARGIN,
+            top,
+            2 * _PPTX_WEIGHTS_COLUMN_WIDTH,
+            row_height * len(rows),
+        ).table
+        # every row is data: the default style would set the first one off as a
+        # header
+        table.first_row = False
+        for row, values in zip(table.rows, rows, strict=True):
+            row.height = row_height
+            for cell, text in zip(row.cells, values, strict=True):
+                cell.text = text
+                for paragraph in cell.text_frame.paragraphs:
+                    paragraph.font.size = Pt(_PPTX_BODY_PT)
+
+        note = self._weights_note()
+        if note is not None:
+            self._pptx_text(
+                slide,
+                [note],
+                top + row_height * len(rows),
+                _PPTX_WEIGHTS_NOTE_HEIGHT,
+                _PPTX_BODY_PT,
+            )
 
     def get_pptx_path(self) -> Path:
         fout = self.full_file(self.pptx_name)

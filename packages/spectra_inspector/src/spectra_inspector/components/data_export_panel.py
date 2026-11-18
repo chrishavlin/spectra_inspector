@@ -6,6 +6,11 @@ from dash import Input, Output, State, callback, dcc, html
 
 from spectra_inspector.components.layout_ids import ID, indexedLayoutIDMapper
 from spectra_inspector.components.toolbox import color_input
+from spectra_inspector.utilities.element_weights import (
+    WEIGHTS_UNAVAILABLE_MSG,
+    apply_zeroed_elements,
+    format_weight,
+)
 from spectra_inspector.utilities.image_export import (
     MIN_IMAGE_SIDE,
     export_image_size,
@@ -17,17 +22,12 @@ from spectra_inspector.utilities.peak_windows import (
 )
 from spectra_inspector.utilities.selection import DEFAULT_OUTLINE_COLOR, outlineStyle
 
-WEIGHTS_UNAVAILABLE_MSG = "Weights unavailable for this map"
-
 # the weights entries that are not per-element and so cannot be zeroed out
 SUMMARY_WEIGHT_KEYS: tuple[str, ...] = (
     "total_count",
     "counts_14_15_kev",
     "DH_assessment",
 )
-
-# whole-number counts, displayed without a fractional part
-INTEGER_WEIGHT_KEYS: tuple[str, ...] = ("total_count", "counts_14_15_kev")
 
 ZERO_SYMBOL = "\u2715"
 RESTORE_SYMBOL = "\u21ba"
@@ -332,21 +332,6 @@ def get_element_weights(active_spectrum_metadata: dict) -> dict | None:
     return active_spectrum_metadata.get("attrs", {}).get("weights") or None
 
 
-def apply_zeroed_elements(wts: dict, zeroed_elements: Iterable[str]) -> dict:
-    """The weights with every element the user has zeroed out set to 0.0."""
-    zeroed = set(zeroed_elements)
-    return {key: (0.0 if key in zeroed else value) for key, value in wts.items()}
-
-
-def _format_weight(key: str, value) -> str:
-    # exact zeros and whole counts come back from the JSON store as ints
-    if isinstance(value, int | float) and not isinstance(value, bool):
-        if key in INTEGER_WEIGHT_KEYS:
-            return f"{round(value):d}"
-        return f"{value:.8f}"
-    return str(value)
-
-
 def get_formatted_element_weights(
     active_spectrum_metadata: dict,
     zeroed_elements: Iterable[str] = (),
@@ -367,7 +352,7 @@ def get_formatted_element_weights(
     colors = spectrum_element_colors(active_spectrum_metadata)
     drawn = set(visible_elements(active_spectrum_metadata, zeroed))
     formatted_data = {
-        key: _format_weight(key, value)
+        key: format_weight(key, value)
         for key, value in apply_zeroed_elements(wts, zeroed).items()
     }
 
@@ -377,7 +362,7 @@ def get_formatted_element_weights(
         value_cell = html.Td(
             val,
             className="text-muted" if is_zeroed else None,
-            title=f"computed: {_format_weight(key, wts[key])}" if is_zeroed else None,
+            title=f"computed: {format_weight(key, wts[key])}" if is_zeroed else None,
         )
         if key in SUMMARY_WEIGHT_KEYS:
             action_cell = html.Td()

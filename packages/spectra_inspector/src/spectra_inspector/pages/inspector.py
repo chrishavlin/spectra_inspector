@@ -1386,6 +1386,12 @@ def export_summary(
         )
     )
 
+    if active_spectrum_metadata is not None:
+        s.set_element_weights(
+            data_export_panel.get_element_weights(active_spectrum_metadata),
+            zeroed_elements or [],
+        )
+
     if export_summary_format == "PDF":
         return dcc.send_file(s.get_pdf_path(generate_pdf=True))
     if export_summary_format == ".pptx":
@@ -1396,14 +1402,11 @@ def export_summary(
             active_spectrum_metadata, file_type=".msa", file_format=msafileformat
         )
         _ = s.write_MSA(active_spectrum_metadata, file_type=".csv")
-        wts = data_export_panel.get_element_weights(active_spectrum_metadata)
-        if wts is None:
+        if s.element_weights is None:
             # nothing to export: the weights file is simply left out of the zip
             spectraLogger.info("no element weights available, skipping their export")
         else:
-            _ = s.write_element_weights(
-                data_export_panel.apply_zeroed_elements(wts, zeroed_elements or [])
-            )
+            _ = s.write_element_weights()
         # last, so the README lists every other file in the zip
         _ = s.write_metadata_files()
 

@@ -12,6 +12,7 @@ from pathlib import Path
 import plotly.graph_objects as go
 import pptx
 import pytest
+from pypdf import PdfReader
 
 from spectra_inspector.settings import ENV_PREFIX
 from spectra_inspector.utilities import coerce
@@ -887,4 +888,32 @@ def test_pptx_has_a_slide_per_panel(
     ]
     pngs = sorted(f.stem for f in deck_file.parent.glob("bitmap*.png"))
     assert len(pngs) == len(image_figures)
-    assert titles[-len(pngs) - 1 :] == [*pngs, "spectrum"]
+    assert titles[-len(pngs) - 2 :] == [*pngs, "spectrum", "Element weights"]
+
+
+@pytest.mark.parametrize("fmt", ["PDF", ".pptx"])
+def test_documents_report_the_zeroed_weights(
+    inspector, image_figures, spectrum_figure, spectrum_metadata, tmp_path, fmt
+):
+    _export(
+        inspector,
+        image_figures,
+        spectrum_figure,
+        spectrum_metadata,
+        export_summary_format=fmt,
+        zeroed_elements=["Fe"],
+    )
+    note = "Element weights were manually zeroed for: Fe"
+    if fmt == "PDF":
+        (pdf_file,) = tmp_path.glob("*/*/*.pdf")
+        reader = PdfReader(pdf_file)
+        assert note in reader.pages[-1].extract_text()
+        (attached,) = reader.attachments["ElementWeights.txt"]
+        assert attached.decode("utf-8") == "Fe\t0.0\nSi\t0.25\n"
+    else:
+        (deck_file,) = tmp_path.glob("*/*/*.pptx")
+        slide = pptx.Presentation(str(deck_file)).slides[-1]
+        (frame,) = [s for s in slide.shapes if s.has_table]
+        cells = [tuple(c.text for c in row.cells) for row in frame.table.rows]
+        assert cells == [("Fe", "0.00000000"), ("Si", "0.25000000")]
+        assert note in [s.text_frame.text for s in slide.shapes if s.has_text_frame]
