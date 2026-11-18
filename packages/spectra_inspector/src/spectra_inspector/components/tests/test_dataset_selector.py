@@ -1,7 +1,7 @@
 import pytest
 from dash import html, no_update
 from dash.dcc import Dropdown, Store
-from dash_bootstrap_components import Switch
+from dash_bootstrap_components import Button, Switch
 
 from spectra_inspector.components.dataset_selector import (
     dataset_names,
@@ -260,3 +260,15 @@ def test_dataset_names_are_in_natural_order():
         "C-12 Map 2",
         "C-31",
     ]
+
+
+@pytest.mark.parametrize(("desktop", "class_name"), [(True, ""), (False, "d-none")])
+def test_refresh_button_shows_in_desktop_mode_only(mocker, desktop, class_name):
+    _desktop_mode(mocker, desktop)
+    sisi = mocker.MagicMock()
+    sisi.get_available_datasets.return_value = LISTING
+
+    div, _ = dataset_selector(sisi)
+    (button,) = _find(div, Button)
+    assert button.id == datasetSelectorLayoutIDs(index=0).get_id_with_index("refresh")
+    assert button.className == class_name

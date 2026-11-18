@@ -205,4 +205,5 @@ def test_dataset_table_layout(mocker):
     assert isinstance(dropdown, dcc.Dropdown)
     assert [o["value"] for o in dropdown.options] == ["none", *LISTING.available_files]
     assert by_id[selector_ids.spectrumonly].value is False
-    assert selector_ids.refresh in by_id
+    # kept for the callbacks, hidden on a hosted deployment
+    assert by_id[selector_ids.refresh].className == "d-none"

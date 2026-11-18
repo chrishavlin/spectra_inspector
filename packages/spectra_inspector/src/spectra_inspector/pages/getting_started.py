@@ -47,7 +47,8 @@ DATA_SELECTION_MARKERS = [
     screenshotMarker(
         target=(2444, 1443),
         badge=(2310, 1443),
-        description="The refresh button rescans the server for new datasets.",
+        description="In desktop mode, the refresh button rescans the working "
+        "directory for new datasets.",
     ),
     screenshotMarker(
         target=(2379, 122),
@@ -94,7 +95,7 @@ TOOLBOX_MARKERS = [
             " dropdown switches to another sample without going back to Data "
             "Selection. It has the same ",
             html.B("Spectrum only"),
-            " switch and refresh button.",
+            " switch and, in desktop mode, refresh button.",
         ],
     ),
     screenshotMarker(
