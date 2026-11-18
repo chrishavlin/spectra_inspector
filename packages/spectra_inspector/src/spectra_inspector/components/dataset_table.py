@@ -37,7 +37,7 @@ from spectra_inspector.components.dataset_selector import (
     list_store_data,
     refresh_button,
 )
-from spectra_inspector.components.layout_ids import indexedLayoutIDMapper
+from spectra_inspector.components.layout_ids import ID, indexedLayoutIDMapper
 from spectra_inspector.utilities.interface import SpectraInspectorServerInterface
 from spectra_inspector.utilities.model import AvailableDatasets
 
@@ -96,65 +96,17 @@ COLUMN_DEFS: list[dict[str, Any]] = [
 ]
 
 
-class datasetTableLayoutIDs(indexedLayoutIDMapper):
-    prop_names: tuple[str, ...] = (
-        "div",
-        "grid",
-        "search",
-        "groups",
-        "types",
-        "located",
-        "samplefilter",
-        "sampledisplay",
-        "samplebadge",
-        "clearsamples",
-        "count",
-    )
-
-    def __init__(
-        self, id_type_base: str = "dataset-table", index: int | None = None
-    ) -> None:
-        super().__init__(id_type_base, index)
-
-    @property
-    def grid(self) -> str:
-        return self.full_id("-grid")
-
-    @property
-    def search(self) -> str:
-        return self.full_id("-search")
-
-    @property
-    def groups(self) -> str:
-        return self.full_id("-groups")
-
-    @property
-    def types(self) -> str:
-        return self.full_id("-types")
-
-    @property
-    def located(self) -> str:
-        return self.full_id("-located")
-
-    @property
-    def samplefilter(self) -> str:
-        return self.full_id("-samplefilter")
-
-    @property
-    def sampledisplay(self) -> str:
-        return self.full_id("-sampledisplay")
-
-    @property
-    def samplebadge(self) -> str:
-        return self.full_id("-samplebadge")
-
-    @property
-    def clearsamples(self) -> str:
-        return self.full_id("-clearsamples")
-
-    @property
-    def count(self) -> str:
-        return self.full_id("-count")
+class datasetTableLayoutIDs(indexedLayoutIDMapper, base="dataset-table"):
+    grid = ID()
+    search = ID()
+    groups = ID()
+    types = ID()
+    located = ID()
+    samplefilter = ID()
+    sampledisplay = ID()
+    samplebadge = ID()
+    clearsamples = ID()
+    count = ID()
 
 
 def _text(value: Any) -> str:
@@ -313,18 +265,18 @@ def dataset_table(
     state = html.Div(
         [
             dcc.Store(
-                id=selector_ids.get_id_with_index("liststore"),
+                id=selector_ids.liststore.indexed,
                 storage_type="memory",
                 data=listing,
             ),
             dcc.Store(
-                id=IDS.get_id_with_index("samplefilter"),
+                id=IDS.samplefilter.indexed,
                 storage_type="memory",
                 data=[],
             ),
             dcc.Dropdown(
                 dropdown_options(dataset_names(listing, spectrum_only=False)),
-                id=selector_ids.get_id_with_index("dropdown"),
+                id=selector_ids.dropdown.indexed,
                 value=None,
             ),
         ],
@@ -334,7 +286,7 @@ def dataset_table(
     toolbar = html.Div(
         [
             dbc.Input(
-                id=IDS.get_id_with_index("search"),
+                id=IDS.search.indexed,
                 type="search",
                 placeholder="Search…",
                 persistence=True,
@@ -342,7 +294,7 @@ def dataset_table(
                 style={"maxWidth": "14rem"},
             ),
             dbc.RadioItems(
-                id=selector_ids.get_id_with_index("spectrumonly"),
+                id=selector_ids.spectrumonly.indexed,
                 options=MODE_OPTIONS,
                 value=False,
                 className="btn-group si-button-radio",
@@ -351,17 +303,17 @@ def dataset_table(
                 label_checked_class_name="active",
             ),
             _facet_dropdown(
-                IDS.get_id_with_index("groups"),
+                IDS.groups.indexed,
                 "Group",
                 facet_values(rows, "group_name"),
             ),
             _facet_dropdown(
-                IDS.get_id_with_index("types"),
+                IDS.types.indexed,
                 "Type",
                 facet_values(rows, "sample_type"),
             ),
             dbc.Checkbox(
-                id=IDS.get_id_with_index("located"),
+                id=IDS.located.indexed,
                 label="Has location",
                 value=False,
                 persistence=True,
@@ -372,12 +324,10 @@ def dataset_table(
                 [
                     html.Span(
                         [
-                            dbc.Badge(
-                                "", id=IDS.get_id_with_index("samplebadge"), pill=True
-                            ),
+                            dbc.Badge("", id=IDS.samplebadge.indexed, pill=True),
                             dbc.Button(
                                 "Clear",
-                                id=IDS.get_id_with_index("clearsamples"),
+                                id=IDS.clearsamples.indexed,
                                 color="link",
                                 size="sm",
                                 n_clicks=0,
@@ -386,7 +336,7 @@ def dataset_table(
                                 className="si-map-clear",
                             ),
                         ],
-                        id=IDS.get_id_with_index("sampledisplay"),
+                        id=IDS.sampledisplay.indexed,
                         hidden=True,
                     ),
                     refresh_button(selector_ids),
@@ -398,7 +348,7 @@ def dataset_table(
     )
 
     grid = dag.AgGrid(
-        id=IDS.get_id_with_index("grid"),
+        id=IDS.grid.indexed,
         columnDefs=COLUMN_DEFS,
         rowData=rows,
         getRowId="params.data.name",
@@ -424,7 +374,7 @@ def dataset_table(
         [
             html.Span(
                 count_label(len(rows), len(rows), truncated=listing["truncated"]),
-                id=IDS.get_id_with_index("count"),
+                id=IDS.count.indexed,
                 className="text-muted small",
             ),
         ],
@@ -433,7 +383,7 @@ def dataset_table(
 
     layout = html.Div(
         [state, toolbar, grid, footer],
-        id=IDS.get_id_with_index("div"),
+        id=IDS.div.indexed,
         className="si-dataset-table",
     )
     return layout, datasets

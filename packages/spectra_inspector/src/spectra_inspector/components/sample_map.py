@@ -9,7 +9,7 @@ import plotly.express as px
 import plotly.graph_objects as go
 from dash import dcc, html
 
-from spectra_inspector.components.layout_ids import indexedLayoutIDMapper
+from spectra_inspector.components.layout_ids import ID, indexedLayoutIDMapper
 from spectra_inspector.utilities.degrees import Latitude, Longitude
 from spectra_inspector.utilities.model import AvailableDatasets
 
@@ -146,33 +146,11 @@ class mapSettings:
         return lat
 
 
-class sampleMapLayoutIDs(indexedLayoutIDMapper):
-    prop_names: tuple[str, ...] = (
-        "div",
-        "samplemap",
-        "dropdown",
-        "focus",
-        "extent",
-    )
-
-    def __init__(self, id_type_base: str = "sample-map", index: int | None = None):
-        super().__init__(id_type_base, index)
-
-    @property
-    def samplemap(self) -> str:
-        return self.full_id("-samplemap")
-
-    @property
-    def dropdown(self) -> str:
-        return self.full_id("-dropdown")
-
-    @property
-    def focus(self) -> str:
-        return self.full_id("-focus")
-
-    @property
-    def extent(self) -> str:
-        return self.full_id("-extent")
+class sampleMapLayoutIDs(indexedLayoutIDMapper, base="sample-map"):
+    samplemap = ID()
+    dropdown = ID()
+    focus = ID()
+    extent = ID()
 
 
 def _default_center(df: pd.DataFrame | None) -> dict[str, float]:
@@ -652,7 +630,7 @@ def get_layout(
     map_style = dcc.Dropdown(
         OK_styles,
         value="Satellite",
-        id=IDS.get_id_with_index("dropdown"),
+        id=IDS.dropdown.indexed,
         className="text-info",
         searchable=False,
         clearable=False,
@@ -662,14 +640,14 @@ def get_layout(
         [
             # what the page last moved the map to: a clicked sample or the
             # extent of all of them
-            dcc.Store(id=IDS.get_id_with_index("focus")),
+            dcc.Store(id=IDS.focus.indexed),
             dbc.Row(
                 [
                     dbc.Col(map_style, width=4),
                     dbc.Col(
                         dbc.Button(
                             [html.I(className="fa fa-expand"), " Full Dataset"],
-                            id=IDS.get_id_with_index("extent"),
+                            id=IDS.extent.indexed,
                             color="secondary",
                             outline=True,
                             size="sm",
@@ -683,7 +661,7 @@ def get_layout(
                 dbc.Col(
                     dcc.Graph(
                         figure=fig,
-                        id=IDS.get_id_with_index("samplemap"),
+                        id=IDS.samplemap.indexed,
                         config={"displaylogo": False},
                         # assets/dataset_table.js watches it for clicks that
                         # hit no sample

@@ -58,7 +58,7 @@ def test_data_export_panel_ids_round_trip():
 
 def test_zero_element_id_is_keyed_on_the_element():
     ids = dataExportPanelIDS(index=0)
-    assert ids.zero_element_id("Na") == {"type": ids.zeroelement, "index": "Na"}
+    assert ids.zero_element_id("Na") == ids.zeroelement.at("Na")
 
 
 def test_outline_style_reads_the_controls_and_defaults_to_white():

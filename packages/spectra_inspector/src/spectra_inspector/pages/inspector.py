@@ -729,7 +729,7 @@ def clear_zeroed_elements(_active_spectrum_metadata):
 
 @callback(
     Output(_IDS.zeroed_elements_store, "data", allow_duplicate=True),
-    Input({"type": _dataExportIDS.zeroelement, "index": ALL}, "n_clicks"),
+    Input(_dataExportIDS.zeroelement.at(ALL), "n_clicks"),
     Input(_dataExportIDS.resetweights, "n_clicks"),
     State(_IDS.zeroed_elements_store, "data"),
     prevent_initial_call=True,
@@ -968,7 +968,7 @@ def toggle_peak_windows(
     Output(_ADD_IMAGE_ID, "n_clicks"),
     Input(_IDS.sample_name, "children"),
     State(USER_STORE_DIV_ID, "data"),
-    State(selectorIDs.get_id_with_index("spectrumonly"), "value"),
+    State(selectorIDs.spectrumonly.indexed, "value"),
 )
 def initial_update(
     input_value: str | None,
@@ -1077,7 +1077,7 @@ def _new_panel(
             id_type_base=_IDS.image_container_type,
             init_element=init_element,
         )
-    return card, imIDs.get_id_with_index("div")
+    return card, imIDs.div.indexed
 
 
 def _initial_panel_count(mode: str | None, n_clicks: int) -> int:
@@ -1090,10 +1090,10 @@ def _initial_panel_count(mode: str | None, n_clicks: int) -> int:
     Output(_IDS.image_container, "children", allow_duplicate=True),
     Output(_IDS.graph_id_store, "data", allow_duplicate=True),
     Input(_ADD_IMAGE_ID, "n_clicks"),
-    Input({"type": _imageIDS.delete, "index": ALL}, "n_clicks"),
+    Input(_imageIDS.delete.at(ALL), "n_clicks"),
     State(_IDS.graph_id_store, "data"),
     State(_IDS.image_mode, "value"),
-    State({"type": _imageSliderIds.dropdown, "index": ALL}, "value"),
+    State(_imageSliderIds.dropdown.at(ALL), "value"),
     running=[
         (Output(_ADD_IMAGE_ID, "disabled"), True, False),
     ],
@@ -1160,7 +1160,7 @@ def add_or_delete_image(
     Input(_IDS.image_mode, "value"),
     State(_IDS.sample_name, "children"),
     State(USER_STORE_DIV_ID, "data"),
-    State(selectorIDs.get_id_with_index("spectrumonly"), "value"),
+    State(selectorIDs.spectrumonly.indexed, "value"),
     running=[
         (Output(_ADD_IMAGE_ID, "disabled"), True, False),
     ],
@@ -1238,13 +1238,13 @@ def export_msa(
 @callback(
     Output(_dataExportIDS.downloadsummary, "data"),
     Input(_dataExportIDS.exportsummary, "n_clicks"),
-    State({"type": _imageIDS.graph, "index": ALL}, "figure"),
+    State(_imageIDS.graph.at(ALL), "figure"),
     State(_IDS.shapes_store, "data"),
     State("sample-name", "children"),
-    State({"type": _imageSliderIds.slider, "index": ALL}, "value"),
-    State({"type": _imageSliderIds.dropdown, "index": ALL}, "value"),
+    State(_imageSliderIds.slider.at(ALL), "value"),
+    State(_imageSliderIds.dropdown.at(ALL), "value"),
     State(_IDS.spectrum_container, "figure"),
-    State({"type": _imageIDS.colorscale, "index": ALL}, "value"),
+    State(_imageIDS.colorscale.at(ALL), "value"),
     State(USER_STORE_DIV_ID, "data"),
     State(_dataExportIDS.formatdropdown, "value"),
     State(_IDS.active_spectrum_metadata, "data"),
@@ -1252,18 +1252,18 @@ def export_msa(
     State(_IDS.zeroed_elements_store, "data"),
     State(_IDS.spectrum_yaxis_scale, "value"),
     State(_IDS.spectrum_peak_windows, "value"),
-    State(selectorIDs.get_id_with_index("spectrumonly"), "value"),
-    State({"type": _imageIDS.graph, "index": ALL}, "id"),
-    State({"type": _imageSliderIds.slider, "index": ALL}, "id"),
-    State({"type": _compositeIDS.apply, "index": ALL}, "id"),
-    State({"type": channel_selector_ids.dropdown, "index": ALL}, "value"),
-    State({"type": channel_selector_ids.dropdown, "index": ALL}, "id"),
-    State({"type": channel_selector_ids.slider, "index": ALL}, "value"),
-    State({"type": channel_selector_ids.slider, "index": ALL}, "id"),
-    State({"type": _channelIDS.color, "index": ALL}, "value"),
-    State({"type": _channelIDS.color, "index": ALL}, "id"),
-    State({"type": _channelIDS.stretch, "index": ALL}, "value"),
-    State({"type": _channelIDS.stretch, "index": ALL}, "id"),
+    State(selectorIDs.spectrumonly.indexed, "value"),
+    State(_imageIDS.graph.at(ALL), "id"),
+    State(_imageSliderIds.slider.at(ALL), "id"),
+    State(_compositeIDS.apply.at(ALL), "id"),
+    State(channel_selector_ids.dropdown.at(ALL), "value"),
+    State(channel_selector_ids.dropdown.at(ALL), "id"),
+    State(channel_selector_ids.slider.at(ALL), "value"),
+    State(channel_selector_ids.slider.at(ALL), "id"),
+    State(_channelIDS.color.at(ALL), "value"),
+    State(_channelIDS.color.at(ALL), "id"),
+    State(_channelIDS.stretch.at(ALL), "value"),
+    State(_channelIDS.stretch.at(ALL), "id"),
     State(_dataExportIDS.includeoutline, "value"),
     State(_dataExportIDS.outlinelinecolor, "value"),
     State(_dataExportIDS.outlinedotcolor, "value"),
@@ -1424,7 +1424,7 @@ def _export_scale_factor(chosen: int | None, settings: Settings) -> int:
     Output(_dataExportIDS.exportscale, "value"),
     Input(_IDS.sample_name, "children"),
     State(USER_STORE_DIV_ID, "data"),
-    State(selectorIDs.get_id_with_index("spectrumonly"), "value"),
+    State(selectorIDs.spectrumonly.indexed, "value"),
 )
 def update_export_scale_options(
     sample_name: str | None,
@@ -1721,15 +1721,15 @@ def _image_figures_to_write(
 
 
 def _graph_dict(index: int) -> dict[str, str | int]:
-    return {"type": _imageIDS.graph, "index": index}
+    return _imageIDS.graph.at(index)
 
 
 def _apply_button_id(index: int) -> dict[str, str | int]:
-    return {"type": _imageSliderIds.refreshbutton, "index": index}
+    return _imageSliderIds.refreshbutton.at(index)
 
 
 def _composite_apply_id(index: int) -> dict[str, str | int]:
-    return {"type": _compositeIDS.apply, "index": index}
+    return _compositeIDS.apply.at(index)
 
 
 def _active_shapes(shapes_store: dict | None) -> list[dict]:
@@ -1737,24 +1737,24 @@ def _active_shapes(shapes_store: dict | None) -> list[dict]:
 
 
 @callback(
-    Output({"type": _imageIDS.graph, "index": ALL}, "figure"),
+    Output(_imageIDS.graph.at(ALL), "figure"),
     Output(_IDS.processed_graph_id_store, "data"),
     Output(_IDS.view_store, "data", allow_duplicate=True),
     Output(_IDS.image_load_error, "is_open", allow_duplicate=True),
     Output(_IDS.image_load_error_message, "children", allow_duplicate=True),
     Output(_IDS.image_retry, "hidden", allow_duplicate=True),
-    Input({"type": _imageSliderIds.refreshbutton, "index": ALL}, "n_clicks"),
+    Input(_imageSliderIds.refreshbutton.at(ALL), "n_clicks"),
     Input(_RESET_IMAGES_ID, "n_clicks"),
     Input(_IDS.image_retry, "n_clicks"),
-    State({"type": _imageSliderIds.refreshbutton, "index": ALL}, "id"),
-    State({"type": _imageIDS.colorscale, "index": ALL}, "value"),
+    State(_imageSliderIds.refreshbutton.at(ALL), "id"),
+    State(_imageIDS.colorscale.at(ALL), "value"),
     State(_IDS.graph_id_store, "data"),
-    State({"type": _imageSliderIds.slider, "index": ALL}, "value"),
-    State({"type": _imageIDS.graph, "index": ALL}, "id"),
+    State(_imageSliderIds.slider.at(ALL), "value"),
+    State(_imageIDS.graph.at(ALL), "id"),
     State(USER_STORE_DIV_ID, "data"),
     State(_IDS.processed_graph_id_store, "data"),
     State("sample-name", "children"),
-    State({"type": _imageIDS.graph, "index": ALL}, "figure"),
+    State(_imageIDS.graph.at(ALL), "figure"),
     State(_IDS.view_store, "data"),
     State(_IDS.shapes_store, "data"),
     State(_IDS.scalebar_style_store, "data"),
@@ -1921,24 +1921,24 @@ def update_graph_figure(
 
 
 @callback(
-    Output({"type": _imageIDS.graph, "index": ALL}, "figure", allow_duplicate=True),
+    Output(_imageIDS.graph.at(ALL), "figure", allow_duplicate=True),
     Output(_IDS.processed_graph_id_store, "data", allow_duplicate=True),
     Output(_IDS.image_load_error, "is_open", allow_duplicate=True),
     Output(_IDS.image_load_error_message, "children", allow_duplicate=True),
     Output(_IDS.image_retry, "hidden", allow_duplicate=True),
-    Input({"type": _compositeIDS.apply, "index": ALL}, "n_clicks"),
+    Input(_compositeIDS.apply.at(ALL), "n_clicks"),
     Input(_IDS.image_retry, "n_clicks"),
-    State({"type": _compositeIDS.apply, "index": ALL}, "id"),
-    State({"type": channel_selector_ids.dropdown, "index": ALL}, "value"),
-    State({"type": channel_selector_ids.dropdown, "index": ALL}, "id"),
-    State({"type": channel_selector_ids.slider, "index": ALL}, "value"),
-    State({"type": channel_selector_ids.slider, "index": ALL}, "id"),
-    State({"type": _channelIDS.color, "index": ALL}, "value"),
-    State({"type": _channelIDS.color, "index": ALL}, "id"),
-    State({"type": _channelIDS.stretch, "index": ALL}, "value"),
-    State({"type": _channelIDS.stretch, "index": ALL}, "id"),
+    State(_compositeIDS.apply.at(ALL), "id"),
+    State(channel_selector_ids.dropdown.at(ALL), "value"),
+    State(channel_selector_ids.dropdown.at(ALL), "id"),
+    State(channel_selector_ids.slider.at(ALL), "value"),
+    State(channel_selector_ids.slider.at(ALL), "id"),
+    State(_channelIDS.color.at(ALL), "value"),
+    State(_channelIDS.color.at(ALL), "id"),
+    State(_channelIDS.stretch.at(ALL), "value"),
+    State(_channelIDS.stretch.at(ALL), "id"),
     State(_IDS.graph_id_store, "data"),
-    State({"type": _imageIDS.graph, "index": ALL}, "id"),
+    State(_imageIDS.graph.at(ALL), "id"),
     State(USER_STORE_DIV_ID, "data"),
     State(_IDS.processed_graph_id_store, "data"),
     State("sample-name", "children"),
@@ -2084,9 +2084,9 @@ def update_composite_figure(
 
 
 @callback(
-    Output({"type": _imageIDS.graph, "index": ALL}, "figure", allow_duplicate=True),
-    Input({"type": _imageIDS.colorscale, "index": ALL}, "value"),
-    State({"type": _imageIDS.graph, "index": ALL}, "id"),
+    Output(_imageIDS.graph.at(ALL), "figure", allow_duplicate=True),
+    Input(_imageIDS.colorscale.at(ALL), "value"),
+    State(_imageIDS.graph.at(ALL), "id"),
     State(_IDS.processed_graph_id_store, "data"),
     prevent_initial_call=True,
 )
@@ -2141,11 +2141,11 @@ def _view_patch(
 
 
 @callback(
-    Output({"type": _imageIDS.graph, "index": ALL}, "figure", allow_duplicate=True),
+    Output(_imageIDS.graph.at(ALL), "figure", allow_duplicate=True),
     Output(_IDS.view_store, "data"),
     Output(_IDS.shapes_store, "data"),
-    Input({"type": _imageIDS.graph, "index": ALL}, "relayoutData"),
-    State({"type": _imageIDS.graph, "index": ALL}, "id"),
+    Input(_imageIDS.graph.at(ALL), "relayoutData"),
+    State(_imageIDS.graph.at(ALL), "id"),
     State(_IDS.processed_graph_id_store, "data"),
     State(_IDS.view_store, "data"),
     State(_IDS.shapes_store, "data"),
@@ -2301,10 +2301,10 @@ def action_results(
 
 
 @callback(
-    Output({"type": _imageIDS.graph, "index": ALL}, "figure", allow_duplicate=True),
+    Output(_imageIDS.graph.at(ALL), "figure", allow_duplicate=True),
     Output(_IDS.view_store, "data", allow_duplicate=True),
-    Input({"type": _toolboxIDS.tool, "index": ALL}, "n_clicks"),
-    State({"type": _imageIDS.graph, "index": ALL}, "id"),
+    Input(_toolboxIDS.tool.at(ALL), "n_clicks"),
+    State(_imageIDS.graph.at(ALL), "id"),
     State(_IDS.processed_graph_id_store, "data"),
     State(_IDS.view_store, "data"),
     prevent_initial_call=True,
@@ -2328,9 +2328,9 @@ def select_image_tool(
 
 
 @callback(
-    Output({"type": _toolboxIDS.tool, "index": ALL}, "active"),
+    Output(_toolboxIDS.tool.at(ALL), "active"),
     Input(_IDS.view_store, "data"),
-    State({"type": _toolboxIDS.tool, "index": ALL}, "id"),
+    State(_toolboxIDS.tool.at(ALL), "id"),
 )
 def highlight_image_tool(view_store: dict | None, button_ids: list[dict]):
     """The pressed tool button follows the shared view, so it is right however
@@ -2339,11 +2339,11 @@ def highlight_image_tool(view_store: dict | None, button_ids: list[dict]):
 
 
 @callback(
-    Output({"type": _imageIDS.graph, "index": ALL}, "figure", allow_duplicate=True),
+    Output(_imageIDS.graph.at(ALL), "figure", allow_duplicate=True),
     Output(_IDS.view_store, "data", allow_duplicate=True),
     Output(_IDS.shapes_store, "data", allow_duplicate=True),
-    Input({"type": _toolboxIDS.action, "index": ALL}, "n_clicks"),
-    State({"type": _imageIDS.graph, "index": ALL}, "id"),
+    Input(_toolboxIDS.action.at(ALL), "n_clicks"),
+    State(_imageIDS.graph.at(ALL), "id"),
     State(_IDS.processed_graph_id_store, "data"),
     State(_IDS.view_store, "data"),
     State(_IDS.shapes_store, "data"),
@@ -2450,10 +2450,10 @@ def polygon_edit_results(
 
 
 @callback(
-    Output({"type": _imageIDS.graph, "index": ALL}, "figure", allow_duplicate=True),
+    Output(_imageIDS.graph.at(ALL), "figure", allow_duplicate=True),
     Output(_IDS.shapes_store, "data", allow_duplicate=True),
     Input(_IDS.polygon_click_store, "data"),
-    State({"type": _imageIDS.graph, "index": ALL}, "id"),
+    State(_imageIDS.graph.at(ALL), "id"),
     State(_IDS.processed_graph_id_store, "data"),
     State(_IDS.view_store, "data"),
     State(_IDS.shapes_store, "data"),
@@ -2561,12 +2561,12 @@ def toggle_figure_export_settings(shapes_store: dict | None) -> bool:
 
 
 @callback(
-    Output({"type": _imageIDS.graph, "index": ALL}, "figure", allow_duplicate=True),
+    Output(_imageIDS.graph.at(ALL), "figure", allow_duplicate=True),
     Output(_IDS.scalebar_style_store, "data"),
     Input(SCALEBAR_SHOW_ID, "value"),
     Input(SCALEBAR_COLOR_ID, "value"),
     Input(SCALEBAR_FONTSIZE_ID, "value"),
-    State({"type": _imageIDS.graph, "index": ALL}, "id"),
+    State(_imageIDS.graph.at(ALL), "id"),
     State(_IDS.processed_graph_id_store, "data"),
     prevent_initial_call=True,
 )
@@ -2590,7 +2590,7 @@ def restyle_scalebar(
 @callback(
     Output(_IDS.spectrum_container, "figure", allow_duplicate=True),
     Output(_IDS.spectrum_view_store, "data", allow_duplicate=True),
-    Input({"type": _spectrumToolboxIDS.tool, "index": ALL}, "n_clicks"),
+    Input(_spectrumToolboxIDS.tool.at(ALL), "n_clicks"),
     State(_IDS.active_spectrum_metadata, "data"),
     State(_IDS.spectrum_view_store, "data"),
     prevent_initial_call=True,
@@ -2623,9 +2623,9 @@ def select_spectrum_tool(
 
 
 @callback(
-    Output({"type": _spectrumToolboxIDS.tool, "index": ALL}, "active"),
+    Output(_spectrumToolboxIDS.tool.at(ALL), "active"),
     Input(_IDS.spectrum_view_store, "data"),
-    State({"type": _spectrumToolboxIDS.tool, "index": ALL}, "id"),
+    State(_spectrumToolboxIDS.tool.at(ALL), "id"),
 )
 def highlight_spectrum_tool(spectrum_view: dict | None, button_ids: list[dict]):
     return SPECTRUM_TOOLBOX.tool_states_for(spectrum_view, button_ids)
@@ -2636,7 +2636,7 @@ def highlight_spectrum_tool(spectrum_view: dict | None, button_ids: list[dict]):
 clientside_callback(
     ClientsideFunction("toolbox", "spectrumAction"),
     Output(_IDS.spectrum_action_sink, "data"),
-    Input({"type": _spectrumToolboxIDS.action, "index": ALL}, "n_clicks"),
+    Input(_spectrumToolboxIDS.action.at(ALL), "n_clicks"),
     Input(_SPECTRUM_RESET_ID, "n_clicks"),
     State(_IDS.spectrum_container, "id"),
     prevent_initial_call=True,
@@ -2654,8 +2654,8 @@ clientside_callback(
 
 @callback(
     Output(USER_STORE_DIV_ID, "data", allow_duplicate=True),
-    Output(selectorIDs.get_id_with_index("dropdown"), "options"),
-    Output(selectorIDs.get_id_with_index("dropdown"), "value"),
+    Output(selectorIDs.dropdown.indexed, "options"),
+    Output(selectorIDs.dropdown.indexed, "value"),
     Output(_IDS.sample_name, "children"),
     Output(_IDS.graph_id_store, "data", allow_duplicate=True),
     Output(_IDS.processed_graph_id_store, "data", allow_duplicate=True),
@@ -2666,13 +2666,13 @@ clientside_callback(
     Output(_IDS.view_store, "data", allow_duplicate=True),
     Output(_IDS.spectrum_view_store, "data", allow_duplicate=True),
     Output(_IDS.shapes_store, "data", allow_duplicate=True),
-    Output(selectorIDs.get_id_with_index("liststore"), "data", allow_duplicate=True),
+    Output(selectorIDs.liststore.indexed, "data", allow_duplicate=True),
     Output(_IDS.image_section, "hidden"),
-    Input(selectorIDs.get_id_with_index("dropdown"), "value"),
-    Input(selectorIDs.get_id_with_index("refresh"), "n_clicks"),
+    Input(selectorIDs.dropdown.indexed, "value"),
+    Input(selectorIDs.refresh.indexed, "n_clicks"),
     State(USER_STORE_DIV_ID, "data"),
-    State(selectorIDs.get_id_with_index("dropdown"), "options"),
-    State(selectorIDs.get_id_with_index("spectrumonly"), "value"),
+    State(selectorIDs.dropdown.indexed, "options"),
+    State(selectorIDs.spectrumonly.indexed, "value"),
     prevent_initial_call=True,
 )
 def update_selected_dataset(
@@ -2697,9 +2697,7 @@ def update_selected_dataset(
         input_value = data_store_selected
 
     valid_clicks = n_clicks or 0
-    is_refresh = (
-        trigger == selectorIDs.get_id_with_index("refresh") and valid_clicks > 0
-    )
+    is_refresh = trigger == selectorIDs.refresh.indexed and valid_clicks > 0
     has_input = input_value and input_value != "none"
 
     available: None | AvailableDatasets = None

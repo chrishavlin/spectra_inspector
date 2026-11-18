@@ -15,8 +15,9 @@ and DOM listeners live in `assets/*.js`.
   `UserStore(**d)`, write with `updateDataStore`. The inspector adds page-local
   stores tracked in `inspectorIDs`.
 - **Component ids**: every reusable component subclasses `indexedLayoutIDMapper`
-  (`components/layout_ids.py`). Component tests round-trip `prop_names`, so add
-  new props there.
+  (`components/layout_ids.py`) and declares each element as an `ID()`. Address
+  one with `ids.x` (plain), `ids.x.indexed` or `ids.x.at(MATCH)`, never a
+  hand-written `{"type": ..., "index": ...}`.
 - **Backend access** goes only through
   `utilities/interface.py::SpectraInspectorServerInterface`; layouts check
   `.connected` and render a "could not connect" div rather than raising, and

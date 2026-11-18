@@ -46,7 +46,7 @@ def test_dataset_selector_layout_ids():
     ids = datasetSelectorLayoutIDs(index=1)
     for prop in ids.prop_names:
         assert prop in getattr(ids, prop)
-        assert ids.get_id_with_index(prop)["index"] == 1
+        assert getattr(ids, prop).indexed["index"] == 1
 
 
 def _find(component, kind) -> list:
@@ -270,5 +270,5 @@ def test_refresh_button_shows_in_desktop_mode_only(mocker, desktop, class_name):
 
     div, _ = dataset_selector(sisi)
     (button,) = _find(div, Button)
-    assert button.id == datasetSelectorLayoutIDs(index=0).get_id_with_index("refresh")
+    assert button.id == datasetSelectorLayoutIDs(index=0).refresh.indexed
     assert button.className == class_name

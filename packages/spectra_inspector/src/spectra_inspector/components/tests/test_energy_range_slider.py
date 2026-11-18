@@ -30,8 +30,8 @@ def _find(component, component_id):
 
 
 def _dropdown_and_slider(cont, ids):
-    dropdown = _find(cont, ids.get_id_with_index("dropdown"))
-    slider = _find(cont, ids.get_id_with_index("slider"))
+    dropdown = _find(cont, ids.dropdown.indexed)
+    slider = _find(cont, ids.slider.indexed)
     assert dropdown is not None
     assert slider is not None
     return dropdown, slider

@@ -18,7 +18,7 @@ from typing import Any
 import dash_bootstrap_components as dbc
 from dash import html
 
-from spectra_inspector.components.layout_ids import indexedLayoutIDMapper
+from spectra_inspector.components.layout_ids import ID, indexedLayoutIDMapper
 from spectra_inspector.components.tooltip import hover_tooltip
 
 
@@ -88,15 +88,12 @@ CHEVRON_OPEN = "fa-solid fa-chevron-up me-1"
 
 
 class toolboxLayoutIDs(indexedLayoutIDMapper):
-    prop_names: tuple[str, ...] = (
-        "div",
-        "tool",
-        "action",
-        "row",
-        "collapse",
-        "toggle",
-        "chevron",
-    )
+    tool = ID()
+    action = ID()
+    row = ID()
+    collapse = ID()
+    toggle = ID()
+    chevron = ID()
 
     def __init__(
         self, id_type_base: str, tools: tuple[str, ...], actions: tuple[str, ...]
@@ -105,40 +102,16 @@ class toolboxLayoutIDs(indexedLayoutIDMapper):
         self.tools = tools
         self.actions = actions
 
-    @property
-    def tool(self) -> str:
-        return self.full_id("-tool")
-
-    @property
-    def action(self) -> str:
-        return self.full_id("-action")
-
-    @property
-    def row(self) -> str:
-        return self.full_id("-row")
-
-    @property
-    def collapse(self) -> str:
-        return self.full_id("-collapse")
-
-    @property
-    def toggle(self) -> str:
-        return self.full_id("-toggle")
-
-    @property
-    def chevron(self) -> str:
-        return self.full_id("-chevron")
-
     def tool_id(self, tool: str) -> dict[str, str]:
         """The pattern-matching id of a tool button, indexed by the tool."""
-        return {"type": self.tool, "index": tool}
+        return self.tool.at(tool)
 
     def action_id(self, action: str) -> dict[str, str]:
-        return {"type": self.action, "index": action}
+        return self.action.at(action)
 
     def row_id(self, position: int) -> dict[str, str | int]:
         """The id of a row's label, indexed by the row's position."""
-        return {"type": self.row, "index": position}
+        return self.row.at(position)
 
     def button_id(self, button: str) -> str | dict[str, str]:
         """The id of any toolbox button: a pattern id for a tool or an action,

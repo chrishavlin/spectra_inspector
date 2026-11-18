@@ -180,7 +180,7 @@ def test_table_rows_follow_the_mode_and_filters(page):
 
 
 def test_a_filter_change_reselects_the_dataset_when_its_row_is_back(page):
-    _trigger((page.tableIDs.get_id_with_index("types"), "value"))
+    _trigger((page.tableIDs.types.indexed, "value"))
     rows, selected, *_ = page.update_table_rows(
         LISTING, False, None, ["Gabbro"], False, [], "C-29 Map 1"
     )
@@ -440,7 +440,7 @@ def test_emptying_the_map_selection_keeps_the_active_dataset(page):
 
 
 def test_clear_button_lifts_the_map_filter_and_deselects(page):
-    _trigger((page.tableIDs.get_id_with_index("clearsamples"), "n_clicks"))
+    _trigger((page.tableIDs.clearsamples.indexed, "n_clicks"))
     args = (None, None, 1, LISTING)
     focus = {"sample": "C-29", "n": 1}
     # the focus is left alone: the map stays where it is

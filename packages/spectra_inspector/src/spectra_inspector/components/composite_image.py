@@ -42,7 +42,7 @@ from spectra_inspector.components.energy_range_slider import (
     elementDropdownSliderIDS,
     register_element_selector_callbacks,
 )
-from spectra_inspector.components.layout_ids import indexedLayoutIDMapper
+from spectra_inspector.components.layout_ids import ID, indexedLayoutIDMapper
 from spectra_inspector.components.scalebar import scalebarHandler
 from spectra_inspector.components.tooltip import hover_tooltip
 from spectra_inspector.utilities.composite import (
@@ -67,51 +67,21 @@ CHANNEL_SELECTOR_BASE = "composite-channel-selector"
 _INITIAL_CHANNEL_ELEMENTS: tuple[str, ...] = ("Mg", "Al", "Si")
 
 
-class compositeImageLayoutIDs(indexedLayoutIDMapper):
+class compositeImageLayoutIDs(indexedLayoutIDMapper, base="composite-image"):
     """The per-panel controls of a composite panel."""
 
-    prop_names: tuple[str, ...] = ("div", "apply", "detailsbutton", "details")
-
-    def __init__(
-        self, id_type_base: str = "composite-image", index: int | None = None
-    ) -> None:
-        super().__init__(id_type_base, index)
-
-    @property
-    def apply(self) -> str:
-        return self.full_id("-apply")
-
-    @property
-    def detailsbutton(self) -> str:
-        return self.full_id("-detailsbutton")
-
-    @property
-    def details(self) -> str:
-        return self.full_id("-details")
+    apply = ID()
+    detailsbutton = ID()
+    details = ID()
 
 
-class compositeChannelLayoutIDs(indexedLayoutIDMapper):
+class compositeChannelLayoutIDs(indexedLayoutIDMapper, base="composite-channel"):
     """The per-channel controls beyond the element selector, indexed by
     ``channel_index(panel, channel)``."""
 
-    prop_names: tuple[str, ...] = ("div", "badge", "color", "stretch")
-
-    def __init__(
-        self, id_type_base: str = "composite-channel", index: str | None = None
-    ) -> None:
-        super().__init__(id_type_base, index)
-
-    @property
-    def badge(self) -> str:
-        return self.full_id("-badge")
-
-    @property
-    def color(self) -> str:
-        return self.full_id("-color")
-
-    @property
-    def stretch(self) -> str:
-        return self.full_id("-stretch")
+    badge = ID()
+    color = ID()
+    stretch = ID()
 
 
 def channel_index(panel: int, channel: int) -> str:
@@ -146,7 +116,7 @@ def composite_image_layout(
 
     fig_image = dcc.Loading(
         dcc.Graph(
-            id=imIDs.get_id_with_index("graph"),
+            id=imIDs.graph.indexed,
             config={
                 "modeBarButtonsToAdd": ["drawrect", "eraseshape"],
                 "modeBarButtonsToRemove": ["resetScale", "autoScale"],
@@ -183,7 +153,7 @@ def composite_image_layout(
         badge_color, badge_style = _badge_props(color)
         badge = dbc.Badge(
             str(channel + 1),
-            id=chIDs.get_id_with_index("badge"),
+            id=chIDs.badge.indexed,
             color=badge_color,
             style=badge_style,
             className="fs-6",
@@ -205,7 +175,7 @@ def composite_image_layout(
         color_dropdown = dcc.Dropdown(
             list(CHANNEL_COLORS),
             value=color,
-            id=chIDs.get_id_with_index("color"),
+            id=chIDs.color.indexed,
             className="text-info",
             searchable=False,
             clearable=False,
@@ -216,7 +186,7 @@ def composite_image_layout(
             100,
             step=0.5,
             value=list(DEFAULT_STRETCH),
-            id=chIDs.get_id_with_index("stretch"),
+            id=chIDs.stretch.indexed,
             marks={val: str(val) for val in range(0, 101, 25)},
             className="text-info",
             tooltip={"placement": "bottom"},
@@ -261,25 +231,23 @@ def composite_image_layout(
                 hover_tooltip(
                     f"Element map for channel {channel + 1} ({CHANNEL_OFF} leaves "
                     "it out of the blend)",
-                    target=selectorIDs.get_id_with_index("dropdown"),
+                    target=selectorIDs.dropdown.indexed,
                 ),
                 hover_tooltip(
                     "Adjust endpoints to set energy bounds (keV)",
-                    target=selectorIDs.get_id_with_index("slider"),
+                    target=selectorIDs.slider.indexed,
                 ),
                 hover_tooltip(
                     "Percentiles of the map shown as black and as full colour",
-                    target=chIDs.get_id_with_index("stretch"),
+                    target=chIDs.stretch.indexed,
                 ),
             ]
         )
 
-    apply_button = Button(
-        "Apply", id=panelIDs.get_id_with_index("apply"), **APPLY_IDLE_PROPS
-    )
+    apply_button = Button("Apply", id=panelIDs.apply.indexed, **APPLY_IDLE_PROPS)
     details_button = Button(
         "Channel details",
-        id=panelIDs.get_id_with_index("detailsbutton"),
+        id=panelIDs.detailsbutton.indexed,
         color="secondary",
         n_clicks=0,
         className="text-nowrap",
@@ -302,19 +270,17 @@ def composite_image_layout(
         align="center",
         className="g-2 mb-2",
     )
-    details = dbc.Collapse(
-        detail_blocks, id=panelIDs.get_id_with_index("details"), is_open=False
-    )
+    details = dbc.Collapse(detail_blocks, id=panelIDs.details.indexed, is_open=False)
 
     tooltips.extend(
         [
             hover_tooltip(
                 "Blend the channels with their current elements, colours and ranges",
-                target=panelIDs.get_id_with_index("apply"),
+                target=panelIDs.apply.indexed,
             ),
             hover_tooltip(
                 "Show or hide each channel's colour, energy range and stretch",
-                target=panelIDs.get_id_with_index("detailsbutton"),
+                target=panelIDs.detailsbutton.indexed,
             ),
         ]
     )
@@ -326,7 +292,7 @@ def composite_image_layout(
                 [channels_row, details, fig_image, *tooltips], className="p-2"
             ),
         ],
-        id=imIDs.get_id_with_index("div"),
+        id=imIDs.div.indexed,
     )
     return card, imIDs
 
@@ -417,9 +383,9 @@ register_element_selector_callbacks(CHANNEL_SELECTOR_BASE, custom_label=CUSTOM_R
 
 
 @callback(
-    Output({"type": _panelIDs.details, "index": MATCH}, "is_open"),
-    Input({"type": _panelIDs.detailsbutton, "index": MATCH}, "n_clicks"),
-    State({"type": _panelIDs.details, "index": MATCH}, "is_open"),
+    Output(_panelIDs.details.at(MATCH), "is_open"),
+    Input(_panelIDs.detailsbutton.at(MATCH), "n_clicks"),
+    State(_panelIDs.details.at(MATCH), "is_open"),
 )
 def toggle_channel_details(n_clicks: int | None, is_open: bool):
     if n_clicks:
@@ -428,9 +394,9 @@ def toggle_channel_details(n_clicks: int | None, is_open: bool):
 
 
 @callback(
-    Output({"type": _channelIDs.badge, "index": MATCH}, "color"),
-    Output({"type": _channelIDs.badge, "index": MATCH}, "style"),
-    Input({"type": _channelIDs.color, "index": MATCH}, "value"),
+    Output(_channelIDs.badge.at(MATCH), "color"),
+    Output(_channelIDs.badge.at(MATCH), "style"),
+    Input(_channelIDs.color.at(MATCH), "value"),
     prevent_initial_call=True,
 )
 def recolor_channel_badge(color: str | None):
@@ -449,12 +415,12 @@ channel_selector_ids = elementDropdownSliderIDS(CHANNEL_SELECTOR_BASE)
 # reads the panel off the triggered id and finds its Apply among the ids.
 clientside_callback(
     ClientsideFunction("applyButton", "markPanelPending"),
-    Output({"type": _panelIDs.apply, "index": ALL}, "color"),
-    Output({"type": _panelIDs.apply, "index": ALL}, "className"),
-    Input({"type": channel_selector_ids.dropdown, "index": ALL}, "value"),
-    Input({"type": channel_selector_ids.slider, "index": ALL}, "value"),
-    Input({"type": _channelIDs.color, "index": ALL}, "value"),
-    Input({"type": _channelIDs.stretch, "index": ALL}, "value"),
-    State({"type": _panelIDs.apply, "index": ALL}, "id"),
+    Output(_panelIDs.apply.at(ALL), "color"),
+    Output(_panelIDs.apply.at(ALL), "className"),
+    Input(channel_selector_ids.dropdown.at(ALL), "value"),
+    Input(channel_selector_ids.slider.at(ALL), "value"),
+    Input(_channelIDs.color.at(ALL), "value"),
+    Input(_channelIDs.stretch.at(ALL), "value"),
+    State(_panelIDs.apply.at(ALL), "id"),
     prevent_initial_call=True,
 )

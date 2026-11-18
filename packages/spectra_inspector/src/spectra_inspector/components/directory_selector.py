@@ -52,7 +52,7 @@ from spectra_inspector.components.dataset_selector import (
     dropdown_options,
     list_store_data,
 )
-from spectra_inspector.components.layout_ids import indexedLayoutIDMapper
+from spectra_inspector.components.layout_ids import ID, indexedLayoutIDMapper
 from spectra_inspector.logging import spectraLogger
 from spectra_inspector.settings import Settings
 from spectra_inspector.user_store_model import (
@@ -69,105 +69,25 @@ from spectra_inspector.utilities.interface import (
 DATA_ROOT_LABEL = "<data root>"
 
 
-class directorySelectorLayoutIDs(indexedLayoutIDMapper):
-    prop_names: tuple[str, ...] = (
-        "div",
-        "current",
-        "loaded",
-        "open",
-        "modal",
-        "cancel",
-        "path",
-        "crumb",
-        "filter",
-        "entries",
-        "count",
-        "use",
-        "recursive",
-        "status",
-        "browsestore",
-        "committedstore",
-        "rootstore",
-        "recent",
-        "recententry",
-    )
-
-    def __init__(
-        self, id_type_base: str = "directory-selector", index: int | None = None
-    ) -> None:
-        super().__init__(id_type_base, index)
-
-    @property
-    def current(self) -> str:
-        return self.full_id("-current")
-
-    @property
-    def loaded(self) -> str:
-        return self.full_id("-loaded")
-
-    @property
-    def open(self) -> str:
-        return self.full_id("-open")
-
-    @property
-    def modal(self) -> str:
-        return self.full_id("-modal")
-
-    @property
-    def cancel(self) -> str:
-        return self.full_id("-cancel")
-
-    @property
-    def path(self) -> str:
-        return self.full_id("-path")
-
-    @property
-    def crumb(self) -> str:
-        return self.full_id("-crumb")
-
-    @property
-    def filter(self) -> str:
-        return self.full_id("-filter")
-
-    @property
-    def entries(self) -> str:
-        return self.full_id("-entries")
-
-    @property
-    def count(self) -> str:
-        return self.full_id("-count")
-
-    @property
-    def use(self) -> str:
-        return self.full_id("-use")
-
-    @property
-    def recursive(self) -> str:
-        return self.full_id("-recursive")
-
-    @property
-    def status(self) -> str:
-        return self.full_id("-status")
-
-    @property
-    def browsestore(self) -> str:
-        return self.full_id("-browsestore")
-
-    @property
-    def committedstore(self) -> str:
-        return self.full_id("-committedstore")
-
-    @property
-    def rootstore(self) -> str:
-        return self.full_id("-rootstore")
-
-    @property
-    def recent(self) -> str:
-        return self.full_id("-recent")
-
-    @property
-    def recententry(self) -> str:
-        return self.full_id("-recententry")
+class directorySelectorLayoutIDs(indexedLayoutIDMapper, base="directory-selector"):
+    current = ID()
+    loaded = ID()
+    open = ID()
+    modal = ID()
+    cancel = ID()
+    path = ID()
+    crumb = ID()
+    filter = ID()
+    entries = ID()
+    count = ID()
+    use = ID()
+    recursive = ID()
+    status = ID()
+    browsestore = ID()
+    committedstore = ID()
+    rootstore = ID()
+    recent = ID()
+    recententry = ID()
 
 
 # One list for both pages' pickers, so it has a plain id rather than an
@@ -245,17 +165,17 @@ def directory_selector(
         # page's layout on every navigation, so a hardcoded path here is
         # what used to reset the picker to the data root on a page switch.
         dcc.Store(
-            id=IDS.get_id_with_index("browsestore"),
+            id=IDS.browsestore.indexed,
             storage_type="memory",
             data=None,
         ),
         dcc.Store(
-            id=IDS.get_id_with_index("committedstore"),
+            id=IDS.committedstore.indexed,
             storage_type="memory",
             data={},
         ),
         dcc.Store(
-            id=IDS.get_id_with_index("rootstore"),
+            id=IDS.rootstore.indexed,
             storage_type="memory",
             data=root,
         ),
@@ -267,17 +187,17 @@ def directory_selector(
             html.Span("Working directory:", className="fw-bold"),
             html.Span(
                 NO_DIRECTORY_LABEL,
-                id=IDS.get_id_with_index("current"),
+                id=IDS.current.indexed,
                 style={"wordBreak": "break-all"},
             ),
             dbc.Button(
                 "Change…",
-                id=IDS.get_id_with_index("open"),
+                id=IDS.open.indexed,
                 n_clicks=0,
                 color="secondary",
                 size="sm",
             ),
-            html.Span(id=IDS.get_id_with_index("loaded"), className="text-muted small"),
+            html.Span(id=IDS.loaded.indexed, className="text-muted small"),
         ],
         className="si-working-directory",
     )
@@ -285,7 +205,7 @@ def directory_selector(
     # a directory can hold a great many subdirectories; the grid only renders
     # the rows in view, and its quick filter narrows them without a round trip.
     entries = dag.AgGrid(
-        id=IDS.get_id_with_index("entries"),
+        id=IDS.entries.indexed,
         columnDefs=[{"field": "name", "headerName": "Subdirectories"}],
         rowData=[],
         getRowId="params.data.path",
@@ -312,11 +232,11 @@ def directory_selector(
                         [
                             html.Div(
                                 breadcrumb("", root, component_index),
-                                id=IDS.get_id_with_index("path"),
+                                id=IDS.path.indexed,
                                 className="si-directory-path",
                             ),
                             dbc.Input(
-                                id=IDS.get_id_with_index("filter"),
+                                id=IDS.filter.indexed,
                                 type="search",
                                 placeholder="Filter…",
                                 size="sm",
@@ -329,7 +249,7 @@ def directory_selector(
                         [
                             html.Div(
                                 recent_directories([], component_index),
-                                id=IDS.get_id_with_index("recent"),
+                                id=IDS.recent.indexed,
                                 className="si-directory-recent",
                             ),
                             html.Div(entries, className="si-directory-entries"),
@@ -337,7 +257,7 @@ def directory_selector(
                         className="si-directory-body",
                     ),
                     html.Div(
-                        id=IDS.get_id_with_index("count"),
+                        id=IDS.count.indexed,
                         className="text-muted small mt-2",
                     ),
                 ]
@@ -345,34 +265,34 @@ def directory_selector(
             dbc.ModalFooter(
                 [
                     dbc.Checkbox(
-                        id=IDS.get_id_with_index("recursive"),
+                        id=IDS.recursive.indexed,
                         label="Include subdirectories when loading",
                         value=True,
                         className="me-auto mb-0",
                     ),
                     dcc.Loading(
                         html.Div(
-                            id=IDS.get_id_with_index("status"),
+                            id=IDS.status.indexed,
                             className="text-danger small",
                         ),
                         type="circle",
                     ),
                     dbc.Button(
                         "Cancel",
-                        id=IDS.get_id_with_index("cancel"),
+                        id=IDS.cancel.indexed,
                         n_clicks=0,
                         color="secondary",
                     ),
                     dbc.Button(
                         USE_CURRENT_LABEL,
-                        id=IDS.get_id_with_index("use"),
+                        id=IDS.use.indexed,
                         n_clicks=0,
                         color="primary",
                     ),
                 ]
             ),
         ],
-        id=IDS.get_id_with_index("modal"),
+        id=IDS.modal.indexed,
         is_open=False,
         size="lg",
         centered=True,
@@ -380,7 +300,7 @@ def directory_selector(
 
     return html.Div(
         [*stores, summary, dialog],
-        id=IDS.get_id_with_index("div"),
+        id=IDS.div.indexed,
     )
 
 
@@ -408,7 +328,7 @@ def crumb_id(component_index: int, path: str) -> dict[str, Any]:
     it straight off ctx.triggered_id. It is an ALL wildcard there, which is
     allowed alongside the MATCH on `index`.
     """
-    return {"type": _IDS.crumb, "index": component_index, "name": path}
+    return _IDS.crumb.at(component_index, name=path)
 
 
 def breadcrumb(path: str | None, root: str, component_index: int) -> list:
@@ -447,7 +367,7 @@ def breadcrumb(path: str | None, root: str, component_index: int) -> list:
 
 def recent_id(component_index: int, path: str) -> dict[str, Any]:
     """The id of one recent directory, carrying its path like `crumb_id`."""
-    return {"type": _IDS.recententry, "index": component_index, "name": path}
+    return _IDS.recententry.at(component_index, name=path)
 
 
 def remember_directory(recent: list[str] | None, path: str | None) -> list[str]:
@@ -489,12 +409,12 @@ def _entry_rows(listing) -> list[dict[str, str]]:
 
 
 @callback(
-    Output({"type": _IDS.browsestore, "index": MATCH}, "data"),
-    Input({"type": _IDS.entries, "index": MATCH}, "cellDoubleClicked"),
-    Input({"type": _IDS.crumb, "index": MATCH, "name": ALL}, "n_clicks"),
-    Input({"type": _IDS.recententry, "index": MATCH, "name": ALL}, "n_clicks"),
-    Input({"type": _IDS.committedstore, "index": MATCH}, "data"),
-    State({"type": _IDS.browsestore, "index": MATCH}, "data"),
+    Output(_IDS.browsestore.at(MATCH), "data"),
+    Input(_IDS.entries.at(MATCH), "cellDoubleClicked"),
+    Input(_IDS.crumb.at(MATCH, name=ALL), "n_clicks"),
+    Input(_IDS.recententry.at(MATCH, name=ALL), "n_clicks"),
+    Input(_IDS.committedstore.at(MATCH), "data"),
+    State(_IDS.browsestore.at(MATCH), "data"),
     prevent_initial_call=True,
 )
 def navigate_directory(
@@ -535,8 +455,8 @@ def navigate_directory(
 
 
 @callback(
-    Output({"type": _IDS.browsestore, "index": MATCH}, "data", allow_duplicate=True),
-    Input({"type": _IDS.div, "index": MATCH}, "id"),
+    Output(_IDS.browsestore.at(MATCH), "data", allow_duplicate=True),
+    Input(_IDS.div.at(MATCH), "id"),
     State(USER_STORE_DIV_ID, "data"),
     prevent_initial_call="initial_duplicate",
 )
@@ -617,11 +537,11 @@ def committed_status(user_data: dict | None) -> html.Span | None:
 
 
 @callback(
-    Output({"type": _IDS.path, "index": MATCH}, "children"),
-    Output({"type": _IDS.entries, "index": MATCH}, "rowData"),
-    Output({"type": _IDS.entries, "index": MATCH}, "selectedRows"),
-    Output({"type": _IDS.count, "index": MATCH}, "children"),
-    Input({"type": _IDS.browsestore, "index": MATCH}, "data"),
+    Output(_IDS.path.at(MATCH), "children"),
+    Output(_IDS.entries.at(MATCH), "rowData"),
+    Output(_IDS.entries.at(MATCH), "selectedRows"),
+    Output(_IDS.count.at(MATCH), "children"),
+    Input(_IDS.browsestore.at(MATCH), "data"),
 )
 def show_directory_listing(browse_data: dict | None):
     """Fetch the listing for the current browse position and render it: one
@@ -663,16 +583,16 @@ def show_directory_listing(browse_data: dict | None):
 
 clientside_callback(
     ClientsideFunction(namespace="dataset_table", function_name="quick_filter"),
-    Output({"type": _IDS.entries, "index": MATCH}, "dashGridOptions"),
-    Input({"type": _IDS.filter, "index": MATCH}, "value"),
-    State({"type": _IDS.entries, "index": MATCH}, "dashGridOptions"),
+    Output(_IDS.entries.at(MATCH), "dashGridOptions"),
+    Input(_IDS.filter.at(MATCH), "value"),
+    State(_IDS.entries.at(MATCH), "dashGridOptions"),
 )
 
 # a filter typed for one directory says nothing about the next
 clientside_callback(
     ClientsideFunction(namespace="dataset_table", function_name="clear"),
-    Output({"type": _IDS.filter, "index": MATCH}, "value"),
-    Input({"type": _IDS.browsestore, "index": MATCH}, "data"),
+    Output(_IDS.filter.at(MATCH), "value"),
+    Input(_IDS.browsestore.at(MATCH), "data"),
     prevent_initial_call=True,
 )
 
@@ -686,8 +606,8 @@ def selected_entry(selected_rows: list[dict] | dict | None) -> dict | None:
 
 
 @callback(
-    Output({"type": _IDS.use, "index": MATCH}, "children"),
-    Input({"type": _IDS.entries, "index": MATCH}, "selectedRows"),
+    Output(_IDS.use.at(MATCH), "children"),
+    Input(_IDS.entries.at(MATCH), "selectedRows"),
 )
 def label_use_button(selected_rows: list[dict] | None):
     """Say on the button what it will commit."""
@@ -698,10 +618,10 @@ def label_use_button(selected_rows: list[dict] | None):
 
 
 @callback(
-    Output({"type": _IDS.modal, "index": MATCH}, "is_open"),
-    Input({"type": _IDS.open, "index": MATCH}, "n_clicks"),
-    Input({"type": _IDS.cancel, "index": MATCH}, "n_clicks"),
-    Input({"type": _IDS.committedstore, "index": MATCH}, "data"),
+    Output(_IDS.modal.at(MATCH), "is_open"),
+    Input(_IDS.open.at(MATCH), "n_clicks"),
+    Input(_IDS.cancel.at(MATCH), "n_clicks"),
+    Input(_IDS.committedstore.at(MATCH), "data"),
     prevent_initial_call=True,
 )
 def toggle_directory_dialog(n_open: int, n_cancel: int, committed: dict | None):
@@ -718,11 +638,11 @@ def toggle_directory_dialog(n_open: int, n_cancel: int, committed: dict | None):
 
 
 @callback(
-    Output({"type": _IDS.current, "index": MATCH}, "children"),
-    Output({"type": _IDS.loaded, "index": MATCH}, "children"),
+    Output(_IDS.current.at(MATCH), "children"),
+    Output(_IDS.loaded.at(MATCH), "children"),
     Input(USER_STORE_DIV_ID, "data"),
-    Input({"type": _IDS.div, "index": MATCH}, "id"),
-    State({"type": _IDS.rootstore, "index": MATCH}, "data"),
+    Input(_IDS.div.at(MATCH), "id"),
+    State(_IDS.rootstore.at(MATCH), "data"),
 )
 def show_committed_directory(user_data: dict | None, _div_id: dict, root: str | None):
     """The line on the page: the directory in use and what was loaded from it.
@@ -742,17 +662,15 @@ def show_committed_directory(user_data: dict | None, _div_id: dict, root: str | 
 
 
 @callback(
-    Output(
-        {"type": _datasetIDS.dropdown, "index": MATCH}, "options", allow_duplicate=True
-    ),
-    Output({"type": _IDS.status, "index": MATCH}, "children", allow_duplicate=True),
-    Output({"type": _IDS.committedstore, "index": MATCH}, "data"),
-    Output({"type": _datasetIDS.liststore, "index": MATCH}, "data"),
-    Input({"type": _IDS.use, "index": MATCH}, "n_clicks"),
-    State({"type": _IDS.browsestore, "index": MATCH}, "data"),
-    State({"type": _IDS.recursive, "index": MATCH}, "value"),
-    State({"type": _datasetIDS.spectrumonly, "index": MATCH}, "value"),
-    State({"type": _IDS.entries, "index": MATCH}, "selectedRows"),
+    Output(_datasetIDS.dropdown.at(MATCH), "options", allow_duplicate=True),
+    Output(_IDS.status.at(MATCH), "children", allow_duplicate=True),
+    Output(_IDS.committedstore.at(MATCH), "data"),
+    Output(_datasetIDS.liststore.at(MATCH), "data"),
+    Input(_IDS.use.at(MATCH), "n_clicks"),
+    State(_IDS.browsestore.at(MATCH), "data"),
+    State(_IDS.recursive.at(MATCH), "value"),
+    State(_datasetIDS.spectrumonly.at(MATCH), "value"),
+    State(_IDS.entries.at(MATCH), "selectedRows"),
     prevent_initial_call=True,
 )
 def use_directory(
@@ -824,8 +742,8 @@ def use_directory(
 
 @callback(
     Output(USER_STORE_DIV_ID, "data", allow_duplicate=True),
-    Output({"type": _datasetIDS.dropdown, "index": ALL}, "value", allow_duplicate=True),
-    Input({"type": _IDS.committedstore, "index": ALL}, "data"),
+    Output(_datasetIDS.dropdown.at(ALL), "value", allow_duplicate=True),
+    Input(_IDS.committedstore.at(ALL), "data"),
     State(USER_STORE_DIV_ID, "data"),
     prevent_initial_call=True,
 )
@@ -881,7 +799,7 @@ def store_working_directory(
 
 @callback(
     Output(RECENT_STORE_ID, "data"),
-    Input({"type": _IDS.committedstore, "index": ALL}, "data"),
+    Input(_IDS.committedstore.at(ALL), "data"),
     State(RECENT_STORE_ID, "data"),
     prevent_initial_call=True,
 )
@@ -895,9 +813,9 @@ def store_recent_directory(committed: list[dict | None], recent: list[str] | Non
 
 
 @callback(
-    Output({"type": _IDS.recent, "index": MATCH}, "children"),
+    Output(_IDS.recent.at(MATCH), "children"),
     Input(RECENT_STORE_ID, "data"),
-    Input({"type": _IDS.div, "index": MATCH}, "id"),
+    Input(_IDS.div.at(MATCH), "id"),
 )
 def show_recent_directories(recent: list[str] | None, _div_id: dict):
     """Render the recent list; the div's static id only anchors the MATCH."""
