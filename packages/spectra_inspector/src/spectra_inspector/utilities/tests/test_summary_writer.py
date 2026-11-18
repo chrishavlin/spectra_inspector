@@ -208,8 +208,8 @@ class TestMetadataExport:
         pdf_path = writer.get_pdf_path()
         assert pdf_path.is_file()
         reader = PdfReader(pdf_path)
-        # title, summary, spectrum: the record no longer takes pages of its own
-        assert len(reader.pages) == 3
+        # title, summary, spectrum, weights: the record takes no pages of its own
+        assert len(reader.pages) == 4
         text = "\n".join(page.extract_text() for page in reader.pages)
         assert "Export summary" in text
         assert "Dataset: C-12" in text
@@ -261,8 +261,8 @@ class TestPptxExport:
         deck = pptx.Presentation(str(path))
         texts = _slide_texts(deck)
 
-        # title, summary, then the four images
-        assert len(texts) == 6
+        # title, summary, the four images, then the weights
+        assert len(texts) == 7
         assert "Spectra Inspector" in texts[0]
         assert texts[1].startswith("Export summary")
         assert "Dataset: C-12" in texts[1]
@@ -272,16 +272,16 @@ class TestPptxExport:
         notes = deck.slides[1].notes_slide.notes_text_frame
         assert json.loads(notes.text) == export_record
         assert {p.font.size.pt for p in notes.paragraphs} == {10}
-        assert texts[2:] == [
+        assert texts[2:-1] == [
             "bitmap_00_Fe",
             "bitmap_00_Fe_subset",
             "bitmap_01_Si",
             "spectrum",
         ]
 
-        for slide in list(deck.slides)[:2]:
+        for slide in [*list(deck.slides)[:2], deck.slides[-1]]:
             assert _pictures(slide) == []
-        for slide in list(deck.slides)[2:]:
+        for slide in list(deck.slides)[2:-1]:
             (pic,) = _pictures(slide)
             assert pic.left >= 0
             assert pic.top >= 0
@@ -300,9 +300,20 @@ class TestPptxExport:
 
         deck = pptx.Presentation(str(writer.get_pptx_path()))
         texts = _slide_texts(deck)
-        assert len(texts) == 3
+        assert len(texts) == 4
         assert "not available for this export" in texts[1]
         assert not deck.slides[1].has_notes_slide
+
+
+_WEIGHTS = {"Fe": 0.5, "K": 0.125, "Si": 0.25, "total_count": 100.0}
+# as exported with Fe and K zeroed
+_WEIGHT_ROWS = [
+    ("Fe", "0.00000000"),
+    ("K", "0.00000000"),
+    ("Si", "0.25000000"),
+    ("total_count", "100"),
+]
+_ZEROED_NOTE = "Element weights were manually zeroed for: Fe, K"
 
 
 class TestElementWeightsExport:
@@ -311,12 +322,15 @@ class TestElementWeightsExport:
 
         wts = get_element_weights(metadata)
         assert wts is not None
-        writer.write_element_weights(wts)
+        writer.set_element_weights(wts, ["Na"])
+        writer.write_element_weights()
 
         with zipfile.ZipFile(writer.get_zip()) as zf:
             names = zf.namelist()
+            text = zf.read(str(writer.element_weights_name)).decode("utf-8")
 
         assert str(writer.element_weights_name) in names
+        assert text == "Na\t0.0\ntotal_count\t100.0\n"
 
     def test_zip_without_element_weights(self, writer, metadata):
         # the server sends a null weights for a spectrum it cannot calibrate
@@ -330,6 +344,105 @@ class TestElementWeightsExport:
 
         assert "spectrum.csv" in names
         assert str(writer.element_weights_name) not in names
+
+    @staticmethod
+    def _spectrum(writer):
+        fig = plt.figure()
+        fig.add_subplot(111).plot([0, 1], [0, 1])
+        writer.write_static_figures({"spectrum": fig})
+
+    @staticmethod
+    def _table(slide):
+        (frame,) = [s for s in slide.shapes if s.has_table]
+        return frame
+
+    def test_pdf_has_a_weights_page_and_attachment(self, writer, export_record):
+        self._spectrum(writer)
+        writer.set_export_metadata(export_record)
+        writer.set_element_weights(_WEIGHTS, ["Fe", "K"])
+
+        reader = PdfReader(writer.get_pdf_path())
+        assert len(reader.pages) == 4
+        assert "ElementWeights.txt" in reader.pages[1].extract_text()
+        page = reader.pages[-1].extract_text()
+        assert page.startswith("Element weights")
+        for name, value in _WEIGHT_ROWS:
+            assert name in page
+            assert value in page
+        assert _ZEROED_NOTE in page
+
+        assert set(reader.attachments) == {"metadata.json", "ElementWeights.txt"}
+        (attached,) = reader.attachments["ElementWeights.txt"]
+        assert attached.decode("utf-8") == (
+            "Fe\t0.0\nK\t0.0\nSi\t0.25\ntotal_count\t100.0\n"
+        )
+
+    def test_pdf_note_only_when_elements_were_zeroed(self, writer):
+        self._spectrum(writer)
+        writer.set_element_weights(_WEIGHTS)
+
+        reader = PdfReader(writer.get_pdf_path())
+        page = reader.pages[-1].extract_text()
+        assert "0.50000000" in page
+        assert "manually zeroed" not in page
+
+    def test_pdf_without_weights(self, writer):
+        self._spectrum(writer)
+        writer.set_element_weights(None, ["Fe"])
+
+        reader = PdfReader(writer.get_pdf_path())
+        page = reader.pages[-1].extract_text()
+        assert "Weights unavailable for this map" in page
+        assert "manually zeroed" not in page
+        assert not reader.attachments
+
+    def test_pptx_has_a_native_weights_table(self, writer):
+        self._spectrum(writer)
+        writer.set_element_weights(_WEIGHTS, ["Fe", "K"])
+
+        deck = pptx.Presentation(str(writer.get_pptx_path()))
+        slide = deck.slides[-1]
+        frame = self._table(slide)
+        cells = [tuple(c.text for c in row.cells) for row in frame.table.rows]
+        assert cells == _WEIGHT_ROWS
+        assert not frame.table.first_row
+        assert _slide_texts(deck)[-1] == f"Element weights\n{_ZEROED_NOTE}"
+        for shape in slide.shapes:
+            assert shape.left >= 0
+            assert shape.left + shape.width <= deck.slide_width
+            assert shape.top + shape.height <= deck.slide_height
+
+    def test_pptx_table_of_every_weight_fits_the_slide(self, writer):
+        self._spectrum(writer)
+        names = ["Na", "Mg", "Al", "Si", "P", "K", "Ca", "Ti", "Fe"]
+        wts = dict.fromkeys(names, 0.1) | {
+            "total_count": 1.0,
+            "counts_14_15_kev": 2.0,
+            "DH_assessment": 0.5,
+        }
+        writer.set_element_weights(wts, names)
+
+        deck = pptx.Presentation(str(writer.get_pptx_path()))
+        for shape in deck.slides[-1].shapes:
+            assert shape.top + shape.height <= deck.slide_height
+
+    def test_pptx_note_only_when_elements_were_zeroed(self, writer):
+        self._spectrum(writer)
+        writer.set_element_weights(_WEIGHTS)
+
+        deck = pptx.Presentation(str(writer.get_pptx_path()))
+        assert _slide_texts(deck)[-1] == "Element weights"
+
+    def test_pptx_without_weights(self, writer):
+        self._spectrum(writer)
+        writer.set_element_weights(None)
+
+        deck = pptx.Presentation(str(writer.get_pptx_path()))
+        slide = deck.slides[-1]
+        assert not [s for s in slide.shapes if s.has_table]
+        assert _slide_texts(deck)[-1] == (
+            "Element weights\nWeights unavailable for this map"
+        )
 
 
 class TestWriteMSA:

@@ -283,7 +283,7 @@ _FIXED_FILE_DESCRIPTIONS = {
     "spectrum.msa": "the spectrum in EMSA/MAS format",
     "spectrum.csv": "the spectrum as energy_keV,intensity columns",
     "ElementWeights.txt": "element weights (tab separated), zeroed-out elements as 0",
-    "SpectraInspectorSummary.pdf": "the PDF summary, metadata.json attached",
+    "SpectraInspectorSummary.pdf": "the PDF summary, metadata.json and ElementWeights.txt attached",
 }
 
 
