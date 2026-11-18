@@ -3,9 +3,9 @@ name: frontend unit tests
 on:
   pull_request:
     paths:
-      - packages/spectra_inspector/src/**/*.py
-      - pyproject.toml
+      - packages/spectra_inspector/src/**
       - packages/spectra_inspector/pyproject.toml
+      - packages/spectra_inspector/uv.lock
       - .github/workflows/frontend-unit-tests.yml
   workflow_dispatch:
 
