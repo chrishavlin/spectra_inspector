@@ -237,11 +237,19 @@ def test_get_map_unifies_the_hover_of_stacked_samples():
     assert rows[0]["sample_type"] == "t"
     assert rows[0]["elevation"] == 180.0
     assert rows[0]["latitude"] == rows[0]["latitude"].split(", ")[0]
-    assert rows[0]["description"] == "d1, d2"
-    assert sample_map._unified([180.0, None]) == "180.0, -"
-    assert sample_map._unified([None, None]) is None
+    assert sorted(rows[0]["description"].split(", ")) == ["d1", "d2"]
     assert rows[2]["description"] == "d3"
     assert [point[-1] for point in trace.customdata.tolist()] == ["A", "B", "C"]
+
+
+def test_unified_shows_each_distinct_value_once():
+    def shown(values: list) -> list[str]:
+        return sorted(sample_map._unified(values).split(", "))
+
+    assert sample_map._unified(["t", "t", "t"]) == "t"
+    assert sample_map._unified([None, None]) is None
+    assert shown(["d1", "d2", "d1", "d2", "d1"]) == ["d1", "d2"]
+    assert shown([180.0, None, 180.0, None]) == ["-", "180.0"]
 
 
 _SPREAD = [
