@@ -8,7 +8,6 @@ from zoneinfo import ZoneInfo
 import fpdf
 import matplotlib.pyplot as plt
 import pandas as pd
-import plotly
 import pptx
 from matplotlib.figure import Figure
 from PIL import Image
@@ -122,30 +121,27 @@ class summaryWriter:
 
     def write_static_figures(
         self,
-        figures: dict[str, Figure | plotly.graph_objs.Figure],
+        figures: dict[str, Figure],
         figformat: Literal["png", "svg", "pdf"] = "png",
         scale_factor: int | None = None,
     ):
-        """Save the figures. An image panel's figure is written through
+        """Save the matplotlib figures. An image panel's figure is written through
         ``image_export`` with its map reduced by ``scale_factor`` (1 keeps
         every pixel), or by whatever fits it on a page when none is given; any
         other figure is saved as it is."""
         for name, fig in figures.items():
             outfile = self.full_file(f"{name}.{figformat}")
-            if isinstance(fig, Figure):
-                ax = image_axes(fig) if figformat == "png" else None
-                if ax is not None:
-                    factor = scale_factor or page_scale_factor(
-                        ax.images[0].get_array().shape[:2]
-                    )
-                    render_image_figure(fig, factor).save(outfile)
-                else:
-                    fig.savefig(
-                        outfile, format=figformat, bbox_inches="tight", dpi=FIGURE_DPI
-                    )
-                plt.close(fig)
+            ax = image_axes(fig) if figformat == "png" else None
+            if ax is not None:
+                factor = scale_factor or page_scale_factor(
+                    ax.images[0].get_array().shape[:2]
+                )
+                render_image_figure(fig, factor).save(outfile)
             else:
-                plotly.io.write_image(fig, outfile, format=figformat)
+                fig.savefig(
+                    outfile, format=figformat, bbox_inches="tight", dpi=FIGURE_DPI
+                )
+            plt.close(fig)
 
         spectraLogger.info(f"wrote image files to {self.write_dir}")
 
