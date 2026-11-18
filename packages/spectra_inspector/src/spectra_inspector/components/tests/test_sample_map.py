@@ -1,3 +1,5 @@
+import re
+
 import pandas as pd
 import pytest
 
@@ -177,14 +179,15 @@ def test_spot_summary_counts_the_maps_of_stacked_samples():
         ]
     )
     map_samples = {"A 1": "A", "A 2": "A", "B 1": "B", "C 1": "C"}
-    lines, counts = sample_map._spot_summary(df, map_samples)
+    lines, counts, stacks = sample_map._spot_summary(df, map_samples)
     assert counts == [3, 3, 1, 0]
     assert lines == [
         "2 samples (A, B), 3 maps",
-        "2 samples (B, A), 3 maps",
+        "2 samples (A, B), 3 maps",
         "1 map",
         "0 maps",
     ]
+    assert stacks == [[0, 1], [0, 1], [2], [3]]
     assert [sample_map._marker_size(n) for n in (0, 1, 2, 3, 4, 9)] == [
         20,
         20,
@@ -193,6 +196,52 @@ def test_spot_summary_counts_the_maps_of_stacked_samples():
         32,
         32,
     ]
+
+
+def test_get_map_unifies_the_hover_of_stacked_samples():
+    records = [
+        {"sample_id": "A", "lat": -50.9, "lon": -73.0, "elevation": 180.0},
+        {"sample_id": "B", "lat": -50.9, "lon": -73.0, "elevation": 180.0},
+        {"sample_id": "C", "lat": -51.0, "lon": -73.1, "elevation": 200.0},
+    ]
+    available = AvailableDatasets(
+        available_files=[],
+        sample_metadata=sampleMetadata(
+            records=[
+                sampleMetadataCSVrecord(
+                    group_name="g",
+                    sample_type=sample_type,
+                    description=description,
+                    **record,
+                )
+                for record, sample_type, description in zip(
+                    records, ("t", "t", "t"), ("d1", "d2", "d3"), strict=True
+                )
+            ]
+        ),
+    )
+    trace = sample_map.get_map("white-bg", available).data[SAMPLE_TRACE]
+
+    # a stack has no title, and each of its points reads the same
+    assert list(trace.hovertext) == ["", "", "<b>C</b><br><br>"]
+    assert trace.hovertemplate.startswith("%{hovertext}at this point=")
+    columns = dict(
+        re.findall(r"([^<>=}]+)=%{customdata\[(\d+)\]}", trace.hovertemplate)
+    )
+    rows = [
+        {label: point[int(i)] for label, i in columns.items()}
+        for point in trace.customdata.tolist()
+    ]
+    assert rows[0] == rows[1]
+    assert rows[0]["at this point"].startswith("2 samples (A, B)")
+    assert rows[0]["sample_type"] == "t"
+    assert rows[0]["elevation"] == 180.0
+    assert rows[0]["latitude"] == rows[0]["latitude"].split(", ")[0]
+    assert rows[0]["description"] == "d1, d2"
+    assert sample_map._unified([180.0, None]) == "180.0, -"
+    assert sample_map._unified([None, None]) is None
+    assert rows[2]["description"] == "d3"
+    assert [point[-1] for point in trace.customdata.tolist()] == ["A", "B", "C"]
 
 
 _SPREAD = [

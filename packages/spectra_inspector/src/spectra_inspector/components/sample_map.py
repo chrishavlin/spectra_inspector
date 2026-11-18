@@ -78,6 +78,20 @@ COLOCATED_DELTA = 1e-5
 # marker diameter in pixels by the number of maps at a point: (at least, size)
 _SIZE_STEPS = ((4, 32), (2, 26), (0, 20))
 
+# the hover lines that are merged over the samples stacked on a point
+_STACKED_HOVER_COLS = (
+    "group_name",
+    "sample_type",
+    "description",
+    "longitude",
+    "latitude",
+    "elevation",
+)
+# how a stack's merged hover line shows a sample without a value
+_MISSING = "-"
+# the hover title as px writes it for `hover_name`
+_PX_HOVER_TITLE = "<b>%{hovertext}</b><br><br>"
+
 
 @dataclass
 class mapSettings:
@@ -185,11 +199,12 @@ def _plural(n: int, noun: str) -> str:
 
 def _spot_summary(
     df: pd.DataFrame, map_samples: dict[str, str] | None
-) -> tuple[list[str], list[int]]:
+) -> tuple[list[str], list[int], list[list[int]]]:
     """For each sample, what shares its point on the map: a hover line naming
-    the samples stacked there and counting their maps, and that count. The
-    stacking is `colocated_sample_ids`'s: a sample without a location stands
-    alone."""
+    the samples stacked there and counting their maps, that count, and the
+    rows of those samples. The stacking is `colocated_sample_ids`'s: a sample
+    without a location stands alone. A stack is listed in the order of the
+    rows, so that every point of it reads the same."""
     ids = df["sample_id"].astype(str).to_numpy()
     lat = pd.to_numeric(df["lat"], errors="coerce").to_numpy(dtype=float)
     lon = pd.to_numeric(df["lon"], errors="coerce").to_numpy(dtype=float)
@@ -197,20 +212,50 @@ def _spot_summary(
     for sample_id in (map_samples or {}).values():
         maps_of[str(sample_id)] = maps_of.get(str(sample_id), 0) + 1
 
-    lines, counts = [], []
-    for i, sample_id in enumerate(ids):
+    lines, counts, stacks = [], [], []
+    for i in range(len(ids)):
         near = (np.abs(lat - lat[i]) <= COLOCATED_DELTA) & (
             np.abs(lon - lon[i]) <= COLOCATED_DELTA
         )
         near[i] = True
-        here = list(dict.fromkeys([sample_id, *ids[near]]))
+        rows = np.flatnonzero(near).tolist()
+        here = list(dict.fromkeys(ids[rows]))
         n_maps = sum(maps_of.get(s, 0) for s in here)
         line = _plural(n_maps, "map")
         if len(here) > 1:
             line = f"{len(here)} samples ({', '.join(here)}), {line}"
         lines.append(line)
         counts.append(n_maps)
-    return lines, counts
+        stacks.append(rows)
+    return lines, counts, stacks
+
+
+def _unified(values: list) -> object:
+    """One hover value for a stack of samples: the value they share, or all
+    of theirs in the order of the stack."""
+    shown = [_MISSING if pd.isna(v) else v for v in values]
+    if len(set(shown)) == 1:
+        return values[0]
+    return ", ".join(map(str, shown))
+
+
+def _unify_stacks(df: pd.DataFrame, stacks: list[list[int]]) -> list[str]:
+    """Make the hover of stacked samples describe the stack, in place: only
+    the topmost point of a stack can be hovered, so each of its points carries
+    every sample's values. Returns the hover titles, the sample id for a
+    sample alone on its point and nothing for a stack, whose samples the
+    "at this point" line names."""
+    for col in _STACKED_HOVER_COLS:
+        values = df[col].tolist()
+        df[col] = pd.Series(
+            [_unified([values[j] for j in rows]) for rows in stacks],
+            index=df.index,
+            dtype=object,
+        )
+    return [
+        f"<b>{sample_id}</b><br><br>" if len(rows) == 1 else ""
+        for sample_id, rows in zip(df["sample_id"], stacks, strict=True)
+    ]
 
 
 def get_map(
@@ -241,6 +286,7 @@ def get_map(
         center = _default_center(None)
         hd_cols = ["group_name", "lat", "lon", "elevation"]
         sizes = None
+        titles = None
 
     else:
         df = pd.DataFrame([record.model_dump() for record in records])
@@ -262,8 +308,9 @@ def get_map(
         df["longitude"] = ""
 
         df = df.apply(_attach_better_latlon, axis=1)
-        df["here"], n_maps = _spot_summary(df, map_samples)
+        df["here"], n_maps, stacks = _spot_summary(df, map_samples)
         sizes = [_marker_size(n) for n in n_maps]
+        titles = _unify_stacks(df, stacks)
 
         hd_cols = {
             "here": True,
@@ -296,6 +343,15 @@ def get_map(
         # a point grows with the number of maps on it, so a stack of samples
         # or a sample mapped several times stands out
         fig.update_traces(marker={"size": sizes, "sizemode": "diameter", "sizeref": 1})
+    if titles is not None:
+        # the title carries its own markup, so that a stack has no title at
+        # all rather than an empty one
+        fig.update_traces(
+            hovertext=titles,
+            hovertemplate=fig.data[0].hovertemplate.replace(
+                _PX_HOVER_TITLE, "%{hovertext}"
+            ),
+        )
     fig.update_layout(
         autosize=True,
         margin={"l": 0, "r": 0, "t": 0, "b": 0},
