@@ -8,19 +8,11 @@ updates:
       actions:
         patterns: ["*"]
 
+  # Security updates only: the limit of 0 disables version-update PRs.
   - package-ecosystem: uv
     directories:
       - /packages/spectra_inspector
       - /packages/spectra_inspector_server
     schedule:
       interval: monthly
-    groups:
-      python:
-        patterns: ["*"]
-
-  - package-ecosystem: docker
-    directories:
-      - /packages/spectra_inspector
-      - /packages/spectra_inspector_server
-    schedule:
-      interval: monthly
+    open-pull-requests-limit: 0
