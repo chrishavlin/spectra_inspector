@@ -368,6 +368,13 @@ class onDiscMock:
 
 
 def pytest_running() -> bool:
+    """Whether the mock samples are to be accepted.
+
+    ``main._valid_sample_name`` and
+    ``OperationEDAXStateHandler._require_sample`` let ``onDiscMock`` names
+    through only when this is true, which is what lets ``TestClient`` reach
+    every endpoint without a data root.
+    """
     return os.environ.get("PYTEST_VERSION") is not None
 
 

@@ -38,6 +38,18 @@ class InspectionProgress:
 
 
 class OnDiskDatabase:
+    """The EDAX filesets found by walking the data root: not a real database.
+
+    A map is a ``.spd`` with its sibling ``.spc`` and ``.ipr`` (``.bmp`` and
+    ``.xml`` are optional), keyed by file basename unless
+    ``allow_mixed_basenames`` is set. A key already registered is skipped with
+    a warning, so the first one found anywhere in the tree wins.
+
+    Every ``.spc`` is registered as a spectrum as well, so one name can be
+    both a map and a spectrum; the per-sample endpoints take ``spectrum_only``
+    to say which is meant.
+    """
+
     available_maps: dict[str, EDAX_file_set]
     # every .spc found, including the ones that belong to a set in
     # available_maps: the frontend's "spectrum only" mode lists them all.
